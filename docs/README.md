@@ -53,3 +53,9 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 ## Evals
 
 The [evals folder](evals/README.md) has one page per eval family (the SQLSolver, VeriEQL, Logos' TPC-H, DSB and TPC-DS pairs, Singh and Bedathur, SQL-IQ and LLM-SQL-Solver equivalence suites, DLBench's cross-dialect translations, pairs from optimizer wrong-result bugs, Arcwise-Plat's corrections of BIRD's gold SQL, BigQuery number and error traps for the SMT prover, DB-GPT's rewrite examples, rewrites recommended by vendor docs, bounded verification, rewriting benchmarks, engine test suites, syntax and behaviour coverage, lineage and Dataform evals, fuzzing) and a table naming the `benchmarks/results/*.json` file behind every eval. Each eval's numbers are in the README scoreboard ([format](../benchmarks/README.md)).
+
+## More pages (generated)
+
+<!-- generated-pages:start (python tools/docs_index.py --write) -->
+- [Field trial: analyst tasks with and without the agent server](field-trial.md): Step 7 of the roadmap.
+<!-- generated-pages:end -->

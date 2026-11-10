@@ -79,3 +79,9 @@ This folder is the plain-language companion to [the full documentation](../docs/
 A proof establishes equivalence within the prover's supported SQL and stated assumptions. A bounded check covers every modeled database up to a row limit. An executed check compares results on particular datasets. A BigQuery dry run checks planning and schemas. These are different strengths of evidence.
 
 `unknown` or `unproven` means KumoSQL has not established the answer. It does not mean the queries are different. The [provers guide](provers.md) explains how to read these results.
+
+## More pages (generated)
+
+<!-- generated-pages:start (python tools/docs_index.py --write) -->
+- [The field trial, explained simply](field-trial.md): All simple guides · Full reference
+<!-- generated-pages:end -->
