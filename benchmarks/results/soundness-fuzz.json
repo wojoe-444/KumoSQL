@@ -2,20 +2,20 @@
   "suite": "Typed soundness fuzzer",
   "order": 302,
   "size": 2005,
-  "score": "0 false proofs; 1059 correct proofs of 2005 pairs",
+  "score": "0 false proofs; 1070 correct proofs of 2005 pairs",
   "metric": "Seeded pairs from 27 rewrite templates, Sol's 24 S015 construct families and query mutants, over typed schemas with keys, NOT NULL columns and foreign keys, plus the 5 published S009 false proofs. Each pair runs on six legal DuckDB databases (random, NULL-heavy, duplicate-heavy, empty); a pair the prover proves while a database separates it is a false proof.",
   "evidence": "proof",
   "correctness": "0 false proofs, 0 generator label errors (seed 2, count 2000). Every difference is confirmed with DuckDB's optimizer off. The earlier open case, `t.x = -1 IS NULL`, was an oracle artifact: sqlglot reads it as `t.x = (-1 IS NULL)` while BigQuery and DuckDB read `(t.x = -1) IS NULL`, so the translator now declines comparison chains without parentheses. _collapse_aggregate folding COUNT over a one-row-per-group aggregate into the inner COUNT is fixed. Ground truth is six finite databases per pair, so a difference they all miss can still hide a false proof.",
   "coverage": {
-    "proven": 1059,
-    "refuted": 224,
-    "unknown": 714,
+    "proven": 1070,
+    "refuted": 219,
+    "unknown": 708,
     "unsupported": 8,
     "timeout": 0
   },
   "held_out": "none",
   "docs": "docs/evals/fuzzing.md#typed-soundness-fuzzer",
   "command": "python tools/soundness_fuzz.py --seed 2 --count 2000 --jobs 4",
-  "date": "2026-10-04",
-  "caveats": "Pairs are generated, not drawn from a public benchmark, and the templates were written knowing the open audit families (S004-S014). Only queries inside a closed SQL subset where BigQuery and DuckDB agree are executed; 8 pairs were skipped. On master 6e86a4b the same fuzzer also found float-widening false proofs (fixed by #427) and LIMIT 0 tails dropped from INTERSECT, EXCEPT and same-source UNION DISTINCT (S006-001, fixed since). The prover's solver timeout does not bound the whole call, so a few INTERSECT pairs take up to about 16 seconds (none exceeded the 20-second wall timeout in this run)."
+  "date": "2026-11-10",
+  "caveats": "Pairs are generated, not drawn from a public benchmark, and the templates were written knowing the open audit families (S004-S014). Only queries inside a closed SQL subset where BigQuery and DuckDB agree are executed; 8 pairs were skipped. On master 6e86a4b the same fuzzer also found float-widening false proofs (fixed by #427) and LIMIT 0 tails dropped from INTERSECT, EXCEPT and same-source UNION DISTINCT (S006-001, fixed since). The prover's solver timeout does not bound the whole call, so a few INTERSECT pairs take up to about 16 seconds (none exceeded the 20-second wall timeout in this run). Re-measured 2026-11-10: master 7b13988 gave 1,057 proved, 218 refuted and 722 unknown (against 1,059, 224 and 714 recorded on 2026-10-04; the pairs that moved were not identified), and the SQLancer rule families of #861 take it to 1,070, 219 and 708, with no discrepancy on any database under either DuckDB plan."
 }

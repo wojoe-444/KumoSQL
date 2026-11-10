@@ -24,6 +24,12 @@ The samples use a fixed random seed, so they repeat across unchanged runs. Remem
 
 `(a UNION b) ORDER BY k LIMIT 1` keeps one row of the combined result. An earlier version of the prover lost that `LIMIT` when it looked inside the parentheses and called the query equal to `a UNION b`, which keeps every row. For example, over the values 3, 3, 3, 4 and NULL, the first returns one row and the second returns three. Both provers now keep the cut, in a derived table, a CTE, a subquery or at the top. When two cuts are stacked in a way that cannot be combined, the answer is "not proven". This covers only the shapes that were tested; the full guide lists them and the regression tests.
 
+## Eager sums through a join
+
+An optimizer can turn `SELECT SUM(sal) FROM emp JOIN dept ON ...` into a sum of per-job sums multiplied by the number of matching departments, with a `CASE` that returns NULL when nothing was counted. KumoSQL reads that form back into the plain `SUM`, but only where the two really agree: the salary column must be declared NOT NULL (otherwise a group whose salaries are all NULL sums to NULL in the plain query and to 0 in the eager one), the joins in between must not pad rows with NULLs, and the grouping must be a plain `GROUP BY`. For example, with a nullable salary and one employee whose salary is NULL, the two queries return NULL and 0, so that pair is shown different, not proved. Every rewrite was also compared with the original on small random databases, but that is a check on the rule, not a proof for every query shape; shapes outside the tested list stay unknown. See the [full reference](../../docs/evals/sqlsolver.md) for the exact conditions and the recorded score.
+
+One mined pair, `testSortJoinTranspose1`, is deliberately left unproven: it moves a `LIMIT 10` below a join while ordering by a column with repeated values, so which tied rows survive can differ between the two forms (DuckDB shows it on small random data). Unknown is the honest answer there.
+
 ## Read the caveats
 
 A recorded score is only as fresh as the last run that checked it. The TPC-H row said every pair was proved for five weeks in late 2026 while one pair had quietly stopped proving, because its check sat in a slow group of tests that the everyday runs skip. For example, the pair compared `SUM(price * (1 - discount))` with `SUM(price * (1.00 - discount))`. The pair is proved again and now has a fast test of its own; other slow checks may still hide a similar drift. The [full guide](../../docs/evals/sqlsolver.md) has the dates.
