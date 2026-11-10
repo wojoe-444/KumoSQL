@@ -74,6 +74,9 @@ class Adapter:
     """``items()`` lists every pair (picklable); ``case(item)`` proves it as the eval does and returns a Case, or None."""
 
     name = ""
+    # The dialect ``tools/proof_mutants.py`` reads the queries in, when ``items()`` carries both as ``left`` and
+    # ``right`` text and ``case`` proves from the item alone; empty when the pairs cannot be mutated that way.
+    mutable = ""
 
     def items(self) -> list[dict]:
         raise NotImplementedError
@@ -83,6 +86,8 @@ class Adapter:
 
 
 class SqlSolver(Adapter):
+    mutable = "mysql"
+
     def __init__(self, suite: str):
         self.suite = suite
         self.name = f"sqlsolver-{suite}"
@@ -110,6 +115,8 @@ class SqlSolver(Adapter):
 
 
 class Qed(Adapter):
+    mutable = "mysql"
+
     name = "qed-calcite"
 
     def items(self) -> list[dict]:
@@ -125,6 +132,8 @@ class Qed(Adapter):
 
 
 class Mined(Adapter):
+    mutable = "mysql"
+
     name = "calcite-mined"
 
     def items(self) -> list[dict]:
@@ -142,6 +151,8 @@ class Mined(Adapter):
 
 
 class RBot(Adapter):
+    mutable = "mysql"
+
     name = "rbot-calcite"
 
     def items(self) -> list[dict]:
@@ -164,6 +175,8 @@ class RBot(Adapter):
 
 
 class CosetteSuite(Adapter):
+    mutable = "mysql"
+
     def __init__(self, suite: str):
         self.suite = suite
         self.name = "cosette" if suite == "cosette" else "spes-only"

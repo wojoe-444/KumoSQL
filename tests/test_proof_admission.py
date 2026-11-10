@@ -1,0 +1,250 @@
+"""The admission ledger (tools/proof_admission.py) and the near-miss probe (tools/proof_mutants.py).
+
+The first test is the gate: a results file counts exactly the proofs its ledger admits.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+
+import proof_admission as A  # noqa: E402
+import proof_mutants as M  # noqa: E402
+
+
+def test_every_results_file_counts_exactly_the_proofs_its_ledger_admits():
+    assert A.check() == []
+
+
+def test_every_ledger_parses_and_is_written_as_the_tool_writes_it(tmp_path):
+    assert A.ledgers(), "benchmarks/admitted holds no ledger"
+    for name in A.ledgers():
+        entries = A.read_ledger(name)
+        A.write_ledger(name, entries, tmp_path)
+        assert (tmp_path / f"{name}.txt").read_text(encoding="utf-8") == (A.LEDGERS / f"{name}.txt").read_text(encoding="utf-8"), name
+
+
+def _results(folder: Path, name: str, **fields) -> None:
+    folder.mkdir(exist_ok=True)
+    (folder / f"{name}.json").write_text(json.dumps(fields), encoding="utf-8")
+
+
+def test_check_compares_the_count_with_the_ledger(tmp_path):
+    ledgers, results = tmp_path / "admitted", tmp_path / "results"
+    A.write_ledger("demo", {"p1": ("0" * 12, "checked"), "p2": ("1" * 12, "baseline")}, ledgers)
+    _results(results, "demo", coverage={"proven": 2}, score="2/3, 0 wrong")
+    assert A.check(ledgers, results) == []
+    _results(results, "demo", coverage={"proven": 3})
+    (problem,) = A.check(ledgers, results)
+    assert "counts 3 proofs and 2 are admitted" in problem and "admit demo" in problem
+    _results(results, "demo", coverage={"proven": 1})  # a lost proof still listed leaves room for an unchecked one
+    assert len(A.check(ledgers, results)) == 1
+    _results(results, "demo", score="1,003/1,100 proved, 0 wrong")  # no coverage block: the number that opens the score
+    assert A.counted("demo", results) == 1003 and len(A.check(ledgers, results)) == 1
+    assert A.counted("absent", results) is None  # an eval with a ledger and no results file is not compared
+
+
+def test_a_damaged_ledger_is_an_error(tmp_path):
+    (tmp_path / "demo.txt").write_text("# header\n000000000000 checked p1\nnot-a-digest checked p2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="demo.txt:3"):
+        A.read_ledger("demo", tmp_path)
+    (tmp_path / "demo.txt").write_text("000000000000 checked p1\n111111111111 checked p1\n", encoding="utf-8")
+    with pytest.raises(ValueError):  # one pair twice
+        A.read_ledger("demo", tmp_path)
+    (tmp_path / "demo.txt").write_text("000000000000 trusted p1\n", encoding="utf-8")
+    with pytest.raises(ValueError):  # not one of the ways a proof is admitted
+        A.read_ledger("demo", tmp_path)
+
+
+def test_a_pair_name_may_hold_spaces(tmp_path):
+    A.write_ledger("demo", {"case 7 (b)": ("a" * 12, "searched")}, tmp_path)
+    assert A.read_ledger("demo", tmp_path) == {"case 7 (b)": ("a" * 12, "searched")}
+
+
+ITEMS = [{"pair": name, "left": f"SELECT {name}", "right": f"SELECT {name} + 0"} for name in ("kept", "new", "false", "lost", "open", "slow")]
+OPTIONS = {"prove_seconds": 1}
+
+
+def _prove(job):
+    _name, item, _options = job
+    return item["pair"], item["pair"] != "lost"
+
+
+def _examine(job):
+    _name, item, _options = job
+    verdicts = {
+        "new": {"verdict": "admitted", "how": "checked"},
+        "false": {"verdict": "differs", "why": "a database separates the two queries"},
+        "slow": {"verdict": "unsettled", "why": "executed search: timeout"},
+        "open": {"verdict": "not-proven"},
+    }
+    return {"pair": item["pair"], **verdicts[item["pair"]]}
+
+
+def _seed(folder):
+    digests = {item["pair"]: A.digest("demo", item) for item in ITEMS}
+    A.write_ledger("demo", {"kept": (digests["kept"], "baseline"), "lost": (digests["lost"], "baseline")}, folder)
+    return digests
+
+
+def test_admit_adds_checked_proofs_and_drops_lost_ones(tmp_path):
+    digests = _seed(tmp_path)
+    report = A.admit("demo", ITEMS, OPTIONS, folder=tmp_path, prove=_prove, examine_job=_examine)
+    assert report["kept"] == ["kept"] and report["admitted"] == ["new"] and report["lost"] == ["lost"]
+    assert [r["pair"] for r in report["differs"]] == ["false"] and [r["pair"] for r in report["unsettled"]] == ["slow"]
+    # the false proof, the unsettled one and the pair that is no longer proven are not in the ledger
+    assert A.read_ledger("demo", tmp_path) == {"kept": (digests["kept"], "baseline"), "new": (digests["new"], "checked")}
+
+
+def test_a_pair_whose_text_changed_is_checked_again(tmp_path):
+    _seed(tmp_path)
+    changed = [dict(item, right="SELECT 1") if item["pair"] == "kept" else item for item in ITEMS]
+    seen = []
+
+    def examine(job):
+        seen.append(job[1]["pair"])
+        return {"pair": job[1]["pair"], "verdict": "admitted", "how": "checked"}
+
+    report = A.admit("demo", changed, OPTIONS, folder=tmp_path, prove=_prove, examine_job=examine)
+    assert "kept" in seen and "kept" in report["admitted"]
+    assert A.read_ledger("demo", tmp_path)["kept"] == (A.digest("demo", changed[0]), "checked")
+
+
+def test_dry_run_reports_and_writes_nothing(tmp_path):
+    _seed(tmp_path)
+    before = (tmp_path / "demo.txt").read_text(encoding="utf-8")
+    report = A.admit("demo", ITEMS, {**OPTIONS, "dry_run": True}, folder=tmp_path, prove=_prove, examine_job=_examine)
+    assert report["unadmitted"] == ["false", "new", "open", "slow"] and report["lost"] == ["lost"] and report["admitted"] == []
+    assert (tmp_path / "demo.txt").read_text(encoding="utf-8") == before
+
+
+def test_baseline_admits_without_the_checks(tmp_path):
+    report = A.admit("demo", ITEMS, {**OPTIONS, "baseline": True}, folder=tmp_path, prove=_prove, examine_job=None)
+    assert len(report["admitted"]) == 5
+    assert {how for _, how in A.read_ledger("demo", tmp_path).values()} == {"baseline"}
+
+
+class _Adapter:
+    mutable = "mysql"
+
+
+def _options():
+    return {
+        "budget": 10, "seconds": 1, "prove_seconds": 1, "seed": 0, "exhaustive_cap": 10, "per_pair": 4, "modes": ("right",),
+        "mutant_budget": 10, "mutant_seconds": 1, "mutant_prove_seconds": 1,
+    }
+
+
+@pytest.mark.parametrize(
+    "search, mutants, held_out, expected",
+    [
+        ("survived", [{"verdict": "survived", "mutant": "right:join_type@3"}], False, ("admitted", "checked")),
+        ("survived", [{"verdict": "differs", "mutant": "right:join_type@3", "witness": {"t": []}}], False, ("differs", None)),
+        ("differs", [], False, ("differs", None)),
+        ("not-proven", [], False, ("not-proven", None)),
+        ("timeout", [], False, ("unsettled", None)),
+        ("unrunnable", [], False, ("admitted", "unrunnable")),
+        ("survived", [{"verdict": "differs", "mutant": "right:join_type@3"}], True, ("admitted", "searched")),  # held-out: never mutated
+    ],
+)
+def test_examine_runs_the_search_then_the_near_misses(search, mutants, held_out, expected):
+    probed = []
+
+    def probe(job):
+        probed.append(job)
+        return [{"summary": True, "pair": "p"}, *mutants]
+
+    item = {"pair": "p", "left": "SELECT 1", "right": "SELECT 1", "held_out": held_out}
+    result = A.examine("demo", item, _options(), adapter=_Adapter(), search=lambda job: {"verdict": search}, probe=probe)
+    assert (result["verdict"], result.get("how")) == expected
+    assert bool(probed) == (search == "survived" and not held_out)
+    if expected[0] == "differs" and mutants:
+        assert "right:join_type@3" in result["why"]
+
+
+def test_an_eval_that_cannot_be_mutated_is_admitted_on_the_search_alone():
+    class Fixed:
+        mutable = ""
+
+    result = A.examine("demo", {"pair": "p"}, _options(), adapter=Fixed(), search=lambda job: {"verdict": "survived"}, probe=lambda job: 1 / 0)
+    assert (result["verdict"], result["how"]) == ("admitted", "searched")
+
+
+# --- the near-miss probe -------------------------------------------------------------------------
+
+
+def test_mutated_items_cover_each_side_and_name_the_mutation():
+    pytest.importorskip("sqlglot")
+    item = {"pair": "p", "left": "SELECT a FROM t WHERE a < 5", "right": "SELECT a FROM t WHERE 5 > a"}
+    labelled = M.mutated_items(item, "mysql", ("right", "left", "self"), 0)
+    modes = {label.split(":")[0] for label, _ in labelled}
+    assert modes == {"right", "left", "self-left", "self-right"}
+    for label, mutated in labelled:
+        mode = label.split(":")[0]
+        assert mutated["pair"] == "p" and (mutated["left"], mutated["right"]) != (item["left"], item["right"])
+        if mode == "right":
+            assert mutated["left"] == item["left"] and mutated["right"] != item["right"]
+        if mode == "left":
+            assert mutated["right"] == item["right"] and mutated["left"] != item["left"]
+        if mode == "self-left":
+            assert mutated["left"] == item["left"]
+    assert any(":comparison_boundary@" in label for label, _ in labelled)
+
+
+def test_mutated_items_respect_the_cap_and_unreadable_sql():
+    item = {"pair": "p", "left": "SELECT a FROM t WHERE a < 5 AND a > 1 AND a <> 3", "right": "SELECT a FROM t WHERE a IN (2, 4)"}
+    assert len(M.mutated_items(item, "mysql", ("right", "left"), 4)) <= 4
+    assert M.mutated_items({"pair": "p", "left": "SELECT (", "right": "SELECT ("}, "mysql", ("right", "left", "self"), 0) == []
+
+
+def test_spread_takes_every_operator_before_any_twice():
+    class Mutant:
+        def __init__(self, operator, site):
+            self.operator, self.site = operator, site
+
+    mutants = [Mutant("a", i) for i in range(10)] + [Mutant("b", 0), Mutant("c", 0)]
+    picked = M.spread(mutants, 3)
+    assert sorted(m.operator for m in picked) == ["a", "b", "c"]
+    assert len(M.spread(mutants, 0)) == 12 and len(M.spread(mutants, 50)) == 12
+
+
+def test_only_adapters_that_declare_a_dialect_are_probed():
+    class Plain:
+        mutable = ""
+
+    assert not M.supported(Plain()) and M.supported(_Adapter()) and not M.supported(object())
+    names = set(M.registry())
+    assert {"qed-calcite", "sqlsolver-calcite", "rbot-calcite", "cosette"} <= names and "singh" not in names
+
+
+def test_the_probe_catches_a_false_proof_of_a_near_miss(tmp_path, monkeypatch):
+    """An adapter whose "prover" ignores the comparison operator: the probe must report the near miss it accepts."""
+
+    pytest.importorskip("duckdb")
+    from recheck.engine import Case, Column, Table
+
+    class Careless:
+        name, mutable = "careless", "mysql"
+
+        def items(self):
+            return [{"pair": "p", "left": "SELECT x FROM t WHERE x < 5", "right": "SELECT x FROM t WHERE 5 > x"}]
+
+        def case(self, item):
+            def shape(sql):
+                return sql.replace("<=", "<").replace(">=", ">").replace("5 > x", "x < 5")
+
+            if shape(item["left"]) != shape(item["right"]):
+                return None
+            return Case(self.name, item["pair"], item["left"], item["right"], {"t": Table("t", [Column("x", "int")])}, source=(item["left"], item["right"]))
+
+    monkeypatch.setattr(M, "registry", lambda: {"careless": Careless()})
+    monkeypatch.setattr(M, "_ADAPTERS", None)
+    options = {"modes": ("right", "left"), "per_pair": 0, "budget": 300, "seconds": 20, "seed": 0, "exhaustive_cap": 300, "prove_seconds": 10}
+    summary, *records = M._work(("careless", Careless().items()[0], options))
+    assert summary["summary"] and summary["accepted"] >= 1
+    assert any(r["verdict"] == "differs" and "comparison_boundary" in r["mutant"] for r in records)

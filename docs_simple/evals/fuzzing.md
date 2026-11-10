@@ -44,7 +44,7 @@ python tools/unsafe_fuzz.py fuzz --count 60 --seed 1
 
 Run from a development checkout. The full guide supplies unsafe and composition commands.
 
-The suite checks proofs against small DuckDB databases and replays counterexamples. It distinguishes false proofs, counterexamples that fail to show a difference, bugs in generated labels, and behavior-changing rule steps.
+The suite checks proofs against small DuckDB databases and replays counterexamples. The soundness fuzzer runs each database twice, with DuckDB's optimizer on and off, because a known optimizer bug can make two different queries look the same as well as make two equal ones look different. It distinguishes false proofs, counterexamples that fail to show a difference, bugs in generated labels, and behavior-changing rule steps.
 
 Finding no difference on the generated databases is executed evidence. It does not establish unbounded equivalence. Coverage and wrong-answer counts are separate so an unknown answer is not mistaken for a false proof.
 
