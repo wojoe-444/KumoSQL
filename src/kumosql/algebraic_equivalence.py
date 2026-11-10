@@ -106,6 +106,12 @@ from .constant_regroup_rules import collapse_constant_regroup
 from .bigquery_constructs import rewrite_bigquery_constructs
 from .boolean_identities import fold_boolean_identities
 from .membership_dedup import relax_membership_dedup
+from .case_arm_rules import rewrite_case_arms
+from .unmatched_outer_join import drop_unmatched_left_join
+from .having_count_rules import rewrite_count_tests
+from .semijoin_shapes import rewrite_semijoin_shapes
+from .grouped_self_membership import read_grouped_self_membership
+from .disjoint_union import separate_disjoint_unions
 from .smt_equivalence import SmtEquivalenceResult, SmtStatus, prove_equivalent_smt
 
 MAX_BRANCHES = 16
@@ -4869,8 +4875,10 @@ def normalize(
     tree = exists_over_aggregate(tree)
     tree = fold_grouped_count_cases(tree, not_null)
     tree = _left_join_indicator_to_exists(tree, keys)
+    tree = read_grouped_self_membership(tree, dialect)  # before the groups of an IN subquery become a derived table
     tree = _grouped_in_to_derived(tree)
     tree = _in_over_union(tree)
+    tree = separate_disjoint_unions(tree)
     tree = expand_grouping_sets(tree)
     for select in list(tree.find_all(exp.Select))[::-1]:
         replacement = collapse_grouping_expansion(select) or collapse_counted_intersection(select)
@@ -4945,6 +4953,10 @@ def normalize(
                     fold_boolean_identities,
                     relax_membership_dedup,
                     lambda sel: drop_mysql_exists_cast(sel, dialect),
+                    lambda sel: rewrite_case_arms(sel, dialect),
+                    lambda sel: drop_unmatched_left_join(sel, schema, dialect),
+                    rewrite_count_tests,
+                    lambda sel: rewrite_semijoin_shapes(sel, schema, types_map),
             ):
                 rewritten = rule(node)
                 if rewritten is not None:
