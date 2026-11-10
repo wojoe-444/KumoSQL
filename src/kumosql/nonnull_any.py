@@ -9,6 +9,8 @@ from sqlglot import exp
 from .quantified_rules import _Encoder, _Unsupported
 
 OPS = {exp.GT: exp.Min, exp.GTE: exp.Min, exp.LT: exp.Max, exp.LTE: exp.Max}
+# A comparison binds tighter than AND, OR and WHERE, so parentheses around one there group nothing.
+_ATOMS = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE)
 
 
 def rewrite_nonnull_any(
@@ -108,6 +110,9 @@ def rewrite_nonnull_any(
                 if _nonnull(column, owner, nn):
                     guard.replace(exp.false())
             def identity(node):
+                # ``a AND (b)``: once the folded guards leave one comparison in the parentheses, they group nothing.
+                if isinstance(node, exp.Paren) and isinstance(node.parent, (exp.And, exp.Or, exp.Where)) and isinstance(node.this, _ATOMS):
+                    return node.this
                 if not isinstance(node, (exp.And, exp.Or)):
                     return node
                 for constant, other in ((node.this, node.expression), (node.expression, node.this)):

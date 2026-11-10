@@ -153,3 +153,62 @@ def test_nonnull_any_keeps_aggregate_output_phase(query):
     tree = sqlglot.parse_one(query)
     before = tree.sql()
     assert rewrite_nonnull_any(tree, SCHEMA, NN, TYPES, set()).sql() == before
+
+
+# The expansion as the decorrelation steps leave it: the correlation joined by AND, the three-valued part in parentheses.
+FIRST = "EXISTS(SELECT 1 FROM b WHERE a.g=b.g AND a.x>b.y)"
+SECOND = "EXISTS(SELECT 1 FROM b WHERE a.g=b.g AND (a.x IS NULL OR b.y IS NULL OR a.x>b.y))"
+CORRELATED = f"CASE WHEN {FIRST} THEN TRUE WHEN {SECOND} THEN NULL ELSE FALSE END"
+
+
+def _tables(rows_a, rows_b, y_not_null=True):
+    db = duckdb.connect()
+    db.execute("CREATE TABLE a(x INTEGER NOT NULL,g VARCHAR)")
+    db.execute(f"CREATE TABLE b(y INTEGER{' NOT NULL' if y_not_null else ''},g VARCHAR)")
+    if rows_a:
+        db.executemany("INSERT INTO a VALUES (?,?)", rows_a)
+    if rows_b:
+        db.executemany("INSERT INTO b VALUES (?,?)", rows_b)
+    return db
+
+
+@pytest.mark.parametrize(
+    "rows_a,rows_b",
+    [
+        ([], []),
+        ([(1, "a")], []),
+        ([(2, "a"), (2, "a"), (0, "a")], [(1, "a"), (1, "a")]),
+        ([(1, "a"), (3, "b"), (5, None)], [(2, "a"), (1, "b"), (3, None)]),
+    ],
+)
+def test_expanded_case_with_parenthesized_guards_removes_null_arm(rows_a, rows_b):
+    query = f"SELECT a.x,{CORRELATED} AS f FROM a"
+    converted = rewrite_nonnull_any(
+        sqlglot.parse_one(query, read="duckdb"), SCHEMA, NN, TYPES, set()
+    ).sql(dialect="duckdb")
+    assert "CASE" not in converted and "IS NULL" not in converted
+    db = _tables(rows_a, rows_b)
+    assert Counter(db.execute(query).fetchall()) == Counter(db.execute(converted).fetchall())
+
+
+@pytest.mark.parametrize(
+    "second,not_null,rows_a,rows_b",
+    [
+        # y may be NULL: the NULL arm is reached (2 > NULL), where the first EXISTS alone says FALSE
+        (SECOND, {"a": {"x"}}, [(2, "a")], [(None, "a")]),
+        # another comparison in the parentheses: the second EXISTS is not the first
+        (SECOND.replace("a.x>b.y", "a.x>=b.y"), NN, [(2, "a")], [(2, "a")]),
+        # the guards joined to another correlation
+        (SECOND.replace("a.g=b.g", "a.g<>b.g"), NN, [(1, "a")], [(0, "b")]),
+        # OR in place of AND: the parentheses around the comparison are dropped, the two bodies still differ
+        (SECOND.replace("a.g=b.g AND", "a.g=b.g OR"), NN, [(1, "a")], [(0, "b")]),
+    ],
+)
+def test_parenthesized_guards_keep_a_reachable_null_arm(second, not_null, rows_a, rows_b):
+    query = f"SELECT CASE WHEN {FIRST} THEN TRUE WHEN {second} THEN NULL ELSE FALSE END AS f FROM a"
+    original = sqlglot.parse_one(query, read="duckdb")
+    before = original.sql()
+    assert rewrite_nonnull_any(original, SCHEMA, not_null, TYPES, set()).sql() == before
+    # the arm matters: the CASE and its first EXISTS alone give different values
+    db = _tables(rows_a, rows_b, y_not_null="y" in not_null.get("b", ()))
+    assert db.execute(query).fetchall() != db.execute(f"SELECT {FIRST} AS f FROM a").fetchall()
