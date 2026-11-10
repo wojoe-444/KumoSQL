@@ -272,6 +272,13 @@ def tool_imports(text: str, tools: set[str]) -> set[str]:
     for match in re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][A-Za-z_0-9]*)", text, re.MULTILINE):
         if match.group(1) in tools:
             found.add(match.group(1))
+    for match in re.finditer(r"^\s*from\s+tools\s+import\s+\(?([^\n)]*)", text, re.MULTILINE):
+        for name in re.split(r"[,\s]+", match.group(1)):
+            if name in tools:
+                found.add(name)
+    for match in re.finditer(r"\btools\.([A-Za-z_][A-Za-z_0-9]*)", text):
+        if match.group(1) in tools:
+            found.add(match.group(1))
     # tests also load a runner by path (``TOOLS / "qed_bench.py"``) or name (``importlib.import_module("qed_bench")``)
     for match in re.finditer(r"""["']([A-Za-z_][A-Za-z_0-9]*)(?:\.py)?["']|tools/([A-Za-z_][A-Za-z_0-9]*)\.py""", text):
         name = match.group(1) or match.group(2)
