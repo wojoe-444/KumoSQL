@@ -1,0 +1,23 @@
+# Proofs of sqlsolver-tpch admitted to its count. Written by tools/proof_admission.py (docs/proof-admission.md); do not edit by hand.
+6b24c08444ab baseline 0
+054777f0f634 baseline 1
+19bcbf08b745 baseline 10
+88435550d355 baseline 11
+c8e21bcd3a05 baseline 12
+aaba018a6059 baseline 13
+be65202565bd baseline 14
+4be9b302501f baseline 15
+d5f32734b94e baseline 16
+98fbc80e9591 baseline 17
+1d41a191ddba baseline 18
+ce8ea95d0e31 baseline 19
+92c18e81dc71 baseline 2
+df2cf931906d checked 20
+8edf97a6481a baseline 21
+8bcb4481c8f3 baseline 3
+c6a02ed41b2a baseline 4
+45465c94c71f baseline 5
+a80408d1063a baseline 6
+29a9c1eda4f8 baseline 7
+842426869eaf baseline 8
+20ff108f8a1e baseline 9
