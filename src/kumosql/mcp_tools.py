@@ -86,6 +86,39 @@ def need_table(session: Session, text: object) -> str:
     )
 
 
+_REF = re.compile(r"""\$\{\s*(?:ref|resolve)\(\s*(["'`])(?P<first>[^"'`]+)\1\s*(?:,\s*(["'`])(?P<second>[^"'`]+)\3\s*)?\)\s*\}""")
+
+
+def expand_refs(session: Session, sql: str) -> tuple[str, list[str]]:
+    """A draft with each Dataform ``${ref("table")}`` / ``${ref("dataset", "table")}`` read as that table of the project.
+
+    An agent drafting inside a Dataform project writes ``ref()``; the checks read plain SQL. The reference becomes the
+    table's ``dataset.table`` name (the last two parts of its key, the bare name for a one-part key). Returns the SQL and
+    one ``ref(...) = dataset.table`` note per distinct reference; a reference to no table, or to several, is a
+    ``ToolError`` that names the close ones, like every other tool. Other ``${...}`` expressions stay as written.
+    """
+
+    notes: dict[str, str] = {}
+
+    def swap(match: re.Match) -> str:
+        first, second = match.group("first").strip(), (match.group("second") or "").strip()
+        written = f"{first}.{second}" if second else first
+        key = need_table(session, written)
+        name = ".".join(key.split(".")[-2:])
+        notes.setdefault(f"ref({written})", name)
+        return name
+
+    expanded = _REF.sub(swap, sql) if "${" in sql else sql
+    return expanded, [f"{ref} = {name}" for ref, name in notes.items()]
+
+
+def leftover_expressions(sql: str, limit: int = 3) -> list[str]:
+    """The first ``${...}`` expressions still in ``sql``, clipped (what ``ref()`` expansion could not read)."""
+
+    found = re.findall(r"\$\{[^}]*\}?", sql)
+    return [clip(item, 40) for item in dict.fromkeys(found)][:limit]
+
+
 def need_column(session: Session, key: str, text: str) -> tuple[str, tuple[str, ...]]:
     """The output column (and struct field path) an agent named, matched in any case."""
 

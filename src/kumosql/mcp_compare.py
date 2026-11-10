@@ -23,6 +23,7 @@ import warnings
 
 from .mcp_answers import Answer, ToolError, clip, tool
 from .mcp_session import Session
+from .mcp_tools import expand_refs
 
 DEFAULT_SECONDS = 10
 MAX_SECONDS = 60
@@ -156,7 +157,7 @@ def _value(value: object) -> object:
     "they differ) or unknown (with the reason). Unknown is not a claim either way. Rows are compared as bags unless "
     "respect_row_order is set. Stops at time_limit seconds.",
     {
-        "left": {"type": "string", "description": "The original query."},
+        "left": {"type": "string", "description": "The original query (Dataform ${ref(\"table\")} is read as that table)."},
         "right": {"type": "string", "description": "The rewritten query."},
         "time_limit": {"type": "integer", "description": f"Seconds the check may take (default {DEFAULT_SECONDS}, from 1 to {MAX_SECONDS})."},
         "respect_row_order": {"type": "boolean", "description": "Also require the same ORDER BY on both (default false: rows are compared as a bag)."},
@@ -168,6 +169,9 @@ def compare_queries(session: Session, args: dict) -> Answer:
     for name, sql in (("left", left), ("right", right)):
         if len(sql) > MAX_SQL:
             raise ToolError(f"{name} is too long ({MAX_SQL:,} characters at most)")
+    left, left_refs = expand_refs(session, left)
+    right, right_refs = expand_refs(session, right)
+    refs = list(dict.fromkeys(left_refs + right_refs))
     seconds = args.get("time_limit", DEFAULT_SECONDS)
     if not 1 <= seconds <= MAX_SECONDS:
         raise ToolError(f"time_limit must be from 1 to {MAX_SECONDS} seconds", [f"Pass time_limit between 1 and {MAX_SECONDS}."])
@@ -182,6 +186,8 @@ def compare_queries(session: Session, args: dict) -> Answer:
 
     answer = Answer("")
     answer.fields["compared_as"] = "ordered rows (ORDER BY must match)" if ordered else "bags of rows (row order ignored)"
+    if refs:
+        answer.fields["refs_read_as"] = refs
     answer.counts = {"seconds": round(took, 1), "time_limit": seconds}
     if out is None:
         answer.summary = f"Unknown: the check {'did not finish in %d s' % seconds if failure == 'timeout' else 'failed (' + str(failure).split(':')[-1] + ')'}."

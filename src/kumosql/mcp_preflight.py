@@ -23,7 +23,7 @@ from sqlglot import exp
 
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
-from .mcp_tools import explain
+from .mcp_tools import expand_refs, explain, leftover_expressions
 
 MAX_SQL = 50_000
 PAGE = 50
@@ -353,7 +353,7 @@ def _dry_run(sql: str, project: str) -> tuple[list[dict], list[tuple[str, str]],
     "dry_run=true and a project is given, BigQuery's free dry run (estimated bytes against the byte cap). Every finding names its "
     "fix; what could not be checked is listed with the reason. Without dry_run it never touches the network.",
     {
-        "sql": {"type": "string", "description": "The draft SELECT query, written against the project's tables (real names, no ${ref()})."},
+        "sql": {"type": "string", "description": "The draft SELECT query, written against the project's tables (a table name, dataset.table or a Dataform ${ref(\"table\")})."},
         "dry_run": {"type": "boolean", "description": "Also ask BigQuery to plan the query (free, reads no data). Needs project. Default false."},
         "project": {"type": "string", "description": "With dry_run: the BigQuery project billed for the dry run. Never guessed."},
     },
@@ -373,13 +373,17 @@ def check_query(session: Session, args: dict) -> Answer:
     offset = offset_wanted(args)
 
     answer = Answer("")
+    sql, refs = expand_refs(session, sql)
     if "${" in sql:
-        answer.summary = "Cannot check the draft: it contains Dataform ${...} expressions."
+        left = leftover_expressions(sql)
+        answer.summary = f"Cannot check the draft: it contains Dataform ${{...}} expressions other than ref() ({', '.join(left)})."
         answer.fields["verdict"] = "cannot_check"
-        answer.add_list("findings", [{"check": "syntax", "what": "the draft contains ${...} template expressions, which are not SQL", "fix": "Write the project's table names (dataset.table) instead of ${ref()}."}], primary=True)
+        answer.add_list("findings", [{"check": "syntax", "what": "the draft contains template expressions, which are not SQL", "fix": "Write the SQL they stand for; only ${ref(\"table\")} and ${ref(\"dataset\", \"table\")} are read."}], primary=True)
         answer.unknown("every check", "they need SQL with real table names")
-        answer.next("Replace ${ref(...)} with the table's name; describe_table shows the exact key.")
+        answer.next("Replace the expression with the SQL it compiles to and ask again.")
         return answer
+    if refs:
+        answer.fields["refs_read_as"] = refs
 
     draft = Draft(session, sql)
     if draft.tree is None:
