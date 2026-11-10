@@ -45,6 +45,7 @@ This folder is the plain-language companion to [the full documentation](../docs/
 | Analyze scripts or MERGE | [Scripts](scripts.md) |
 | Reuse an existing summary table | [Model reuse](model-reuse.md) |
 | Search harder for wrong proofs | [Proof re-check](proof-recheck.md) |
+| Check a proof before it is counted | [Proof admission](proof-admission.md) |
 | Test each rewrite on its own | [Rule-level fuzzing](rule-fuzzing.md) |
 | See how many proofs now need fewer number assumptions | [Numeric assumption report](numeric-assumption-report.md) |
 | Run tests and understand their history | [Test history](test-history.md) |

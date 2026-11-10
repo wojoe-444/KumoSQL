@@ -659,6 +659,10 @@ SQL-IQ's SQL Equivalence Judge, SQL Judge and Error Classification tasks are sco
 
 `python tools/proof_recheck.py <eval>` re-runs every pair an eval counts as proven through a much heavier executed search (edge, exhaustive tiny and random databases that respect the declared keys, NOT NULL columns and foreign keys) to hunt for false proofs. It changes no score. Commands, the adapters and what the first runs found are in [docs/proof-recheck.md](docs/proof-recheck.md).
 
+## Proof admission
+
+A proof is counted in an eval's score only after that search and a near-miss probe (`python tools/proof_mutants.py <eval>`, which makes one small mistake in a proven pair and asks the prover again) find nothing. `python tools/proof_admission.py admit <eval>` runs both on each new proof and records the admitted ones in `benchmarks/admitted/`; a gate test fails when a results file and its ledger disagree. Nine evals have a ledger. See [docs/proof-admission.md](docs/proof-admission.md).
+
 ## Output properties
 
 `kumosql.output_properties.infer_properties(sql, constraints, schema)` states, without running the query, which output columns are never NULL, which sets of columns are unique and how many rows it returns at most (so whether a scalar subquery can return several rows). It works from declared NOT NULL columns and keys, understands `GROUP BY`, `DISTINCT`, joins (a join can destroy uniqueness, an outer join makes the other side nullable again), `COUNT` versus `SUM` over an empty input and filters that establish non-NULL values, and names the declared facts each conclusion rests on. Unknown stays unknown. Details, rules and the evaluation (labelled cases checked on random databases, held-out cases, and SQLSolver's queries) are in [docs/output-properties.md](docs/output-properties.md); `python tools/output_properties_bench.py` reruns it.
