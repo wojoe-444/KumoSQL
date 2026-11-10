@@ -5138,13 +5138,17 @@ def _split_limit(sql: str, dialect: str):
             position = int(key.this) - 1
         else:
             text = key.sql()
-            matches = [
-                i
-                for i, (name, expr) in enumerate(outputs)
-                if (isinstance(key, exp.Column) and not key.table and key.name.lower() == name) or expr == text
-            ]
+            # An unqualified name that is a select alias is that output column, even when another output's expression
+            # is a table column of the same name (``SELECT a AS b, b AS a .. ORDER BY a`` orders by column ``b``).
+            named = [i for i, (name, _) in enumerate(outputs) if isinstance(key, exp.Column) and not key.table and key.name.lower() == name]
+            matches = named or [i for i, (_, expr) in enumerate(outputs) if expr == text]
             if len(matches) == 1 or (matches and len({outputs[i][1] for i in matches}) == 1):
                 position = matches[0]
+            elif named:
+                return None, "ORDER BY names a select alias used for different columns"
+            elif _reads_shadowing_alias(key, outputs):
+                # Read as an extra column of the core the name would mean the table column, not the alias.
+                return None, "ORDER BY reads a select alias inside an expression"
         if position is None and root is first and not first.args.get("distinct") and not any(key.find_all(exp.Subquery, exp.Window)):
             hidden.append(key.copy())
             position = len(outputs) + len(hidden) - 1
@@ -5177,6 +5181,19 @@ def _split_limit(sql: str, dialect: str):
         len(outputs),
     )
     return faithful_sql(core, dialect), spec
+
+
+def _reads_shadowing_alias(key: exp.Expression, outputs: list[tuple[str, str]]) -> bool:
+    """Whether an ORDER BY expression reads an unqualified name that a select alias gives to something other than
+    the table column of that name (BigQuery resolves the name to the alias)."""
+
+    for column in key.find_all(exp.Column):
+        if column.table:
+            continue
+        name = column.name.lower()
+        if any(alias == name and expr.lower() != name for alias, expr in outputs):
+            return True
+    return False
 
 
 def _check_options(kwargs: dict) -> None:
