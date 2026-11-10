@@ -34,6 +34,7 @@ import re
 import sqlglot
 from sqlglot import exp
 from . import proof_columns
+from .clause_alias_reads import resolve_alias_reads
 from .ast_utils import FROM_KEY, UnmodeledConstruct, canonical_negation, check_modeled, distinct_on, drop_case_conflicts, expand_alias_columns, extended_grouping, faithful_sql, free_reads, parenthesize_is_operands, plain_distinct, same_table, select_sources as _sources_of, star_modified, strip_positions, visible_ctes
 from .set_operations import positional_sql_pair
 from .literal_fold_rules import distribute_over_constant_union, fold_string_literals
@@ -2875,19 +2876,27 @@ def _isolate_windows(tree: exp.Expression) -> exp.Expression:
             continue
         qualify = select.args.get("qualify")
         aliases = {i.alias.lower() for i in select.expressions if isinstance(i, exp.Alias)}
-        outer_parts = list(select.expressions) + ([qualify.this] if qualify is not None else []) + [
+        # A bare name that is also a select alias is the source column in the select list, and the alias in QUALIFY
+        # and ORDER BY (clause_alias_reads has already replaced or refused the ones that could be read both ways).
+        clause_parts = ([qualify.this] if qualify is not None else []) + [
             o for o in (select.args.get("order").expressions if select.args.get("order") else [])
         ]
 
         def outside_window(column: exp.Column) -> bool:
             return column.find_ancestor(exp.Window) is None and column.find_ancestor(exp.Select) is select
 
+        def names_alias(column: exp.Column) -> bool:
+            return not column.table and column.name.lower() in aliases
+
         columns: dict[str, exp.Column] = {}
-        for part in outer_parts:
+        for part in select.expressions:
             for column in part.find_all(exp.Column):
-                if not outside_window(column) or (not column.table and column.name.lower() in aliases):
-                    continue
-                columns.setdefault(column.sql(), column)
+                if outside_window(column):
+                    columns.setdefault(column.sql(), column)
+        for part in clause_parts:
+            for column in part.find_all(exp.Column):
+                if outside_window(column) and not names_alias(column):
+                    columns.setdefault(column.sql(), column)
         calls = {w.sql(): w for w in windows}
         counter = next(_WINDOW_COUNTER)
         alias = f"kqw{counter}"
@@ -2900,6 +2909,9 @@ def _isolate_windows(tree: exp.Expression) -> exp.Expression:
             if isinstance(piece, exp.Column) and piece.sql() in column_names and piece.find_ancestor(exp.Window) is None:
                 return exp.column(column_names[piece.sql()], table=alias)
             return piece
+
+        def swap_clause(piece: exp.Expression) -> exp.Expression:
+            return piece if isinstance(piece, exp.Column) and names_alias(piece) else swap(piece)
 
         inner = exp.Select(
             expressions=[exp.alias_(columns[sql].copy(), name) for sql, name in sorted(column_names.items())]
@@ -2923,7 +2935,7 @@ def _isolate_windows(tree: exp.Expression) -> exp.Expression:
                 for n, i in enumerate(select.expressions)
                 if isinstance(i, exp.Alias) and isinstance(outer_items[n], exp.Alias)
             }
-            lifted = qualify.this.transform(swap)
+            lifted = qualify.this.transform(swap_clause)
             lifted = lifted.transform(
                 lambda c: named[c.name.lower()].copy() if isinstance(c, exp.Column) and not c.table and c.name.lower() in named else c
             )
@@ -2931,7 +2943,7 @@ def _isolate_windows(tree: exp.Expression) -> exp.Expression:
         if select.args.get("distinct"):
             outer.set("distinct", select.args["distinct"].copy())
         if select.args.get("order"):
-            outer.set("order", select.args["order"].transform(swap))
+            outer.set("order", select.args["order"].transform(swap_clause))
         for key in ("limit", "offset"):
             if select.args.get(key):
                 outer.set(key, select.args[key].copy())
@@ -4872,6 +4884,7 @@ def normalize(
     tree = _name_derived_columns(_lateral_joins(tree))
     if schema:
         tree = _expand_stars(tree, schema)
+    tree = resolve_alias_reads(tree, schema, dialect)
     tree = _isolate_windows(canonical_windows(drop_unread_windows(tree), types))
     if schema:
         # name each bare column's source before any rewrite reads a derived table as its base table, whose

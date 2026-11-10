@@ -8,7 +8,7 @@ When KumoSQL says two queries always return the same rows, that is a proof. The 
 
 Suppose KumoSQL has proved `SELECT name FROM dept WHERE deptno > 1` equal to `SELECT name FROM dept WHERE NOT deptno <= 1`. The tool builds thousands of small databases for the pair: empty tables, tables full of NULLs, duplicated rows, values next to the numbers and strings the queries mention, big numbers, strings that differ only in capitals or trailing spaces. Every database respects the keys and other rules the eval declares. It runs both queries on each one. If the results ever differ, the proof is a candidate false proof, and the tool keeps the smallest database that shows it.
 
-Before it counts a difference, the tool rules out noise: rounding in decimal digits, rows returned in a different order, the database engine picking among tied rows, and a known DuckDB optimizer bug. Only a difference that survives all of that is reported.
+Before it counts a difference, the tool rules out noise: rounding in decimal digits, rows returned in a different order, the database engine picking among tied rows, and a known DuckDB optimizer bug. Only a difference that survives all of that is reported. The optimizer bug can also work the other way and make two different queries look the same, so the tool also runs a share of the databases with the optimizer switched off; a pair that differs only then is flagged for a person to read. New proofs go through this search before they are counted; see [checking a proof before it is counted](proof-admission.md).
 
 ## What it has found so far
 

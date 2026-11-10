@@ -19,6 +19,10 @@ digits, DuckDB's unoptimized plan agrees (DuckDB 1.5.6 has optimizer bugs, see
 ``kumosql.duckdb_load.run_unoptimized``), and each query returns the same bag when every table's rows are
 reversed and shuffled (no dependence on row order). The witness is then shrunk row by row.
 
+The optimizer's wrong rows can also make two different queries agree. So every edge database, and every
+fifth one after them, on which the optimized results agree is run with the optimizer off as well
+(``masked``); results that differ only there end the search with the verdict ``masked``.
+
 The search knows nothing about the prover; an adapter per eval (``tools/recheck/*.py``) turns the eval's
 proven pairs into :class:`Case` objects with DuckDB SQL, written exactly as that eval's own harness runs
 them.
@@ -933,6 +937,41 @@ def confirm(runner: Runner, data: Database, outcome: Outcome, rng: random.Random
     return "differs"
 
 
+# How often a database on which the optimized results agree is also run with the optimizer off (every edge
+# database is). The unoptimized run doubles a database's cost, so the random ones are sampled.
+UNOPTIMIZED_EVERY = 5
+
+
+def masked(runner: Runner, data: Database, rng: random.Random) -> tuple[list, list] | None:
+    """The unoptimized results of the loaded database when they differ although the optimized ones agree.
+
+    DuckDB's optimizer can return wrong rows, and wrong rows can make two different queries agree as easily as they
+    make two equal ones differ. ``None`` when the unoptimized results agree too, differ only by float noise, or
+    change when the tables' rows are stored in another order (a pick among tied rows is not evidence)."""
+
+    case = runner.case
+    mode, digits = case.mode, case.float_digits
+    try:
+        left, right = runner.unoptimized()
+        if agree(mode, view(left, mode, digits), view(right, mode, digits)):
+            return None
+        floats = _float_columns(left, right)
+        if agree(mode, view(_as_floats(left, floats), mode, 6), view(_as_floats(right, floats), mode, 6)):
+            return None
+        for order in _orders(data, rng):
+            runner.load(order)
+            again = runner.unoptimized()
+            if view(again[0], mode, digits) != view(left, mode, digits) or view(again[1], mode, digits) != view(right, mode, digits):
+                return None
+        from .ties import tie_dependent
+
+        if tie_dependent(runner, data):
+            return None
+    except QueryError:
+        return None
+    return left, right
+
+
 def _orders(data: Database, rng: random.Random) -> Iterator[Database]:
     """The same database with each table's rows reversed, rotated so each row comes first, and shuffled."""
 
@@ -1134,6 +1173,16 @@ def recheck(case: Case, *, budget: int = 3000, seconds: float = 240.0, seed: int
             record["dbs"] += 1
             outcome = compare(runner, data)
             if outcome.kind == "same":
+                if label != "random" and not label.startswith("exhaustive") or record["dbs"] % UNOPTIMIZED_EVERY == 0:
+                    hidden = masked(runner, data, rng)
+                    if hidden is not None:
+                        # Not ``differs``: the two plans disagree about the pair, so one of them is wrong. It is not
+                        # ``survived`` either; the pair needs a reading (docs/proof-recheck.md).
+                        record.update(
+                            verdict="masked", profile=label,
+                            witness={"database": database_json(data), "left": _rows(hidden[0]), "right": _rows(hidden[1])},
+                        )
+                        break
                 continue
             if outcome.kind == "load-error":
                 notes["load-error"] += 1

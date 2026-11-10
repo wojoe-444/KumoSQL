@@ -20,7 +20,8 @@ python tools/proof_recheck.py verieql --every 40 --budget 150 --seconds 30 --out
 - **Databases.** Exhaustive tiny databases (0 to 3 rows per table, each column drawn from NULL and two values, foreign keys from the parent's chosen rows); edge databases (all empty, each table empty in turn, all-NULL rows, doubled rows); and random databases whose profile varies (0 to 20 rows, NULL rates to 80%, duplicate-heavy rows, ties, values next to the queries' literals, boundary numbers such as 2^24+1 and 2^53+1, strings that differ in case, trailing spaces or Unicode case mapping, dates on month and year boundaries). Every database honours the declared keys, NOT NULL columns, foreign keys and `legal`.
 - **What counts as a difference.** The bags differ after floats are rounded to 9 significant digits; DuckDB's unoptimized plan returns the same results (DuckDB 1.5.6 has optimizer bugs); neither query changes when every table's rows are reversed, rotated or shuffled; and, for a query with `LIMIT` or `OFFSET`, the two queries still differ when every output column is added as the last `ORDER BY` key, ascending and descending (`recheck/ties.py`). A difference that only shows which of several tied rows an engine returned is `nondeterministic`; a `*` or an unparsable query is left alone. A difference that fails a check is counted in the record's `notes` (`optimizer`, `nondeterministic`, `float-noise`) and the pair still `survived`. The witness is shrunk row by row.
 - **Float noise.** A result that differs only in float digits is noise. So is an integer beside a double: DuckDB's `AVG` returns DOUBLE, so over one row the value 2^53+1 comes back as 2^53, where MySQL's exact decimal keeps it. The check reads integers in a column that holds a float on either side as doubles before comparing at 6 digits. Integers in columns without a float still compare exactly, so an integer-only difference is never hidden.
-- **Verdicts.** `survived`, `differs`, `not-proven` (the eval does not count the pair), `unrunnable` (an engine rejects both queries), `timeout` and `search-error`. Each record also lists order-sensitive constructs (`LIMIT`, `ANY_VALUE`, `DISTINCT ON`, `ROW_NUMBER`, unordered `ARRAY_AGG`).
+- **A difference the optimizer hides.** DuckDB's wrong rows can make two different queries agree as easily as they make two equal ones differ. Every edge database, and every fifth database after them, on which the optimized results agree is also run with the optimizer off (`engine.masked`). Results that differ only there, beyond float noise and for every row order, end the search with the verdict `masked`: one of the two plans is wrong, so the pair is neither a confirmed false proof nor a survivor and needs a reading.
+- **Verdicts.** `survived`, `differs`, `masked`, `not-proven` (the eval does not count the pair), `unrunnable` (an engine rejects both queries), `timeout` and `search-error`. Each record also lists order-sensitive constructs (`LIMIT`, `ANY_VALUE`, `DISTINCT ON`, `ROW_NUMBER`, unordered `ARRAY_AGG`).
 
 ## Adapters
 
@@ -70,7 +71,8 @@ python tools/recheck/singh_mysql.py singh --socket /tmp/mysql.sock --jobs 4 --ou
 - Held-out pairs run only to record verdicts. Never derive a fix from one; a forced fix is recorded as "tuned on test".
 - 0 wrong always; unknown beats wrong.
 - New search code goes in new modules under `tools/recheck/`. The tool does not edit `kumosql.result_equivalence`, the `kumosql.counterexample` searcher or `DatasetRunner`.
-- A difference counts only if DuckDB's unoptimized plan agrees and no query depends on row order.
+- A difference counts only if DuckDB's unoptimized plan agrees and no query depends on row order. Results that differ only with the optimizer off are `masked`, never `survived`.
+- A proof enters an eval's count through [proof admission](proof-admission.md), which runs this search on each new proof.
 
 ## What the runs found
 

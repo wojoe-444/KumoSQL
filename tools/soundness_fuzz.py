@@ -5,8 +5,9 @@ optional third table, declared keys, NOT NULL columns and foreign keys). The pai
 legal databases (seeded random ones, a NULL-heavy one, a duplicate-heavy one and an empty one) and handed to the
 public prover, ``kumosql.algebraic_equivalence.prove_equivalent_algebraic``, with the same schema, types and
 constraints. A **false proof** is a pair the prover proves while some database separates the results; the count
-must be 0. Every difference is re-run with DuckDB's optimizer off (``kumosql.duckdb_load.run_unoptimized``, see
-#347) and counts only when both runs show it.
+must be 0. Every database is run with DuckDB's optimizer on and off (``kumosql.duckdb_load.run_unoptimized``, see
+#347): a difference counts only when the unoptimized run shows it, and one the optimizer hides (the optimized
+results agree, the unoptimized ones do not) counts as well.
 
 Pairs come from three generators, mixed per seed:
 
@@ -425,7 +426,10 @@ def load_fixture(connection, case: dict) -> None:
 
 
 def execute(case: dict, options: dict) -> dict:
-    """Run both queries on every database of ``case``; a difference counts only when the unoptimized run agrees."""
+    """Run both queries on every database of ``case``, with DuckDB's optimizer on and off.
+
+    A difference counts only when the unoptimized run shows it. One that only the unoptimized run shows counts too
+    (``optimizer_masked_differences``): the optimizer made two different queries agree."""
 
     import duckdb
 
@@ -463,14 +467,20 @@ def execute(case: dict, options: dict) -> dict:
                     return {"execution": "skipped", "reason": "result row limit exceeded"}
                 results.append(rows)
             equal = bag(results[0]) == bag(results[1])
-            optimizer_only = False
-            if not equal:
-                plain = run_unoptimized(connection, *sqls)
-                if bag(plain[0]) == bag(plain[1]):
-                    equal, optimizer_only = True, True  # a DuckDB optimizer disagreement (#347) is not evidence
-                else:
-                    results = plain
-            observations.append({"name": dataset["name"], "equal_bags": equal, "optimizer_only_difference": optimizer_only, "left_rows": results[0], "right_rows": results[1]})
+            optimizer_only = masked = False
+            # Both plans run on every database: the optimizer's wrong rows can make two different queries agree as
+            # easily as they can make two equal ones differ, and a false proof must not hide behind the first.
+            plain = run_unoptimized(connection, *sqls)
+            plain_equal = bag(plain[0]) == bag(plain[1])
+            if not equal and plain_equal:
+                equal, optimizer_only = True, True  # a DuckDB optimizer disagreement (#347) is not evidence
+            elif not plain_equal:
+                masked = equal
+                equal, results = False, plain
+            observations.append({
+                "name": dataset["name"], "equal_bags": equal, "optimizer_only_difference": optimizer_only, "optimizer_masked_difference": masked,
+                "left_rows": results[0], "right_rows": results[1],
+            })
     except UnsupportedConversion as exc:
         return {"execution": "skipped", "reason": str(exc)}
     except duckdb.Error as exc:
@@ -488,6 +498,7 @@ def execute(case: dict, options: dict) -> dict:
         "left_rows": witness["left_rows"] if witness else None,
         "right_rows": witness["right_rows"] if witness else None,
         "optimizer_only_differences": sum(o["optimizer_only_difference"] for o in observations),
+        "optimizer_masked_differences": sum(o["optimizer_masked_difference"] for o in observations),
     }
 
 
