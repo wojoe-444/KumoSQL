@@ -445,7 +445,14 @@ def run_suite(name: str, prove, limit: int | None = None, trials: int = 60) -> S
 
 
 def default_prove(left: str, right: str, tables: dict[str, Table], constants: bool = False) -> bool:
-    return prove_result(left, right, tables, constants).proven
+    """Whether the prover proves the pair; answered from the verdict cache (``KUMOSQL_VERDICT_CACHE``) when the prover's source is unchanged."""
+
+    from kumosql import verdict_cache
+
+    if verdict_cache.folder() is None:
+        return prove_result(left, right, tables, constants).proven
+    payload = {"left": left, "right": right, "tables": [asdict(t) for t in sorted(tables.values(), key=lambda t: t.name)], "constants": constants}
+    return verdict_cache.cached_verdict("sqlsolver_bench.default_prove", payload, lambda: prove_result(left, right, tables, constants).proven)
 
 
 def prove_result(left: str, right: str, tables: dict[str, Table], constants: bool = False):

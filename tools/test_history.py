@@ -42,7 +42,7 @@ SHARED_DIR = Path("/mnt/project-files/test-history")
 ORDER_FILE = ROOT / "tests" / "order.json"
 SCHEMA = 3  # 2 added the times: cpu_seconds, test_seconds, test_cpu_seconds, file_seconds, slow_cpu, machine;
 # 3 times a slow test with its setup and teardown (2 timed the call only) and adds slow_setup
-SLOW_SECONDS = 3.0  # a test at least this slow (setup, call and teardown) is recorded with its duration and runs in the slow tier
+SLOW_SECONDS = 2.0  # a test at least this slow (setup, call and teardown) is recorded with its duration and runs in the slow tier
 USUALLY_FAST_SECONDS = 10.0  # a test slower than this stays in the slow tier even when it is slow in only some runs
 MASS_FAILURE = 20  # a run with this many failures is an environment problem, not a test that broke
 MESSAGE_CHARS = 200

@@ -28,6 +28,12 @@ Run the full default suite nightly and before releases. The GitHub workflow sche
 
 One measured Dell candidate took about 10.6 minutes for routine pytest checks versus 65 minutes for full pytest coverage: 83.7% less time. This saves time by changing how often expensive coverage runs. Actual prover improvements need separate before/after measurements. The full run had one subprocess-exit timeout that passed isolated rechecking; it was not a green full result. See the [full procedure](../docs/test-history.md#merge-testing-procedure).
 
+## The quick check on every pull request
+
+`python tools/run_tests.py --gate` is what GitHub runs on every pull request. It runs the fast tests only and must finish within five minutes; if it takes longer, it fails and lists the slowest tests so someone can move them out or make them smaller. The slow benchmark checks run every night instead and open an issue when one fails. Benchmark runs can also remember which query pairs the prover already proved (`--verdict-cache PATH`), so they re-prove only when the prover's own code changed. See the [full reference](../docs/test-history.md#the-pull-request-gate) for the details.
+
+The limit of the evidence: the gate shows that the fast tests and the small canaries still pass. It does not show that every benchmark score still holds; the nightly run does.
+
 ## Other useful runs
 
 | Command option | What runs |
@@ -35,7 +41,7 @@ One measured Dell candidate took about 10.6 minutes for routine pytest checks ve
 | No selection | The default suite, excluding tests marked slow |
 | `--evals` | Benchmark floor tests |
 | `--no-evals` | Tests other than benchmark floors |
-| `--quick` | Skips the slow tier (tests that usually take 3 seconds or more, or 10 seconds or more in any run); about 9,500 tests in a few minutes |
+| `--quick` | Skips the slow tier (tests that usually take 2 seconds or more, or 10 seconds or more in any run); about 9,500 tests in a few minutes |
 
 The recorder writes one JSON-lines file per run in the shared history directory when configured. Set `KUMOSQL_TEST_HISTORY` to choose the folder, or `off` to disable recording. An ordinary laptop checkout without a shared folder does not record it automatically.
 

@@ -17,6 +17,19 @@ On this Dell, the same compiled candidate `e684f16461`, four workers, took 635.6
 
 The merge operator must inspect relevant candidate evidence. GitHub branch protection presently does not enforce it; post-merge Dell monitoring is not pre-merge validation.
 
+## The pull-request gate
+
+`python tools/run_tests.py --gate` is the check every pull request and push runs on GitHub Actions ([roadmap](roadmap.md) step 2). It is the `--routine` profile (`--no-evals --quick`) held to a time budget: `--budget SECONDS` fails any run that takes longer, and `--gate` sets it to **300 seconds** (five minutes on four cores). When the budget is exceeded the run prints the slowest tests (everything over 2 seconds) and exits with code 3, so the gate cannot grow back unnoticed.
+
+What keeps it short:
+
+- **Nothing over about 2 seconds runs in the gate.** A test of 2 seconds or more (setup, call and teardown) is recorded in the slow tier of `tests/order.json`, and `--quick` skips that tier. Regenerate the file with `python tools/test_history.py order --write` in a pull request of its own when the history shows new slow tests.
+- **Benchmark floors do not run in the gate.** Files that declare `pytestmark = pytest.mark.eval` are the floors; the nightly run owns them and opens an issue when one fails.
+- **Canaries.** A change that breaks the wiring of a benchmark family is caught by its small canary test, which runs a few cases in seconds. A canary never claims the family's score.
+- **Cached proof verdicts.** The benchmark runs can remember a proof's yes or no in a folder (`--verdict-cache PATH`, or `KUMOSQL_VERDICT_CACHE`), keyed by the query pair, every option that changes the verdict, the library versions and a hash of the source of every module the provers import (`kumosql.verdict_cache.prover_modules`). A prover change is a miss for every pair, so a benchmark re-proves only when the prover changed. Only the verdict is stored, as JSON; a damaged file is a miss. The cache is off unless a folder is named, and only runners that need just the yes or no use it (`tools/sqlsolver_bench.default_prove`, which the SQLSolver, QED, R-Bot, mined Calcite and bounded suites call).
+
+The workflow in `.github/workflows/tests.yml` has two jobs: `gate` on pull requests and pushes, and `nightly` on the schedule and by hand, which runs the full default suite with the verdict cache and opens an issue when it fails. GitHub Actions has to be enabled for the repository for either to run, and the proposed wording for `CLAUDE.md` (benchmarks report and do not gate) waits for the repository owner.
+
 ## What is recorded
 
 `tests/conftest.py` installs the recorder from `tools/test_history.py`. After any `python tools/run_tests.py` or `python -m pytest` run it writes one JSON line to its own file under `runs/` in the history folder, so runs on different threads never collide. The folder is `$KUMOSQL_TEST_HISTORY`, or `/mnt/project-files/test-history` when `/mnt/project-files` exists; `KUMOSQL_TEST_HISTORY=off` turns recording off. Without a shared folder (a laptop checkout) nothing is written.
@@ -27,7 +40,7 @@ A record holds:
 - the **targets**: the tests the run was aiming at. They come from `--target PATH` (repeatable; `$KUMOSQL_TEST_TARGETS` for plain pytest), else the test files given on the command line, else the test files the branch added or changed against the master it branched from. A run with none of these has no targets and cannot be attributed;
 - the tests that failed, each marked as inside or outside the targets, with the first line of the message;
 - the run mode (`full`, `evals`, `no-evals` or `partial`), counts, library versions (sqlglot, sqlfluff, z3, DuckDB) and how many tests ran per file;
-- the times: the run's wall time (`seconds`) and CPU time across every worker (`cpu_seconds`, start-up and collection included), each file's wall and CPU seconds (`file_seconds`, setup to teardown, summed over its tests), their totals (`test_seconds`, `test_cpu_seconds`), and, for every test that took 3 seconds or more from setup to teardown, that duration (`slow`) and its CPU seconds (`slow_cpu`), and every setup of 3 seconds or more (`slow_setup`: a shared fixture built for that test). Records before version 3 timed the slow tests' call only;
+- the times: the run's wall time (`seconds`) and CPU time across every worker (`cpu_seconds`, start-up and collection included), each file's wall and CPU seconds (`file_seconds`, setup to teardown, summed over its tests), their totals (`test_seconds`, `test_cpu_seconds`), and, for every test that took 2 seconds or more from setup to teardown, that duration (`slow`) and its CPU seconds (`slow_cpu`), and every setup of 3 seconds or more (`slow_setup`: a shared fixture built for that test). Records before version 3 timed the slow tests' call only;
 - the machine: cores, processor, memory, operating system and whether sqlglot ran compiled or pure (no host or user names).
 
 CPU time counts every thread of a worker (DuckDB's too) and the child processes a test waited for, such as a benchmark's process pool. On Windows only the worker's own time is counted. Wall time depends on how busy the machine was; CPU time is the steadier measure of the work a test does, and the one to compare when a change is meant to make a test cheaper.
