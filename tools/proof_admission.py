@@ -141,7 +141,9 @@ def _prove(job: tuple) -> tuple[str, bool]:
     signal.signal(signal.SIGALRM, proof_recheck._alarm)
     signal.setitimer(signal.ITIMER_REAL, int(options["prove_seconds"]), 5)
     try:
-        return item["pair"], _adapters()[name].case(item) is not None
+        adapter = _adapters()[name]
+        counted = getattr(adapter, "counted", None)  # an eval that scores a proven pair as something else says so
+        return item["pair"], bool(counted(item)) if counted else adapter.case(item) is not None
     except Exception:
         return item["pair"], False
     finally:
@@ -171,6 +173,8 @@ def examine(name: str, item: dict, options: dict, adapter=None, search=None, pro
         return {**out, "verdict": "admitted", "how": "unrunnable"}
     if verdict != "survived":
         return {**out, "verdict": "unsettled", "why": f"executed search: {verdict} {record.get('error', '')}".strip()}
+    if (record.get("meta") or {}).get("eval_verdict", "equivalent") != "equivalent":
+        return {**out, "verdict": "not-proven"}  # proved here, but the eval itself does not count it (its own budget)
     if not getattr(adapter, "mutable", "") or item.get("held_out") or not options["per_pair"]:
         return {**out, "verdict": "admitted", "how": "searched"}
     mutant_options = {
