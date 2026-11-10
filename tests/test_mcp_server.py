@@ -58,12 +58,11 @@ def small(tmp_path_factory):
     return mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path_factory.mktemp("small"), SMALL))))
 
 
-@pytest.fixture(scope="module")
-def big():
-    """The 106-model public project, loaded and analysed once for the module (read-only)."""
+def load_big():
+    """The 106-model public project, analysed (about 2 s), read-only."""
 
     session = Session(load_sqlx_project(BIG))
-    session.records()  # the one slow step (about 2 s): analysing all 106 models
+    session.records()
     return mcp_server.AgentServer(session)
 
 
@@ -200,7 +199,7 @@ def test_describe_table_points_at_a_saved_data_profile(tmp_path):
     assert ask(server, "describe_table", table="raw")[0]["data_profile"] == "none saved"
 
 
-def test_describe_table_states_unknown_column_meanings_with_their_reason(big):
+def check_describe_table_states_unknown_column_meanings_with_their_reason(big):
     body, _, used = ask(big, "describe_table", table="csa_3_11_intermediary_stats")
     assert used <= BOUND and body["grain"] == ["day"]
     unknown = {item["what"]: item["reason"] for item in body["unknown"]}
@@ -223,7 +222,7 @@ def test_trace_column_says_where_rows_are_limited_once_per_model(small):
     assert "literals only" in body["answer"]
 
 
-def test_trace_column_reports_the_sources_of_a_real_source_and_what_it_could_not_follow(big):
+def check_trace_column_reports_the_sources_of_a_real_source_and_what_it_could_not_follow(big):
     body, _, used = ask(big, "trace_column", table="csa_3_11_intermediary_stats", column="day")
     assert used <= BOUND and body["sources"] == ["[LOGS_PROJECT_ID].[LOGS_DATASET_ID]._AllLogs.timestamp"]
     assert body["counts"]["models_passed"] == 1 and len(body["filters_by_model"]) == 2
@@ -306,7 +305,7 @@ def test_find_existing_needs_exactly_one_of_table_and_sql(small):
     assert ask(small, "find_existing")[1] and ask(small, "find_existing", table="raw", sql="SELECT 1")[1]
 
 
-def test_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big):
+def check_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big):
     """The overlap search used to return about 50 KB to say it compared 0 of 105 tables."""
 
     body, failed, used = ask(big, "find_existing", table="csa_3_11_intermediary_stats")
@@ -319,7 +318,7 @@ def test_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big):
 # ----------------------------------------------------------- bounded answers
 
 
-def test_every_default_answer_on_the_big_project_fits_the_bound(big):
+def check_every_default_answer_on_the_big_project_fits_the_bound(big):
     pipeline = big.session.pipeline()
     sizes: dict[str, list[int]] = {"describe_table": [], "trace_column": [], "impact": [], "find_existing": []}
     for number, key in enumerate(pipeline.models):
@@ -342,7 +341,7 @@ def test_every_default_answer_on_the_big_project_fits_the_bound(big):
         assert max(values) <= BOUND, (name, max(values))
 
 
-def test_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big):
+def check_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big):
     key = "csa_5_11_summary_daily"
     narrow, _, small_size = ask(big, "describe_table", table=key, max_bytes=mcp_answers.MIN_BYTES)
     assert small_size <= mcp_answers.MIN_BYTES and "more" in narrow and "columns_shown" in narrow
@@ -351,7 +350,7 @@ def test_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big):
     assert len(wide["columns"]) == wide["counts"]["columns"] and "more" not in wide and wide_size > small_size
 
 
-def test_offset_pages_the_main_list_without_repeating_it(big):
+def check_offset_pages_the_main_list_without_repeating_it(big):
     key = "csa_5_11_summary_daily"
     first, _, _ = ask(big, "describe_table", table=key)
     shown = len(first["columns"])
@@ -360,6 +359,18 @@ def test_offset_pages_the_main_list_without_repeating_it(big):
     assert second["columns_shown"].startswith(f"{shown + 1}-")
     wide, _, _ = ask(big, "describe_table", table=key, max_bytes=mcp_answers.MAX_BYTES)
     assert first["columns"] + second["columns"] == wide["columns"][: shown + len(second["columns"])]
+
+
+def test_the_big_project_answers_are_bounded_and_explicit():
+    """One test, so the project is analysed once per run, not once per xdist worker (the gate keeps tests under 2 s)."""
+
+    big = load_big()
+    check_describe_table_states_unknown_column_meanings_with_their_reason(big)
+    check_trace_column_reports_the_sources_of_a_real_source_and_what_it_could_not_follow(big)
+    check_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big)
+    check_every_default_answer_on_the_big_project_fits_the_bound(big)
+    check_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big)
+    check_offset_pages_the_main_list_without_repeating_it(big)
 
 
 def test_the_tools_neither_write_files_nor_open_connections(tmp_path, monkeypatch):
