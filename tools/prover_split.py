@@ -96,6 +96,21 @@ PROVER_DOCS = (
 )
 
 
+#: Generic files both repositories need: the scoreboard and eval-diff tools with their tests and docs, the docs
+#: checks, and the results-file format. They are copied (the history comes along), not moved.
+COPIED_FILES = (
+    "tools/scoreboard.py",
+    "tools/eval_diff.py",
+    "tests/test_scoreboard.py",
+    "tests/test_eval_diff.py",
+    "tests/test_docs.py",
+    "docs/evals/eval-diff.md",
+    "docs_simple/evals/eval-diff.md",
+    "benchmarks/README.md",
+    "docs_simple/benchmarks/README.md",
+)
+
+
 def module_index(source: Path, package: str) -> dict[str, Path]:
     """Dotted module name (relative to the package) -> file, for every module under ``source``."""
 
@@ -428,7 +443,7 @@ def filter_repo_paths(source: Path, package: str, repo: Path, new_package: str =
         lines.append(f"{path.relative_to(repo).as_posix()}==>src/{new_package}/{path.name}")
     lines += [f"tests/{name}" for name in found["tests"]] + ["tests/sqlglot_support.py"]
     tools_dir = repo / "tools"
-    for name in sorted(set(found["tools"]) | {"scoreboard"}):
+    for name in sorted(set(found["tools"])):
         lines.append(f"tools/{name}.py" if (tools_dir / f"{name}.py").exists() else f"tools/{name}")
     lines += [f"benchmarks/results/{name}" for name in found["results"]]
     for page in found["docs"]:
@@ -436,7 +451,7 @@ def filter_repo_paths(source: Path, package: str, repo: Path, new_package: str =
     for page in found["eval_pages"] + found["eval_pages_shared"]:
         lines += [f"docs/evals/{page}", f"docs_simple/evals/{page}"]
     lines += sorted(found["assets"])
-    lines.append("benchmarks/README.md")
+    lines += [f"{path}" for path in COPIED_FILES]
     return lines
 
 
