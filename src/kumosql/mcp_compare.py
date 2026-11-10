@@ -1,7 +1,7 @@
 """``compare_queries``: is my rewrite still the same query?
 
 The fast path of the equivalence prover behind one call: the structural and algebraic proof first (what
-``prove-sql-equivalent`` runs), then, when that does not settle it, the SMT prover with the columns, keys and NOT NULL
+``python -m kumosql prove-sql-equivalent`` runs), then, when that does not settle it, the SMT prover with the columns, keys and NOT NULL
 columns the project declares, which can also return a database on which the two queries differ. The answer is one of
 
 * ``equivalent``: proven; the assumptions the proof rests on are listed;

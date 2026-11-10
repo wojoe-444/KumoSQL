@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
-from .mcp_tools import explain, short_meaning
+from .mcp_tools import short_meaning
 
 CANDIDATES = 5
 _WORD = re.compile(r"[A-Za-z0-9]+")
