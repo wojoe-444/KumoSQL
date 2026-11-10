@@ -457,6 +457,11 @@ def test_list_tables_filters_and_sorts_whole_project_questions(small):
     assert "tables" not in body and body["counts"]["matches"] == 0 and body["next"]
 
 
+def test_list_tables_count_only_answers_how_many_without_the_lines(small):
+    body, failed, used = ask(small, "list_tables", max_readers=0, count_only=True)
+    assert not failed and "tables" not in body and body["counts"]["matches"] == 2 and used < 400
+
+
 def test_list_tables_refuses_an_unknown_kind_and_pages_with_offset(small):
     body, failed, _ = ask(small, "list_tables", kind="materialised")
     assert failed and "materialised" in body["error"] and "table, view" in body["next"][0]
@@ -863,8 +868,8 @@ def check_list_tables_answers_the_whole_graph_questions_of_the_field_trial(big):
     assert not failed and names(body) == expected["T04"]
     body, failed, used = ask(big, "list_tables", name_contains="_alert", min_reads=1, max_bytes=20000)
     assert not failed and names(body) == expected["T08"]
-    body, failed, used = ask(big, "list_tables", max_readers=0, max_bytes=20000)
-    assert not failed and body["counts"]["matches"] == expected["T05"]
+    body, failed, used = ask(big, "list_tables", max_readers=0, count_only=True)
+    assert not failed and body["counts"]["matches"] == expected["T05"] and used < 400
     for arguments in ({}, {"sort": "depth"}, {"max_readers": 0}, {"folder": "definitions/summary"}):
         body, failed, used = ask(big, "list_tables", **arguments)
         assert not failed and used <= BOUND and body["next"]
