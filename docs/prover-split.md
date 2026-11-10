@@ -23,7 +23,7 @@ python tools/prover_split.py --check    # exit 1 when the closure reaches a prod
 | What | Moved | Now |
 | --- | --- | --- |
 | Source modules | 125 modules, 56,479 lines | `src/kumo_sql_prover/` in the prover repository |
-| Test files | 146 of 375 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
+| Test files | 150 of 379 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
 | Benchmark runners (`tools/`) | 40 runners; the 8 only the prover uses are gone from here | `tools/` there. The other 32 are imported by KumoSQL's proof re-check (and a few by staying evals), so a copy stays here; see below |
 | Results files | 50 of 126 | `benchmarks/results/` there; the scoreboard of those evals is generated there |
 | Docs | 10 feature pages and 15 eval pages, each with its plain-language companion | `docs/` and `docs_simple/` there |
