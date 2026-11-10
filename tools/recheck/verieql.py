@@ -233,4 +233,21 @@ class VeriEQL(Adapter):
         )
 
 
-ADAPTERS = {a.name: a for a in [VeriEQL()]}
+class VeriEQLSuite(VeriEQL):
+    """One suite under the name of its results file (``benchmarks/results/verieql-<suite>-proof.json``), so that the
+    admission ledger (``tools/proof_admission.py``) can hold the proofs that row counts."""
+
+    def __init__(self, suite: str):
+        super().__init__((suite,))
+        self.name = f"verieql-{suite}-proof"
+
+    def counted(self, item: dict) -> bool:
+        """Whether the eval counts the pair as proven: the prover proves it, and the eval's own search finds no
+        difference first (a pair it refutes is scored as different, whatever the prover says) within its budget."""
+
+        case = self.case(item)
+        return case is not None and case.meta.get("eval_verdict") == "equivalent"
+
+
+# LeetCode has no suite adapter: its row is measured in hours and has no ledger.
+ADAPTERS = {a.name: a for a in [VeriEQL(), VeriEQLSuite("literature"), VeriEQLSuite("calcite")]}
