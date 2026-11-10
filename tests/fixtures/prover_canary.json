@@ -1,0 +1,1313 @@
+{
+ "families": {
+  "tpch": {
+   "tables": {
+    "nation": {
+     "columns": [
+      [
+       "n_nationkey",
+       "INT",
+       true
+      ],
+      [
+       "n_name",
+       "CHAR(25)",
+       true
+      ],
+      [
+       "n_regionkey",
+       "INT",
+       true
+      ],
+      [
+       "n_comment",
+       "VARCHAR(152)",
+       false
+      ]
+     ],
+     "primary_key": [
+      "n_nationkey"
+     ],
+     "unique": []
+    },
+    "part": {
+     "columns": [
+      [
+       "p_partkey",
+       "INT",
+       true
+      ],
+      [
+       "p_name",
+       "VARCHAR(55)",
+       true
+      ],
+      [
+       "p_mfgr",
+       "CHAR(25)",
+       true
+      ],
+      [
+       "p_brand",
+       "CHAR(10)",
+       true
+      ],
+      [
+       "p_type",
+       "VARCHAR(25)",
+       true
+      ],
+      [
+       "p_size",
+       "INT",
+       true
+      ],
+      [
+       "p_container",
+       "CHAR(10)",
+       true
+      ],
+      [
+       "p_retailprice",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "p_comment",
+       "VARCHAR(23)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "p_partkey"
+     ],
+     "unique": []
+    },
+    "customer": {
+     "columns": [
+      [
+       "c_custkey",
+       "INT",
+       true
+      ],
+      [
+       "c_name",
+       "VARCHAR(25)",
+       true
+      ],
+      [
+       "c_address",
+       "VARCHAR(40)",
+       true
+      ],
+      [
+       "c_nationkey",
+       "INT",
+       true
+      ],
+      [
+       "c_phone",
+       "CHAR(15)",
+       true
+      ],
+      [
+       "c_acctbal",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "c_mktsegment",
+       "CHAR(10)",
+       true
+      ],
+      [
+       "c_comment",
+       "VARCHAR(117)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "c_custkey"
+     ],
+     "unique": []
+    },
+    "orders": {
+     "columns": [
+      [
+       "o_orderkey",
+       "INT",
+       true
+      ],
+      [
+       "o_custkey",
+       "INT",
+       true
+      ],
+      [
+       "o_orderstatus",
+       "CHAR(1)",
+       true
+      ],
+      [
+       "o_totalprice",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "o_orderdate",
+       "DATE",
+       true
+      ],
+      [
+       "o_orderpriority",
+       "CHAR(15)",
+       true
+      ],
+      [
+       "o_clerk",
+       "CHAR(15)",
+       true
+      ],
+      [
+       "o_shippriority",
+       "INT",
+       true
+      ],
+      [
+       "o_comment",
+       "VARCHAR(79)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "o_orderkey"
+     ],
+     "unique": []
+    },
+    "lineitem": {
+     "columns": [
+      [
+       "l_orderkey",
+       "INT",
+       true
+      ],
+      [
+       "l_partkey",
+       "INT",
+       true
+      ],
+      [
+       "l_suppkey",
+       "INT",
+       true
+      ],
+      [
+       "l_linenumber",
+       "INT",
+       true
+      ],
+      [
+       "l_quantity",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "l_extendedprice",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "l_discount",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "l_tax",
+       "DECIMAL(15, 2)",
+       true
+      ],
+      [
+       "l_returnflag",
+       "CHAR(1)",
+       true
+      ],
+      [
+       "l_linestatus",
+       "CHAR(1)",
+       true
+      ],
+      [
+       "l_shipdate",
+       "DATE",
+       true
+      ],
+      [
+       "l_commitdate",
+       "DATE",
+       true
+      ],
+      [
+       "l_receiptdate",
+       "DATE",
+       true
+      ],
+      [
+       "l_shipinstruct",
+       "CHAR(25)",
+       true
+      ],
+      [
+       "l_shipmode",
+       "CHAR(10)",
+       true
+      ],
+      [
+       "l_comment",
+       "VARCHAR(44)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "l_orderkey",
+      "l_linenumber"
+     ],
+     "unique": []
+    }
+   },
+   "proven": [
+    {
+     "index": 2,
+     "left": "select l_orderkey,  sum(l_extendedprice * (1 - l_discount)) as revenue,  o_orderdate,  o_shippriority from customer,  orders,  lineitem where c_mktsegment = 'BUILDING'  and c_custkey = o_custkey  and l_orderkey = o_orderkey  and o_orderdate < date('1995-03-21 +08')  and l_shipdate > date('1995-03-21 +08') group by l_orderkey,  o_orderdate,  o_shippriority order by revenue desc,  o_orderdate limit 10",
+     "right": "select l_orderkey,  sum(l_extendedprice * (1 - l_discount)) as revenue,  o_orderdate,  o_shippriority from (select o_orderdate,  o_shippriority,  l_orderkey,  l_extendedprice,  l_discount  from (select o_orderkey,  o_orderdate,  o_shippriority  from (select c_custkey  from customer  where c_mktsegment IS NOT NULL and c_mktsegment = 'BUILDING' and c_custkey IS NOT NULL  ) as SC  join (select o_orderkey,  o_custkey,  o_orderdate,  o_shippriority  from orders  where o_orderdate IS NOT NULL AND o_orderdate < date('1995-03-21 +08') and o_custkey IS NOT NULL and o_orderkey IS NOT NULL  ) as SD  on SC.c_custkey = SD.o_custkey  ) as SA  join (select l_orderkey,  l_extendedprice,  l_discount  from lineitem  where l_shipdate IS NOT NULL and l_shipdate > date('1995-03-21 +08') and l_orderkey IS NOT NULL  ) as SB  on SB.l_orderkey = SA.o_orderkey  ) as T group by l_orderkey,  o_orderdate,  o_shippriority order by revenue desc,  o_orderdate limit 10",
+     "constants": false
+    },
+    {
+     "index": 3,
+     "left": "select o_orderpriority,  count(*) as order_count from orders where o_orderdate >= date('1994-09-01 +08')  and o_orderdate < date('1994-09-01 +08') + interval '3' month  and exists  (select *  from lineitem  where l_orderkey = o_orderkey  and l_commitdate < l_receiptdate ) group by o_orderpriority order by o_orderpriority",
+     "right": "select o_orderpriority,  count(*) as order_count from (select o_orderpriority  from (select o_orderkey,  o_orderpriority  from orders  where o_orderdate IS NOT NULL  and o_orderdate >= date('1994-09-01 +08')  and o_orderdate < date('1994-12-01 +08')  ) AS SB  left semi join (select l_orderkey  from lineitem  where l_commitdate IS NOT NULL  and l_receiptdate IS NOT NULL  and l_commitdate < l_receiptdate  ) AS SC  on SC.l_orderkey = SB.o_orderkey  ) AS SA group by o_orderpriority order by o_orderpriority",
+     "constants": false
+    },
+    {
+     "index": 5,
+     "left": "select sum(l_extendedprice * l_discount) as revenue from lineitem where l_shipdate >= date('1994-01-01 +08')  and l_shipdate < date('1994-01-01 +08') + interval '1' year  and l_discount between 0.06 - 0.01 and 0.06 + 0.01  and l_quantity < 24",
+     "right": "select sum(l_extendedprice * l_discount) as revenue from (select l_extendedprice,  l_discount  from lineitem  where l_shipdate IS NOT NULL   and l_discount IS NOT NULL  and l_quantity IS NOT NULL  and l_shipdate >= date('1994-01-01 +08')  and l_shipdate < date('1995-01-01 +08')  and l_discount >= 0.05  and l_discount <= 0.07  and l_quantity < 24  ) as SA",
+     "constants": false
+    },
+    {
+     "index": 9,
+     "left": "select c_custkey,  c_name,  sum(l_extendedprice * (1 - l_discount)) as revenue,  c_acctbal,  n_name,  c_address,  c_phone,  c_comment from customer,  orders,  lineitem,  nation where c_custkey = o_custkey  and l_orderkey = o_orderkey  and o_orderdate >= date('1994-09-01 +08')  and o_orderdate < date('1994-09-01 +08') + interval '3' month  and l_returnflag = 'R'  and c_nationkey = n_nationkey group by c_custkey,  c_name,  c_acctbal,  c_phone,  n_name,  c_address,  c_comment order by revenue desc limit 20",
+     "right": "select c_custkey,  c_name,  sum(l_extendedprice * (1 - l_discount)) as revenue,  c_acctbal,  n_name,  c_address,  c_phone,  c_comment from (select c_custkey,  c_name,  c_address,  c_phone,  c_acctbal,  c_comment,  l_extendedprice,  l_discount,  n_name  from (select c_custkey,  c_name,  c_address,  c_nationkey,  c_phone,  c_acctbal,  c_comment,  l_extendedprice,  l_discount  from (select c_custkey,  c_name,  c_address,  c_nationkey,  c_phone,  c_acctbal,  c_comment,  o_orderkey  from (select c_custkey,  c_name,  c_address,  c_nationkey,  c_phone,  c_acctbal,  c_comment  from customer  where c_custkey IS NOT NULL and c_nationkey IS NOT NULL  ) AS SF  join (select o_orderkey,  o_custkey  from orders  where o_orderdate IS NOT NULL and o_orderdate >= date('1994-09-01 +08') and o_orderdate < date('1994-12-01 +08')  and o_custkey IS NOT NULL and o_orderkey IS NOT NULL  ) AS SG  on SF.c_custkey = SG.o_custkey  ) as SD  join (select l_orderkey,  l_extendedprice,  l_discount  from lineitem  where l_returnflag IS NOT NULL and l_returnflag = 'R' and l_orderkey IS NOT NULL  ) as SE  on SE.l_orderkey = SD.o_orderkey  ) as SB  join (select n_nationkey,  n_name  from nation  where n_nationkey IS NOT NULL  ) as SC  on SB.c_nationkey = SC.n_nationkey  ) as SA group by c_custkey,  c_name,  c_acctbal,  c_phone,  n_name,  c_address,  c_comment order by revenue desc limit 20",
+     "constants": false
+    },
+    {
+     "index": 12,
+     "left": "SELECT  c_count,  COUNT(*) AS custdist FROM  (  SELECT  c_custkey,  COUNT(o_orderkey) AS c_count  FROM  customer  LEFT OUTER JOIN  orders  ON c_custkey = o_custkey  AND o_comment NOT LIKE '%unusual%accounts%'  GROUP BY  c_custkey  )  AS c_orders GROUP BY  c_count ORDER BY  custdist DESC,  c_count DESC",
+     "right": "SELECT c_count,  COUNT(*) AS custdist FROM  (SELECT c_custkey,  COUNT(o_orderkey) AS c_count  FROM (SELECT c_custkey,  o_orderkey  FROM (SELECT c_custkey  FROM customer  ) AS SB  LEFT OUTER JOIN (SELECT o_orderkey,  o_custkey  FROM orders  WHERE o_comment IS NOT NULL AND o_comment NOT LIKE '%unusual%accounts%' and o_custkey IS NOT NULL  ) AS SC   ON SB.c_custkey = SC.o_custkey  ) AS SA  GROUP BY c_custkey  ) AS c_orders GROUP BY c_count ORDER BY custdist DESC,  c_count DESC",
+     "constants": false
+    },
+    {
+     "index": 13,
+     "left": "select 100.00 * sum(case  when p_type like 'PROMO%' then l_extendedprice * (1 - l_discount)  else 0  end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue from lineitem,  part where l_partkey = p_partkey  and l_shipdate >= date('1997-01-01 +08')  and l_shipdate < date('1997-01-01 +08') + interval '1' month",
+     "right": "select 100.00 * sum(case  when p_type like 'PROMO%' then l_extendedprice * (1 - l_discount)  else 0  end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue from (select l_extendedprice,  l_discount,  p_type  from (select l_partkey,  l_extendedprice,  l_discount  from lineitem  where l_shipdate IS NOT NULL and l_shipdate >= date('1997-01-01 +08') and l_shipdate < date('1997-02-01 +08')  and l_partkey IS NOT NULL  ) as SB  join (select p_partkey,  p_type  from part  where p_partkey IS NOT NULL  ) as SC  on SB.l_partkey = SC.p_partkey  ) AS SA",
+     "constants": false
+    },
+    {
+     "index": 15,
+     "left": "SELECT  SUM(l_extendedprice) / 7.0 AS avg_yearly FROM  lineitem,  part WHERE  p_partkey = l_partkey  AND p_brand = 'Brand#25'  AND p_container = 'WRAP PACK'  AND l_quantity < (  SELECT  0.2 * AVG(l_quantity)  FROM  lineitem  WHERE  l_partkey = p_partkey )",
+     "right": "SELECT SUM(l_extendedprice) / 7.0 AS avg_yearly FROM ( SELECT l_extendedprice FROM ( SELECT l_quantity, l_extendedprice, p_partkey FROM ( SELECT l_partkey, l_quantity, l_extendedprice FROM lineitem WHERE l_partkey IS NOT NULL AND l_quantity IS NOT NULL ) AS t3 INNER JOIN ( SELECT p_partkey FROM part WHERE ((p_brand IS NOT NULL AND p_container IS NOT NULL) AND ((p_brand = 'Brand#25') AND (p_container = 'WRAP PACK'))) AND p_partkey IS NOT NULL ) AS t4 ON p_partkey = l_partkey ) AS t1 INNER JOIN ( SELECT * FROM ( SELECT 0.2 * avg(l_quantity) AS pa, l_partkey FROM ( SELECT l_partkey, l_quantity FROM lineitem WHERE l_partkey IS NOT NULL ) AS t6 GROUP BY l_partkey ) AS t5 WHERE pa IS NOT NULL ) AS t2 ON (cast(l_quantity as decimal(21,7)) < pa) AND (l_partkey = p_partkey) ) AS t0",
+     "constants": false
+    },
+    {
+     "index": 19,
+     "left": "select cntrycode, count(*) as numcust, sum(c_acctbal) as totacctbal from ( select substring(c_phone from 1 for 2) as cntrycode, c_acctbal from customer where substring(c_phone from 1 for 2) in ('13', '10', '23', '21', '19', '34', '32') and c_acctbal > ( select avg(c_acctbal) from customer where c_acctbal > 0.00 and substring(c_phone from 1 for 2) in ('13', '10', '23', '21', '19', '34', '32') ) and not exists ( select * from orders where o_custkey = c_custkey ) ) as custsale group by cntrycode order by cntrycode",
+     "right": "SELECT cntrycode, count(1) AS numcust, sum(c_acctbal) AS totacctbal FROM ( SELECT substring(c_phone, 1, 2) AS cntrycode, c_acctbal FROM ( SELECT c_custkey, c_phone, c_acctbal FROM customer WHERE c_acctbal IS NOT NULL AND (substring(c_phone from 1 for 2) IN ('13', '10', '23', '21', '19', '34', '32')) AND c_acctbal > ( SELECT avg(c_acctbal) FROM ( SELECT c_acctbal FROM customer WHERE c_acctbal IS NOT NULL AND ((c_acctbal > 0.00) AND substring(c_phone from 1 for 2) IN ('13', '10', '23', '21', '19', '34', '32')) ) AS t2 ) ) AS t1 LEFT ANTI JOIN ( SELECT o_custkey FROM orders ) AS t3 ON o_custkey = c_custkey ) AS t0 GROUP BY cntrycode ORDER BY cntrycode",
+     "constants": false
+    }
+   ],
+   "must_not_prove": []
+  },
+  "calcite": {
+   "tables": {
+    "dept": {
+     "columns": [
+      [
+       "deptno",
+       "INT",
+       true
+      ],
+      [
+       "name",
+       "VARCHAR(10)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "deptno"
+     ],
+     "unique": []
+    },
+    "emp": {
+     "columns": [
+      [
+       "empno",
+       "INT",
+       true
+      ],
+      [
+       "ename",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "job",
+       "VARCHAR(10)",
+       true
+      ],
+      [
+       "mgr",
+       "INT",
+       false
+      ],
+      [
+       "hiredate",
+       "INT",
+       true
+      ],
+      [
+       "sal",
+       "INT",
+       true
+      ],
+      [
+       "comm",
+       "INT",
+       true
+      ],
+      [
+       "deptno",
+       "INT",
+       true
+      ],
+      [
+       "slacker",
+       "TINYINT",
+       false
+      ]
+     ],
+     "primary_key": [
+      "empno"
+     ],
+     "unique": []
+    }
+   },
+   "proven": [
+    {
+     "index": 0,
+     "left": "SELECT UNIX_TIMESTAMP('12:34:56') FROM EMP AS EMP",
+     "right": "SELECT UNIX_TIMESTAMP('12:34:56') FROM EMP AS EMP0",
+     "constants": true
+    },
+    {
+     "index": 2,
+     "left": "SELECT R.Z + R.X FROM ( SELECT U.X + U.Y AS Z, U.X FROM ( SELECT * FROM (VALUES (10, 1), (30, 3)) AS T(X, Y) WHERE X + Y > 50) AS U) AS R",
+     "right": "SELECT * FROM (VALUES (NULL)) AS t(EXPR$0) WHERE 1 = 0",
+     "constants": true
+    },
+    {
+     "index": 3,
+     "left": "SELECT * FROM ( SELECT * FROM (VALUES (10, 1), (30, 3)) AS T(X, Y) UNION ALL SELECT * FROM (VALUES (20, 2)) ) AS R WHERE X + Y > 30",
+     "right": "SELECT * FROM (VALUES (30, 3)) AS T(X, Y)",
+     "constants": true
+    },
+    {
+     "index": 4,
+     "left": "SELECT DEPT.DEPTNO, DEPT.DEPTNO AS DEPTNO0 FROM DEPT AS DEPT ORDER BY DEPT.DEPTNO LIMIT 10000 OFFSET 1",
+     "right": "SELECT DEPTNO, DEPTNO AS DEPTNO0 FROM (SELECT * FROM DEPT ORDER BY DEPTNO LIMIT 10000 OFFSET 1) t0 ORDER BY DEPTNO",
+     "constants": true
+    },
+    {
+     "index": 5,
+     "left": "SELECT DEPT.DEPTNO, DEPT.DEPTNO AS DEPTNO0 FROM DEPT AS DEPT ORDER BY DEPT.DEPTNO LIMIT 10000 OFFSET 1",
+     "right": "SELECT DEPTNO, DEPTNO AS DEPTNO0 FROM (SELECT * FROM DEPT ORDER BY DEPTNO LIMIT 10000 OFFSET 1) t0 ORDER BY DEPTNO",
+     "constants": true
+    },
+    {
+     "index": 6,
+     "left": "SELECT DEPT.DEPTNO, DEPT.DEPTNO FROM DEPT AS DEPT ORDER BY DEPT.DEPTNO LIMIT 10000 OFFSET 1",
+     "right": "SELECT DEPT0.DEPTNO, DEPT0.DEPTNO FROM DEPT AS DEPT0 ORDER BY DEPT0.DEPTNO LIMIT 10000 OFFSET 1",
+     "constants": true
+    },
+    {
+     "index": 7,
+     "left": "SELECT * FROM EMP AS EMP WHERE EMP.DEPTNO = 7 AND EMP.EMPNO = 10 AND EMP.MGR IS NULL AND EMP.EMPNO = 10",
+     "right": "SELECT 10 AS EMPNO, EMP0.ENAME, EMP0.JOB, NULL AS MGR, EMP0.HIREDATE, EMP0.SAL, EMP0.COMM, 7 AS DEPTNO, EMP0.SLACKER FROM EMP AS EMP0 WHERE EMP0.DEPTNO = 7 AND EMP0.MGR IS NULL AND EMP0.EMPNO = 10",
+     "constants": true
+    },
+    {
+     "index": 8,
+     "left": "SELECT * FROM EMP AS EMP WHERE EMP.EMPNO + 10 / 2 = 13",
+     "right": "SELECT * FROM EMP AS EMP0 WHERE EMP0.EMPNO + 5 = 13",
+     "constants": true
+    },
+    {
+     "index": 10,
+     "left": "SELECT t.ENAME, COUNT(t.MGR) FROM (SELECT * FROM EMP AS EMP UNION ALL SELECT * FROM EMP AS EMP0) AS t GROUP BY t.ENAME",
+     "right": "SELECT t6.ENAME, SUM(sum1) FROM (SELECT EMP1.ENAME, COUNT(EMP1.MGR) as sum1 FROM EMP AS EMP1 GROUP BY EMP1.ENAME UNION ALL SELECT EMP2.ENAME, COUNT(EMP2.MGR) FROM EMP AS EMP2 GROUP BY EMP2.ENAME) AS t6 GROUP BY t6.ENAME",
+     "constants": true
+    },
+    {
+     "index": 11,
+     "left": "SELECT COUNT(*), SUM(EMPNO) FROM EMP WHERE FALSE",
+     "right": "SELECT * FROM (VALUES (0, NULL)) AS t(EXPR$0, EXPR$1)",
+     "constants": true
+    },
+    {
+     "index": 12,
+     "left": "SELECT 4, 2 + 3, MAX(5) FROM EMP AS EMP GROUP BY 4, 2 + 3",
+     "right": "SELECT 4, 2 + 3, MAX(5) FROM EMP AS EMP0 GROUP BY 4",
+     "constants": true
+    },
+    {
+     "index": 13,
+     "left": "SELECT A + B AS X, B, A FROM (VALUES (10, 1), (30, 7), (20, 3)) AS T(A, B) WHERE A - B < 21",
+     "right": "SELECT * FROM (VALUES (11, 1, 10), (23, 3, 20)) AS t(X, B, A)",
+     "constants": true
+    },
+    {
+     "index": 14,
+     "left": "SELECT * FROM (SELECT * FROM EMP AS EMP WHERE EMP.DEPTNO = 10 EXCEPT SELECT * FROM EMP AS EMP0 WHERE EMP0.DEPTNO = 20) AS t1 EXCEPT SELECT * FROM EMP AS EMP1 WHERE EMP1.DEPTNO = 30",
+     "right": "SELECT * FROM EMP AS EMP2 WHERE EMP2.DEPTNO = 10 EXCEPT SELECT * FROM EMP AS EMP3 WHERE EMP3.DEPTNO = 20 EXCEPT SELECT * FROM EMP AS EMP4 WHERE EMP4.DEPTNO = 30",
+     "constants": true
+    },
+    {
+     "index": 15,
+     "left": "SELECT * FROM EMP AS EMP WHERE EXISTS (SELECT * FROM EMP AS EMP0 WHERE EMP.DEPTNO = EMP0.DEPTNO) AND NOT EXISTS (SELECT * FROM EMP AS EMP1 WHERE EMP1.JOB = EMP.JOB AND EMP1.SAL = 34)",
+     "right": "SELECT EMP2.EMPNO, EMP2.ENAME, EMP2.JOB, EMP2.MGR, EMP2.HIREDATE, EMP2.SAL, EMP2.COMM, EMP2.DEPTNO, EMP2.SLACKER FROM EMP AS EMP2 INNER JOIN (SELECT EMP3.DEPTNO, 1 AS $f1 FROM EMP AS EMP3 GROUP BY EMP3.DEPTNO) AS t5 ON EMP2.DEPTNO = t5.DEPTNO LEFT JOIN (SELECT EMP4.JOB, 1 AS $f1 FROM EMP AS EMP4 WHERE EMP4.SAL = 34 GROUP BY EMP4.JOB) AS t10 ON EMP2.JOB = t10.JOB WHERE t10.$f1 IS NULL",
+     "constants": true
+    }
+   ],
+   "must_not_prove": []
+  },
+  "tpcc": {
+   "tables": {
+    "warehouse": {
+     "columns": [
+      [
+       "w_id",
+       "INT",
+       true
+      ],
+      [
+       "w_ytd",
+       "DECIMAL(12, 2)",
+       true
+      ],
+      [
+       "w_tax",
+       "DECIMAL(4, 4)",
+       true
+      ],
+      [
+       "w_name",
+       "VARCHAR(10)",
+       true
+      ],
+      [
+       "w_street_1",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "w_street_2",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "w_city",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "w_state",
+       "CHAR(2)",
+       true
+      ],
+      [
+       "w_zip",
+       "CHAR(9)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "w_id"
+     ],
+     "unique": []
+    },
+    "item": {
+     "columns": [
+      [
+       "i_id",
+       "INT",
+       true
+      ],
+      [
+       "i_name",
+       "VARCHAR(24)",
+       true
+      ],
+      [
+       "i_price",
+       "DECIMAL(5, 2)",
+       true
+      ],
+      [
+       "i_data",
+       "VARCHAR(50)",
+       true
+      ],
+      [
+       "i_im_id",
+       "INT",
+       true
+      ]
+     ],
+     "primary_key": [
+      "i_id"
+     ],
+     "unique": []
+    },
+    "stock": {
+     "columns": [
+      [
+       "s_w_id",
+       "INT",
+       true
+      ],
+      [
+       "s_i_id",
+       "INT",
+       true
+      ],
+      [
+       "s_quantity",
+       "INT",
+       true
+      ],
+      [
+       "s_ytd",
+       "DECIMAL(8, 2)",
+       true
+      ],
+      [
+       "s_order_cnt",
+       "INT",
+       true
+      ],
+      [
+       "s_remote_cnt",
+       "INT",
+       true
+      ],
+      [
+       "s_data",
+       "VARCHAR(50)",
+       true
+      ],
+      [
+       "s_dist_01",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_02",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_03",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_04",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_05",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_06",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_07",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_08",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_09",
+       "CHAR(24)",
+       true
+      ],
+      [
+       "s_dist_10",
+       "CHAR(24)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "s_w_id",
+      "s_i_id"
+     ],
+     "unique": []
+    },
+    "district": {
+     "columns": [
+      [
+       "d_w_id",
+       "INT",
+       true
+      ],
+      [
+       "d_id",
+       "INT",
+       true
+      ],
+      [
+       "d_ytd",
+       "DECIMAL(12, 2)",
+       true
+      ],
+      [
+       "d_tax",
+       "DECIMAL(4, 4)",
+       true
+      ],
+      [
+       "d_next_o_id",
+       "INT",
+       true
+      ],
+      [
+       "d_name",
+       "VARCHAR(10)",
+       true
+      ],
+      [
+       "d_street_1",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "d_street_2",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "d_city",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "d_state",
+       "CHAR(2)",
+       true
+      ],
+      [
+       "d_zip",
+       "CHAR(9)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "d_w_id",
+      "d_id"
+     ],
+     "unique": []
+    },
+    "customer": {
+     "columns": [
+      [
+       "c_w_id",
+       "INT",
+       true
+      ],
+      [
+       "c_d_id",
+       "INT",
+       true
+      ],
+      [
+       "c_id",
+       "INT",
+       true
+      ],
+      [
+       "c_discount",
+       "DECIMAL(4, 4)",
+       true
+      ],
+      [
+       "c_credit",
+       "CHAR(2)",
+       true
+      ],
+      [
+       "c_last",
+       "VARCHAR(16)",
+       true
+      ],
+      [
+       "c_first",
+       "VARCHAR(16)",
+       true
+      ],
+      [
+       "c_credit_lim",
+       "DECIMAL(12, 2)",
+       true
+      ],
+      [
+       "c_balance",
+       "DECIMAL(12, 2)",
+       true
+      ],
+      [
+       "c_ytd_payment",
+       "FLOAT",
+       true
+      ],
+      [
+       "c_payment_cnt",
+       "INT",
+       true
+      ],
+      [
+       "c_delivery_cnt",
+       "INT",
+       true
+      ],
+      [
+       "c_street_1",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "c_street_2",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "c_city",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "c_state",
+       "CHAR(2)",
+       true
+      ],
+      [
+       "c_zip",
+       "CHAR(9)",
+       true
+      ],
+      [
+       "c_phone",
+       "CHAR(16)",
+       true
+      ],
+      [
+       "c_since",
+       "TIMESTAMP",
+       true
+      ],
+      [
+       "c_middle",
+       "CHAR(2)",
+       true
+      ],
+      [
+       "c_data",
+       "VARCHAR(500)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "c_w_id",
+      "c_d_id",
+      "c_id"
+     ],
+     "unique": []
+    },
+    "oorder": {
+     "columns": [
+      [
+       "o_w_id",
+       "INT",
+       true
+      ],
+      [
+       "o_d_id",
+       "INT",
+       true
+      ],
+      [
+       "o_id",
+       "INT",
+       true
+      ],
+      [
+       "o_c_id",
+       "INT",
+       true
+      ],
+      [
+       "o_carrier_id",
+       "INT",
+       false
+      ],
+      [
+       "o_ol_cnt",
+       "INT",
+       true
+      ],
+      [
+       "o_all_local",
+       "INT",
+       true
+      ],
+      [
+       "o_entry_d",
+       "TIMESTAMP",
+       true
+      ]
+     ],
+     "primary_key": [
+      "o_w_id",
+      "o_d_id",
+      "o_id"
+     ],
+     "unique": [
+      [
+       "o_w_id",
+       "o_d_id",
+       "o_c_id",
+       "o_id"
+      ]
+     ]
+    },
+    "order_line": {
+     "columns": [
+      [
+       "ol_w_id",
+       "INT",
+       true
+      ],
+      [
+       "ol_d_id",
+       "INT",
+       true
+      ],
+      [
+       "ol_o_id",
+       "INT",
+       true
+      ],
+      [
+       "ol_number",
+       "INT",
+       true
+      ],
+      [
+       "ol_i_id",
+       "INT",
+       true
+      ],
+      [
+       "ol_delivery_d",
+       "TIMESTAMP",
+       false
+      ],
+      [
+       "ol_amount",
+       "DECIMAL(6, 2)",
+       true
+      ],
+      [
+       "ol_supply_w_id",
+       "INT",
+       true
+      ],
+      [
+       "ol_quantity",
+       "INT",
+       true
+      ],
+      [
+       "ol_dist_info",
+       "CHAR(24)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "ol_w_id",
+      "ol_d_id",
+      "ol_o_id",
+      "ol_number"
+     ],
+     "unique": []
+    }
+   },
+   "proven": [
+    {
+     "index": 0,
+     "left": "SELECT W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_NAME  FROM warehouse  WHERE W_ID = 1",
+     "right": "SELECT W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_NAME  FROM warehouse  WHERE W_ID = 1 AND W_ID IS NOT NULL",
+     "constants": false
+    },
+    {
+     "index": 1,
+     "left": "SELECT D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_NAME  FROM district  WHERE D_W_ID = 1  AND D_ID = 2",
+     "right": "SELECT D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_NAME  FROM district  WHERE (D_W_ID = 1  AND D_ID = 2) AND (D_W_ID IS NOT NULL AND D_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 2,
+     "left": "SELECT C_FIRST, C_MIDDLE, C_ID, C_STREET_1, C_STREET_2, C_CITY,  C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,  C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE C_W_ID = 1  AND C_D_ID = 2  AND C_LAST = 'ABLEANTIEING'  ORDER BY C_FIRST",
+     "right": "SELECT C_FIRST, C_MIDDLE, C_ID, C_STREET_1, C_STREET_2, C_CITY,  C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM, C_DISCOUNT,  C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE (C_W_ID = 1  AND C_D_ID = 2  AND C_LAST = 'ABLEANTIEING') AND (C_W_ID IS NOT NULL AND C_D_ID IS NOT NULL AND C_LAST IS NOT NULL)  ORDER BY C_FIRST",
+     "constants": false
+    },
+    {
+     "index": 3,
+     "left": "SELECT C_DATA  FROM customer  WHERE C_W_ID = 1  AND C_D_ID = 2  AND C_ID = 270",
+     "right": "SELECT C_DATA  FROM customer  WHERE (C_W_ID = 1  AND C_D_ID = 2  AND C_ID = 270) AND (C_W_ID IS NOT NULL AND C_D_ID IS NOT NULL AND C_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 4,
+     "left": "SELECT C_DISCOUNT, C_LAST, C_CREDIT  FROM customer  WHERE C_W_ID = 1  AND C_D_ID = 9  AND C_ID = 162",
+     "right": "SELECT C_DISCOUNT, C_LAST, C_CREDIT  FROM customer  WHERE (C_W_ID = 1  AND C_D_ID = 9  AND C_ID = 162) AND (C_W_ID IS NOT NULL AND C_D_ID IS NOT NULL AND C_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 5,
+     "left": "SELECT W_TAX  FROM warehouse  WHERE W_ID = 1",
+     "right": "SELECT W_TAX  FROM warehouse  WHERE W_ID = 1 AND W_ID IS NOT NULL",
+     "constants": false
+    },
+    {
+     "index": 6,
+     "left": "SELECT D_NEXT_O_ID, D_TAX  FROM district  WHERE D_W_ID = 1 AND D_ID = 9",
+     "right": "SELECT D_NEXT_O_ID, D_TAX  FROM district  WHERE (D_W_ID = 1 AND D_ID = 9) AND (D_W_ID IS NOT NULL AND D_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 7,
+     "left": "SELECT I_PRICE, I_NAME , I_DATA  FROM item  WHERE I_ID = 95719",
+     "right": "SELECT I_PRICE, I_NAME , I_DATA  FROM item  WHERE I_ID = 95719 AND I_ID IS NOT NULL",
+     "constants": false
+    },
+    {
+     "index": 8,
+     "left": "SELECT S_QUANTITY, S_DATA, S_DIST_01, S_DIST_02, S_DIST_03, S_DIST_04, S_DIST_05,  S_DIST_06, S_DIST_07, S_DIST_08, S_DIST_09, S_DIST_10  FROM stock  WHERE S_I_ID = 95719  AND S_W_ID = 1",
+     "right": "SELECT S_QUANTITY, S_DATA, S_DIST_01, S_DIST_02, S_DIST_03, S_DIST_04, S_DIST_05,  S_DIST_06, S_DIST_07, S_DIST_08, S_DIST_09, S_DIST_10  FROM stock  WHERE (S_I_ID = 95719  AND S_W_ID = 1) AND (S_I_ID IS NOT NULL AND S_W_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 9,
+     "left": "SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2,  C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM,  C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE C_W_ID = 1  AND C_D_ID = 4  AND C_ID = 897",
+     "right": "SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2,  C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM,  C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE (C_W_ID = 1  AND C_D_ID = 4  AND C_ID = 897) AND (C_W_ID IS NOT NULL AND C_D_ID IS NOT NULL AND C_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 10,
+     "left": "SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2,  C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM,  C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE C_W_ID = 1  AND C_D_ID = 10  AND C_ID = 2131",
+     "right": "SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2,  C_CITY, C_STATE, C_ZIP, C_PHONE, C_CREDIT, C_CREDIT_LIM,  C_DISCOUNT, C_BALANCE, C_YTD_PAYMENT, C_PAYMENT_CNT, C_SINCE  FROM customer  WHERE (C_W_ID = 1  AND C_D_ID = 10  AND C_ID = 2131) AND (C_W_ID IS NOT NULL AND C_D_ID IS NOT NULL AND C_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 11,
+     "left": "SELECT O_ID, O_CARRIER_ID, O_ENTRY_D  FROM oorder  WHERE O_W_ID = 1  AND O_D_ID = 10  AND O_C_ID = 2131  ORDER BY O_ID DESC LIMIT 1",
+     "right": "SELECT O_ID, O_CARRIER_ID, O_ENTRY_D  FROM oorder  WHERE (O_W_ID = 1  AND O_D_ID = 10  AND O_C_ID = 2131) AND (O_W_ID IS NOT NULL AND O_D_ID IS NOT NULL AND O_C_ID IS NOT NULL)  ORDER BY O_ID DESC LIMIT 1",
+     "constants": false
+    },
+    {
+     "index": 12,
+     "left": "SELECT OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D  FROM order_line  WHERE OL_O_ID = 2174  AND OL_D_ID = 10  AND OL_W_ID = 1",
+     "right": "SELECT OL_I_ID, OL_SUPPLY_W_ID, OL_QUANTITY, OL_AMOUNT, OL_DELIVERY_D  FROM order_line  WHERE (OL_O_ID = 2174  AND OL_D_ID = 10  AND OL_W_ID = 1) AND (OL_O_ID IS NOT NULL  AND OL_D_ID IS NOT NULL  AND OL_W_ID IS NOT NULL)",
+     "constants": false
+    },
+    {
+     "index": 13,
+     "left": "SELECT D_NEXT_O_ID  FROM district  WHERE D_W_ID = 1  AND D_ID = 9",
+     "right": "SELECT D_NEXT_O_ID  FROM district  WHERE (D_W_ID = 1  AND D_ID = 9) AND (D_W_ID IS NOT NULL AND D_ID IS NOT NULL)",
+     "constants": false
+    }
+   ],
+   "must_not_prove": []
+  },
+  "spark": {
+   "tables": {
+    "dept": {
+     "columns": [
+      [
+       "deptno",
+       "INT",
+       true
+      ],
+      [
+       "name",
+       "VARCHAR(10)",
+       true
+      ]
+     ],
+     "primary_key": [
+      "deptno"
+     ],
+     "unique": []
+    },
+    "emp": {
+     "columns": [
+      [
+       "empno",
+       "INT",
+       true
+      ],
+      [
+       "ename",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "job",
+       "VARCHAR(10)",
+       true
+      ],
+      [
+       "mgr",
+       "INT",
+       false
+      ],
+      [
+       "hiredate",
+       "INT",
+       true
+      ],
+      [
+       "sal",
+       "INT",
+       true
+      ],
+      [
+       "comm",
+       "INT",
+       true
+      ],
+      [
+       "deptno",
+       "INT",
+       true
+      ],
+      [
+       "slacker",
+       "TINYINT",
+       false
+      ]
+     ],
+     "primary_key": [
+      "empno"
+     ],
+     "unique": []
+    },
+    "t": {
+     "columns": [
+      [
+       "k0",
+       "VARCHAR(20)",
+       true
+      ],
+      [
+       "c1",
+       "VARCHAR(20)",
+       false
+      ],
+      [
+       "f1_a0",
+       "INT",
+       true
+      ],
+      [
+       "f2_a0",
+       "TINYINT",
+       true
+      ],
+      [
+       "f0_c0",
+       "INT",
+       true
+      ],
+      [
+       "f1_c0",
+       "INT",
+       false
+      ],
+      [
+       "f0_c1",
+       "INT",
+       true
+      ],
+      [
+       "f1_c2",
+       "INT",
+       true
+      ],
+      [
+       "f2_c3",
+       "INT",
+       true
+      ]
+     ],
+     "primary_key": [],
+     "unique": []
+    },
+    "anon": {
+     "columns": [
+      [
+       "c",
+       "INT",
+       false
+      ]
+     ],
+     "primary_key": [],
+     "unique": []
+    }
+   },
+   "proven": [
+    {
+     "index": 0,
+     "left": "SELECT ((1+2)+3) FROM dept",
+     "right": "SELECT 6 FROM dept",
+     "constants": false
+    },
+    {
+     "index": 1,
+     "left": "SELECT (100 + 10 + sal) FROM emp",
+     "right": "SELECT (110 + sal) FROM emp",
+     "constants": false
+    },
+    {
+     "index": 2,
+     "left": "SELECT * FROM emp WHERE sal = 3 AND comm = sal + 5",
+     "right": "SELECT * FROM emp WHERE sal = 3 AND comm = 8",
+     "constants": false
+    },
+    {
+     "index": 3,
+     "left": "SELECT * FROM emp WHERE sal = 3 AND NOT(comm = sal + 5)",
+     "right": "SELECT * FROM emp WHERE sal = 3 AND NOT(comm = 8)",
+     "constants": false
+    },
+    {
+     "index": 4,
+     "left": "SELECT (1*3+(deptno+2)+3*4) FROM dept",
+     "right": "SELECT deptno+17 from dept",
+     "constants": false
+    },
+    {
+     "index": 5,
+     "left": "SELECT * FROM dept WHERE deptno IN (SELECT deptno FROM dept WHERE FALSE)",
+     "right": "SELECT * FROM dept WHERE FALSE",
+     "constants": false
+    },
+    {
+     "index": 6,
+     "left": "SELECT * FROM dept WHERE deptno IN (1, 2, 1, 1, 2)",
+     "right": "SELECT * FROM dept WHERE deptno IN (1, 2)",
+     "constants": false
+    },
+    {
+     "index": 7,
+     "left": "SELECT * FROM dept AS dept WHERE dept.deptno = 1 AND TRUE",
+     "right": "SELECT * FROM dept AS dept WHERE dept.deptno = 1",
+     "constants": false
+    },
+    {
+     "index": 8,
+     "left": "SELECT * FROM dept AS dept WHERE dept.deptno = 1 OR FALSE",
+     "right": "SELECT * FROM dept AS dept WHERE dept.deptno = 1",
+     "constants": false
+    },
+    {
+     "index": 9,
+     "left": "SELECT * FROM dept AS dept WHERE dept.deptno = 1 AND FALSE",
+     "right": "SELECT * FROM dept AS dept WHERE FALSE",
+     "constants": false
+    },
+    {
+     "index": 10,
+     "left": "SELECT * FROM dept AS dept WHERE dept.deptno = 1 OR TRUE",
+     "right": "SELECT * FROM dept AS dept WHERE TRUE",
+     "constants": false
+    },
+    {
+     "index": 11,
+     "left": "SELECT * FROM ANON WHERE ANON.c > 1 AND ANON.c <= 1",
+     "right": "SELECT * FROM ANON WHERE CASE WHEN ANON.c IS NULL THEN NULL ELSE FALSE END",
+     "constants": false
+    },
+    {
+     "index": 12,
+     "left": "SELECT * FROM emp WHERE emp.sal > 50 AND (emp.sal <= 50 OR emp.empno > 5)",
+     "right": "SELECT * FROM emp WHERE emp.sal > 50 AND emp.empno> 5",
+     "constants": false
+    },
+    {
+     "index": 13,
+     "left": "SELECT * FROM emp WHERE emp.sal > 50 OR (emp.sal <= 50 AND emp.empno > 5)",
+     "right": "SELECT * FROM emp WHERE emp.sal > 50 OR emp.empno> 5",
+     "constants": false
+    }
+   ],
+   "must_not_prove": [
+    {
+     "index": 44,
+     "left": "SELECT UPPER(LOWER(name)) FROM dept",
+     "right": "SELECT UPPER(name) FROM dept",
+     "constants": false,
+     "reason": "UPPER(LOWER(name)) is not UPPER(name) on Unicode text: UPPER(LOWER('\u0130')) is 'I' while UPPER('\u0130') stays '\u0130' (DuckDB), so Spark's case-conversion simplification holds only for strings without such characters."
+    },
+    {
+     "index": 50,
+     "left": "SELECT *, ROW_NUMBER() OVER(ORDER BY F0_C1) AS rn FROM T LIMIT 5",
+     "right": "SELECT *, ROW_NUMBER() OVER(ORDER BY F0_C1) AS rn FROM (SELECT * FROM T ORDER BY F0_C1 LIMIT 5) t0",
+     "constants": false,
+     "reason": "LIMIT 5 without ORDER BY over ROW_NUMBER() OVER (ORDER BY f): which five rows come back is the engine's choice, so the rewrite to the first five sorted rows holds only if the window output is returned sorted."
+    },
+    {
+     "index": 60,
+     "left": "(SELECT deptno FROM dept) UNION ALL (SELECT deptno FROM dept) LIMIT 10",
+     "right": "(SELECT deptno FROM dept LIMIT 10) UNION ALL (SELECT deptno FROM dept LIMIT 10) LIMIT 10",
+     "constants": false,
+     "reason": "LIMIT 10 without ORDER BY pushed into both UNION ALL branches: which rows are kept is the engine's choice, so the two sides agree only if tie-breaking is fixed."
+    },
+    {
+     "index": 61,
+     "left": "SELECT * FROM (dept AS T1 LEFT OUTER JOIN dept AS T2 on T1.deptno = T2.deptno) LIMIT 10",
+     "right": "SELECT * FROM ((SELECT * FROM dept LIMIT 10) AS T1 LEFT OUTER JOIN dept AS T2 on T1.deptno = T2.deptno) LIMIT 10",
+     "constants": false,
+     "reason": "LIMIT 10 without ORDER BY pushed below a LEFT JOIN: which rows are kept is the engine's choice, so the two sides agree only if tie-breaking is fixed."
+    }
+   ]
+  }
+ }
+}

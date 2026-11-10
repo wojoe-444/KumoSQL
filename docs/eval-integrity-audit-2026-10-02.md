@@ -33,7 +33,7 @@ Versions: Python 3.12.10, sqlglot 28.10.0, DuckDB 1.5.1, Z3 solver 5.1.0.0, SQLF
 
 ### Circular verification can approve a changed result
 
-**P1 at baseline; reproduced case addressed during the audit.** The baseline [lift_subqueries.py](../src/kumosql/lift_subqueries.py) reserved existing root CTE names, but did not reserve physical relation names. It could create a CTE that shadows a table already read elsewhere in the query. [equivalence.py](../src/kumosql/equivalence.py) normalizes both sides using that same lifter, so the verifier repeated the transformation's mistake and approved it.
+**P1 at baseline; reproduced case addressed during the audit.** The baseline [lift_subqueries.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/lift_subqueries.py) reserved existing root CTE names, but did not reserve physical relation names. It could create a CTE that shadows a table already read elsewhere in the query. [equivalence.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/equivalence.py) normalizes both sides using that same lifter, so the verifier repeated the transformation's mistake and approved it.
 
 ```sql
 SELECT a.x AS ax, b.x AS bx
@@ -51,7 +51,7 @@ Keep the reproduced collision as a mandatory regression, and test changed querie
 
 ### SMT proofs discard snapshot semantics
 
-**P1.** [smt_equivalence.py](../src/kumosql/smt_equivalence.py) builds a relation identity from a table's name and ignores its version modifier. The prover reports `proven_equivalent` for:
+**P1.** [smt_equivalence.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/smt_equivalence.py) builds a relation identity from a table's name and ignores its version modifier. The prover reports `proven_equivalent` for:
 
 ```sql
 SELECT a FROM t
@@ -64,7 +64,7 @@ Reject unmodeled table modifiers, or include the snapshot expression in the mode
 
 ### Execution comparison merges different values
 
-**P1.** [result_equivalence.py](../src/kumosql/result_equivalence.py) loses type and shape information before building result multisets:
+**P1.** [result_equivalence.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/result_equivalence.py) loses type and shape information before building result multisets:
 
 - Python equality makes `True` and `1` the same Counter key. `SELECT TRUE AS x` and `SELECT 1 AS x` are reported equivalent on all eight default seeds.
 - NaN is encoded as `("NaN",)`, which collides with a normalized array containing the string `"NaN"`.
@@ -75,7 +75,7 @@ Agreement is already documented as evidence rather than proof, but an oracle sho
 
 ### Fixture success accepts invalid inputs and unverified outputs
 
-**P1.** [test_workbook_fixture.py](../tests/test_workbook_fixture.py) only checks `lift_subqueries(...).success`. [LiftResult.success](../src/kumosql/lift_subqueries.py) means zero counted relational subqueries and no diagnostic from a selected fatal-code list. It does not check semantics, column binding, or BigQuery validity.
+**P1.** [test_workbook_fixture.py](../tests/test_workbook_fixture.py) only checks `lift_subqueries(...).success`. [LiftResult.success](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/lift_subqueries.py) means zero counted relational subqueries and no diagnostic from a selected fatal-code list. It does not check semantics, column binding, or BigQuery validity.
 
 The checked-in fixture includes two invalid cases:
 
@@ -86,7 +86,7 @@ DuckDB rejects both originals before comparing any rewrite. Both nevertheless ea
 
 The gate also counts `q16` as successful even though its MERGE USING subquery is unchanged: `_is_relation_subquery` only recognizes FROM/JOIN parents. `q17` and `q20` earn structural success but the verified API declines their rewrites.
 
-Recovery contributes additional false confidence. [rule_driver.py](../src/kumosql/rule_driver.py) uses parser recovery, and recovery diagnostics are not fatal. `SELECT 1 FROM t WHERE 1 =` is returned unchanged with `success=True`. An input ending in `AS q garbage extra` is transformed after discarding the extra text and also reports success. The historical fixture earns success for 58 input-recovery rows, including 45 output-recovery rows.
+Recovery contributes additional false confidence. [rule_driver.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/rule_driver.py) uses parser recovery, and recovery diagnostics are not fatal. `SELECT 1 FROM t WHERE 1 =` is returned unchanged with `success=True`. An input ending in `AS q garbage extra` is transformed after discarding the extra text and also reports success. The historical fixture earns success for 58 input-recovery rows, including 45 output-recovery rows.
 
 Validate and label fixture inputs, require a real change for transformation cases, and report strict parsing, recovery, syntactic removal, schema validity, and semantic verification separately. Keep unsupported cases in the denominator with their outcome recorded.
 
@@ -128,7 +128,7 @@ Run the authored fixture in required CI and put any genuinely large external cor
 
 ### Fuzz proof floors mostly reward identity pairs
 
-**P2.** [test_smt_fuzz.py](../tests/test_smt_fuzz.py) uses text replacements that often do not change the query. Of 133 proofs in the observed run, 106 were identical strings and 27 changed text. Identity proofs alone satisfy the `> 50` floor. The count is therefore not a floor on nontrivial rewrite coverage.
+**P2.** [test_smt_fuzz.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/tests/test_smt_fuzz.py) uses text replacements that often do not change the query. Of 133 proofs in the observed run, 106 were identical strings and 27 changed text. Identity proofs alone satisfy the `> 50` floor. The count is therefore not a floor on nontrivial rewrite coverage.
 
 The same RNG generates query pairs and validation databases. Only proven pairs consume 25 subsequent database draws. Solver outcome changes therefore change later query pairs, even with the same seed. Omitting proof-driven validation draws changes 247 of 250 pair positions. A fixed seed does not freeze this benchmark across implementations or timeouts.
 
@@ -138,7 +138,7 @@ Freeze pair generation before invoking the prover, use separate RNGs for queries
 
 ### Some independent checks can pass with no coverage
 
-**P2.** [test_result_equivalence.py](../tests/test_result_equivalence.py) only executes pairs when the static prover reports success. Replacing its prover with one that declines every pair leaves the test passing. This is a reasonable conditional soundness test, but it supplies no coverage floor and cannot demonstrate that any proof was independently checked.
+**P2.** [test_result_equivalence.py](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/tests/test_result_equivalence.py) only executes pairs when the static prover reports success. Replacing its prover with one that declines every pair leaves the test passing. This is a reasonable conditional soundness test, but it supplies no coverage floor and cannot demonstrate that any proof was independently checked.
 
 Several execution and SMT modules use `pytest.importorskip`, making local suite counts dependency-dependent. CI installs the relevant extras, which reduces this issue there. Record checked pairs, unproven pairs, skipped modules, and required dependencies explicitly; assert an expected checked set where the test intends to guarantee coverage.
 

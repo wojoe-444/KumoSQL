@@ -24,29 +24,29 @@ from urllib.error import URLError
 
 from sqlglot import exp
 
-from .ast_utils import parse_statements, top_level_query
+from kumo_sql_prover.ast_utils import parse_statements, top_level_query
 from .scripts import block_statements, script_skeleton
 from .dryrun import Transport, check_rewrite
 from .engine import RewriteRule, RuleDiagnostic, RuleOutput, available_rules, get_rule
-from .equivalence import prove_equivalent
-from .input_validity import invalid_input_reason
-from .type_names import invalid_type_name
-from .layout_equivalence import created_function_calls, layout_only_change, touching_literal_chunks
+from kumo_sql_prover.equivalence import prove_equivalent
+from kumo_sql_prover.input_validity import invalid_input_reason
+from kumo_sql_prover.type_names import invalid_type_name
+from kumo_sql_prover.layout_equivalence import created_function_calls, layout_only_change, touching_literal_chunks
 from . import prover_context
-from .smt_equivalence import SmtStatus, prove_equivalent_smt
-from .sqlx import looks_like_sqlx, mask_sqlx_by_content, split_sqlx_sections
-from .sqlx_fragments import dynamic_sentinels, holds_dynamic_fragment
-from .proof_qualify import QUALIFY_FAMILY
-from .proof_format import FORMAT_FAMILY
-from .proof_registry import FAMILIES, RULE_FAMILIES
-from .proof_steps import RewriteStep, StepCheck, same_tree
+from kumo_sql_prover.smt_equivalence import SmtStatus, prove_equivalent_smt
+from kumo_sql_prover.sqlx import looks_like_sqlx, mask_sqlx_by_content, split_sqlx_sections
+from kumo_sql_prover.sqlx_fragments import dynamic_sentinels, holds_dynamic_fragment
+from kumo_sql_prover.proof_qualify import QUALIFY_FAMILY
+from kumo_sql_prover.proof_format import FORMAT_FAMILY
+from kumo_sql_prover.proof_registry import FAMILIES, RULE_FAMILIES
+from kumo_sql_prover.proof_steps import RewriteStep, StepCheck, same_tree
 
 # Import built-in rules so they are registered.
 from . import cleanup as _cleanup  # noqa: F401
 from . import cost_rules as _cost_rules  # noqa: F401
 from . import formatting as _formatting  # noqa: F401
 from . import inline_ctes as _inline_ctes  # noqa: F401
-from . import lift_subqueries as _lift_subqueries  # noqa: F401
+from kumo_sql_prover import lift_subqueries as _lift_subqueries  # noqa: F401
 from . import qualify_columns as _qualify_columns  # noqa: F401
 
 

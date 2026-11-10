@@ -21,7 +21,7 @@ from sqlglot import exp
 from sqlglot.dialects.bigquery import BigQuery
 from sqlglot.tokens import TokenType
 
-from .ast_utils import (
+from kumo_sql_prover.ast_utils import (
     ambiguous_unnest_names,
     cte_alias_name,
     cte_dependency_errors,
@@ -33,7 +33,7 @@ from .ast_utils import (
     with_clause,
 )
 from .engine import RewriteRule, RuleDiagnostic, register_rule
-from .equivalence import _literal_compare, _nondeterminism_reasons
+from kumo_sql_prover.equivalence import _literal_compare, _nondeterminism_reasons
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ The short version: the merge gate re-ran prover benchmarks for every change, so 
 
 | Item | Status |
 | --- | --- |
-| Split the prover into its own package | **Decided** by the repository owner on 2026-11-10. Target repository: [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover), empty when this page was written. **In progress** ([issue 839](https://github.com/wojoe-444/KumoSQL/issues/839), [state](prover-split.md)): the scripting edge is cut and the prover's import closure is scripted (`tools/prover_split.py`) |
+| Split the prover into its own package | **Decided** by the repository owner on 2026-11-10. Target repository: [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover). **Done in v0.1.0** ([issue 839](https://github.com/wojoe-444/KumoSQL/issues/839), [what moved and what did not](prover-split.md)): the prover, its tests, runners, results and docs are there, KumoSQL pins the tag, and what stays behind (the proof re-check and the evals that drive KumoSQL's rewrites) is listed on that page |
 | Make a fresh install pass again (DuckDB 2.0) | In progress as its own workstream |
 | Everything else on this page | Planned. Build it in the order below |
 | Changing a rule in `CLAUDE.md` (the twin docs rule, the scoreboard in the README, the test policy) | **Not decided.** Each needs the owner's word and its own pull request. Until then the current `CLAUDE.md` applies |

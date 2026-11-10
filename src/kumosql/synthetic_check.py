@@ -22,7 +22,7 @@ import importlib.util
 from typing import Iterable
 
 from .evidence_summary import SYNTHETIC_KIND
-from .result_equivalence import (
+from kumo_sql_prover.result_equivalence import (
     ResultEquivalence,
     ResultEquivalenceStatus,
     Schema,

@@ -23,9 +23,9 @@ from typing import Iterable, Sequence
 
 import sqlglot
 
-from .ast_utils import spell_for_duckdb
-from .duckdb_load import run_unoptimized, small_database
-from .string_literals import canonical_literals
+from kumo_sql_prover.ast_utils import spell_for_duckdb
+from kumo_sql_prover.duckdb_load import run_unoptimized, small_database
+from kumo_sql_prover.string_literals import canonical_literals
 
 _DUCK_TYPES = {"int": "BIGINT", "float": "DOUBLE", "text": "VARCHAR", "date": "DATE", "bool": "BOOLEAN"}
 
@@ -66,7 +66,7 @@ class Schema:
 def prover_constraints(schema: Schema) -> dict:
     """The schema's NOT NULL columns and keys in the form the prover reads."""
 
-    from .smt_equivalence import TableConstraints
+    from kumo_sql_prover.smt_equivalence import TableConstraints
 
     return {t.name: TableConstraints(not_null=frozenset(schema.not_null(t)), keys=tuple(tuple(k) for k in t.keys)) for t in schema.tables}
 
@@ -167,7 +167,7 @@ def _connect(schema: Schema, dialect: str = "postgres"):
 
     db = small_database()
     if dialect == "bigquery":
-        from .bigquery_on_duckdb import configure
+        from kumo_sql_prover.bigquery_on_duckdb import configure
 
         configure(db)
     for table in schema.tables:
@@ -212,7 +212,7 @@ def _duck(sql: str, dialect: str) -> str:
     try:
         tree = sqlglot.parse_one(sql, read=dialect).transform(_floor_to_unit).transform(_quote_reserved)
         if dialect == "bigquery":
-            from .bigquery_on_duckdb import faithful
+            from kumo_sql_prover.bigquery_on_duckdb import faithful
 
             tree = faithful(tree)
         return spell_for_duckdb(tree).sql(dialect="duckdb")
@@ -254,13 +254,13 @@ def _reader(dialect: str):
 
     if dialect != "bigquery":
         return lambda rows: rows
-    from .bigquery_on_duckdb import bigquery_rows
+    from kumo_sql_prover.bigquery_on_duckdb import bigquery_rows
 
     return bigquery_rows
 
 
 def _bigquery_failure(error: BaseException) -> bool:
-    from .bigquery_on_duckdb import is_bigquery_failure
+    from kumo_sql_prover.bigquery_on_duckdb import is_bigquery_failure
 
     return is_bigquery_failure(error)
 

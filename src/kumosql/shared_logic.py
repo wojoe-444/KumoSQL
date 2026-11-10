@@ -24,11 +24,11 @@ from typing import TYPE_CHECKING, Iterable, Mapping
 import sqlglot
 from sqlglot import exp
 
-from .canonical import _declared, free_cte_refs
+from kumo_sql_prover.canonical import _declared, free_cte_refs
 from .graph import GraphResult, ObservedRead, build_query_graph
 from .pipeline_duplicates import _fingerprint, _select_location
-from .ast_utils import select_sources
-from .scalar_subqueries import _select_names
+from kumo_sql_prover.ast_utils import select_sources
+from kumo_sql_prover.scalar_subqueries import _select_names
 
 if TYPE_CHECKING:
     from .near_duplicates import NearDuplicateCluster

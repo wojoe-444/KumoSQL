@@ -25,7 +25,7 @@ The server accepts only its own local addresses and gives each running session a
 | Reduce | Pick the outputs you need and get a smaller project that still builds them |
 | BigQuery | Browse the catalog your Google credentials can access |
 
-In Workspace, start with one rule. Open **Details** to understand the verdict, then use **Diff** to see the changed lines. A green planning check alone does not establish equal results; see [provers](provers.md).
+In Workspace, start with one rule. Open **Details** to understand the verdict, then use **Diff** to see the changed lines. A green planning check alone does not establish equal results; see [provers](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/provers.md).
 
 To show a project in the graph, start with `--project path/to/project`, or connect a repository through **Settings → Repositories**. On large projects, the graph can appear before Cost and Change reports finish their analysis.
 

@@ -1,7 +1,11 @@
 """KumoSQL."""
 
-from . import bigquery_syntax as _bigquery_syntax  # noqa: F401  (teaches sqlglot TABLE arguments of table-valued functions)
-from .lift_subqueries import (
+from . import _prover_aliases
+
+_prover_aliases.install()  # kumosql.<moved module> is kumo_sql_prover.<moved module>; must run before any import below
+
+from kumo_sql_prover import bigquery_syntax as _bigquery_syntax  # noqa: F401  (teaches sqlglot TABLE arguments of table-valued functions)
+from kumo_sql_prover.lift_subqueries import (
     LiftDiagnostic,
     LiftResult,
     count_inline_subqueries,
@@ -44,20 +48,20 @@ from .rewrite import (
     check_idempotence,
     verify_rewrite,
 )
-from .equivalence import (
+from kumo_sql_prover.equivalence import (
     EquivalenceResult,
     EquivalenceStatus,
     build_bag_verifier_sql,
     prove_equivalent,
 )
-from .smt_equivalence import (
+from kumo_sql_prover.smt_equivalence import (
     Counterexample,
     SmtEquivalenceResult,
     SmtStatus,
     prove_equivalent_smt,
 )
 from .synthetic_check import attach_synthetic_check
-from .result_equivalence import (
+from kumo_sql_prover.result_equivalence import (
     ResultEquivalence,
     ResultEquivalenceStatus,
     assert_result_equivalent,

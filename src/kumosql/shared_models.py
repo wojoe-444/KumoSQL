@@ -32,9 +32,9 @@ from typing import Callable, Mapping
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import captured_names
-from .canonical import free_cte_refs
-from .sqlx import _SQLX_BLOCK_RE, _find_balanced_brace, _find_interpolation_end
+from kumo_sql_prover.ast_utils import captured_names
+from kumo_sql_prover.canonical import free_cte_refs
+from kumo_sql_prover.sqlx import _SQLX_BLOCK_RE, _find_balanced_brace, _find_interpolation_end
 
 KINDS = ("view", "table")
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
@@ -460,7 +460,7 @@ def _inline(after_sql: str, shared_key: str, shared_sql: str) -> tuple[str | Non
 
 
 def _check(prove: Prove, model: str, before_sql: str, after_sql: str) -> ModelCheck:
-    from .smt_equivalence import SmtStatus
+    from kumo_sql_prover.smt_equivalence import SmtStatus
 
     if "__sqlx_token_" in before_sql or "__sqlx_token_" in after_sql:
         return ModelCheck(model, "edited", UNKNOWN, "the model uses Dataform expressions the prover cannot read")

@@ -2,42 +2,68 @@
 
 [Plain-language version](../docs_simple/prover-split.md)
 
-Step 8 of the [roadmap](roadmap.md): the equivalence prover moves to its own repository, [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover), with its tests, benchmark runners, results files and docs. KumoSQL then depends on a pinned release of it. Progress is tracked in [issue 839](https://github.com/wojoe-444/KumoSQL/issues/839).
+Step 8 of the [roadmap](roadmap.md): the equivalence prover lives in its own repository, [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover), with its tests, benchmark runners, results files and docs. KumoSQL depends on a pinned release of it (`kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@v0.1.0` in `pyproject.toml`), so a prover change reaches KumoSQL only as a bump of that tag. Progress is tracked in [issue 839](https://github.com/wojoe-444/KumoSQL/issues/839).
 
 ## What the prover is
 
-The prover is the import closure of these modules in `src/kumosql`: `equivalence`, `smt_equivalence`, `algebraic_equivalence`, `bounded_equivalence`, `result_equivalence`, `sqlsolver_backend`, `tie_determinism`, `tie_witness`, `uexpr`, `proof_registry` and `proof_format` (the roadmap's list), plus three small modules: `canonical_rules` and `query_mutants`, leaves that the prover's own benchmark runners and fuzzers import, and `bigquery_syntax`, which teaches sqlglot's BigQuery parser the syntax it lacks (`TABLE` arguments, `LIKE ALL UNNEST`, the `WITH(a AS 1, a + 1)` expression) the moment it is imported. That last one is not reached by any import from the roots, but every parse the prover makes relied on it because `import kumosql` loads it first; a prover installed alone would have read the same query differently, so it is a root and the prover package imports it first. Imports inside functions count; the walk is over the syntax tree, so nothing is executed.
+The prover is the import closure of these modules: `equivalence`, `smt_equivalence`, `algebraic_equivalence`, `bounded_equivalence`, `result_equivalence`, `sqlsolver_backend`, `tie_determinism`, `tie_witness`, `uexpr`, `proof_registry` and `proof_format` (the roadmap's list), plus four small modules: `canonical_rules` and `query_mutants`, leaves that the prover's own benchmark runners and fuzzers import, `verdict_cache`, the cache of proof verdicts for the benchmark runs (it hashes the prover's own source, and no prover module imports it, so it is a root), and `bigquery_syntax`, which teaches sqlglot's BigQuery parser the syntax it lacks (`TABLE` arguments, `LIKE ALL UNNEST`, the `WITH(a AS 1, a + 1)` expression) the moment it is imported. That last one is not reached by any import from the roots, but every parse the prover made relied on it because `import kumosql` loads it first; a prover installed alone would have read the same query differently, so it is a root and the package imports it first. Imports inside functions count; the walk is over the syntax tree, so nothing is executed.
+
+That is 125 modules and 56,388 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
 
 ```sh
-python tools/prover_split.py            # the closure, with line counts
-python tools/prover_split.py --list     # every module, and which ones the product also imports
-python tools/prover_split.py --plan     # the tests and benchmark runners that move with it
-python tools/prover_split.py --check    # exit 1 when the closure reaches a product-only module
+python tools/prover_split.py            # the closure of the installed prover, with line counts
+python tools/prover_split.py --list     # every module
+python tools/prover_split.py --check    # exit 1 when the closure reaches a product module, or the package imports kumosql
 ```
 
-`tests/test_prover_split.py` runs the check in the fast tier, so a new import from the prover into the product shows up in the pull request that adds it.
+`tests/test_prover_split.py` runs the check in the fast tier. Before the split the same script, run on `src/kumosql`, also printed what moved (`--plan`) and a `git filter-repo` paths file (`--paths`); both need the pre-split tree, which `git show 7011437d:src/kumosql` still has.
 
-## Step 1: cutting the scripting edge
+## What moved
 
-Before the split, `equivalence` imported `lift_subqueries`, which imported `engine`, which imported `scripts` (BigQuery scripting, about 2,800 lines) and `sqlx` (Dataform file parsing). That one chain put scripting, the rule registry and the Dataform parser inside the prover.
-
-`engine.py` is now two modules:
-
-| Module | Holds | In the prover |
+| What | Moved | Now |
 | --- | --- | --- |
-| `rule_driver` | `RewriteRule`, `RuleOutput`, `RuleDiagnostic`: the shared driver that handles SQLX sections, strict parsing, source-span preserving edits, no-ops and CTE dependency checks | yes |
-| `engine` | The registry (`register_rule`, `get_rule`, `available_rules`), `lift_subqueries` registered first, and the hook that gives the driver BigQuery scripting | no |
+| Source modules | 125 modules, 56,388 lines | `src/kumo_sql_prover/` in the prover repository |
+| Test files | 142 of 368 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
+| Benchmark runners (`tools/`) | 40 runners; the 8 only the prover uses are gone from here | `tools/` there. The other 32 are imported by KumoSQL's proof re-check (and a few by staying evals), so a copy stays here; see below |
+| Results files | 50 of 126 | `benchmarks/results/` there; the scoreboard of those evals is generated there |
+| Docs | 10 feature pages and 15 eval pages, each with its plain-language companion | `docs/` and `docs_simple/` there |
+| Fixtures | the corpora only the moved tests read | `tests/fixtures/` there; fixtures both sides read are copied |
 
-`lift_subqueries` imports only the driver. The driver runs rules inside `BEGIN ... END` blocks only after `set_script_support` was called with the scripts module, which `kumosql.engine` does when KumoSQL is imported. Without it a script is parsed like any other text; the prover only ever receives one query, so its results do not change. Dataform's `sqlx.py` (337 lines, no imports of its own) stays in the prover: the verifier accepts SQLX files, masks `${...}` interpolations in them, and `sqlx_fragments` decides which ones a proof may treat as one opaque name.
-
-After the cut the prover closure has 124 modules and about 56,000 lines (it was 122 modules and 57,800 lines when the roadmap was written, including `engine`, `scripts` and `sqlx`). 30 of those modules are also imported by 50 product modules, `ast_utils` most of all.
+The history of every moved file came along: the new repository was made with `git filter-repo --paths-from-file` on a full clone, with `src/kumosql/` renamed to `src/kumo_sql_prover/`, so `git log --follow` on a prover file runs back to its first commit in KumoSQL. The first commit on top of that history renames the package in imports and docstrings and adds the packaging.
 
 ## Where the shared helpers live
 
-Inside the prover package. A helper both sides use (`ast_utils`, `canonical`, `string_literals`, `type_names`, `sqlx` and the like) moves with the prover, and the product imports it from there. This is the simplest option: there is one copy, the dependency points one way (the product imports the prover, never the reverse), and a change to a shared helper is a prover release that KumoSQL takes as a version bump. A third "common" package would add a second release train for 30 modules.
+Inside the prover package. A helper both sides use (`ast_utils`, `canonical`, `string_literals`, `type_names`, `sqlx` and the like) moved with the prover, and the product imports it from there. This is the simplest option: there is one copy, the dependency points one way (the product imports the prover, never the reverse), and a change to a shared helper is a prover release that KumoSQL takes as a version bump. A third "common" package would add a second release train for 30 modules.
+
+## Package name and import path
+
+The distribution is `kumo-sql-prover` and the import name `kumo_sql_prover`. KumoSQL's own modules import it by that name (122 import statements were rewritten mechanically).
+
+Everything that used to be `kumosql.<name>` for a moved module still works, and is the same module object: `import kumosql.equivalence` returns `kumo_sql_prover.equivalence`. A small import hook (`kumosql/_prover_aliases.py`, installed first thing in `kumosql/__init__.py`) answers for the 120 top-level modules and packages that moved, and for nothing else. Why this rather than moving the import path or keeping a re-export file per module:
+
+- About 50 product modules, 227 test files and any outside code import the old paths, and the tests monkeypatch module attributes by dotted name (`monkeypatch.setattr("kumosql.smt_equivalence.f", ...)`). One module object means a patch through either spelling is seen by both.
+- A re-export file per module would copy names, leave the private ones behind (the product's own tests reach into them), and be 125 files to keep in step.
+- A namespace package shared by two distributions does not work with `kumosql/__init__.py`, which is a regular package, and breaks editable installs.
+
+The hook has a price: `python -m kumosql.<moved name>` does not work (use `python -m kumo_sql_prover.<name>`, or `python -m kumosql <command>` for the console commands), and `tests/test_prover_aliases.py` pins the list to what the installed package contains, so a module added to the prover must be added to `MOVED` in the same bump. `kumosql.lift_subqueries` stays the function it always was (the package attribute is not rebound to the module).
+
+## The pin, and bumping it
+
+`pyproject.toml` pins a tag. To take a prover change: release it in the prover repository (a `vX.Y.Z` tag, with release notes saying which evals moved and the commit tested), change the tag here, and run the routine tier plus the canary. A KumoSQL pull request therefore cannot change a prover benchmark: none of the prover's evals, floors or results files live here.
+
+## Canaries
+
+`tests/test_prover_canary.py` keeps real pairs from the SQLSolver suites that the algebraic prover proves (14 each from Calcite, TPC-C and Spark SQL, 8 from TPC-H, which has 22 pairs in all) and four pairs the suites must never prove, from `tests/fixtures/prover_canary.json`. They run in seconds through the entry points KumoSQL imports. `tests/test_canaries.py` (the gate's canaries, ten cases each of the SQLSolver suites, QED and the mined Calcite set) stays here too and calls the runners through their copies in `tools/` (`sqlsolver_bench`, `qed_bench`, `calcite_mined_bench`); the prover repository carries the same file. A failure here means the wiring broke (the pin, the import paths, the parser extension); a score that drops is for the prover repository's scheduled run to report.
+
+## Not moved yet
+
+- **Proof re-check.** `tools/proof_recheck.py` and `tools/recheck/` hunt for wrong proofs among the pairs the evals count as proven, and some adapters need KumoSQL itself (rewrites, containment, pipelines). They stay, with copies of the 32 prover runners they import; the next step is to split the adapters so the prover owns its own re-check and these copies can go.
+- **Evals that drive KumoSQL's rewrites** stay with KumoSQL even though they use the prover: `unsafe_fuzz` and `compose_fuzz`, the targeted-data evals (`targeted_data_bench` imports `unsafe_fuzz`), rule-level fuzzing, the numeric assumption report (it imports a rewriting benchmark) and every rewrite, pipeline and lineage eval.
+- **The GoogleSQL evaluator, the DuckDB translation used by the product (`bigquery_duckdb`) and type inference** were not in the roadmap's roots and stay.
 
 ## Limits
 
-- The closure is computed from imports. A module the prover reaches only by a string (a plugin name, a subprocess command) is not found; `tests/test_prover_split.py` and the prover's own tests are what catch that.
-- The roots are a choice. Adding a root grows the package; the benchmark-support roots were added because the prover's own evals import them.
+- The closure is computed from imports. A module the prover reaches only by a string (a plugin name, a subprocess command) is not found; the prover's own tests and `tests/test_prover_aliases.py` are what catch that.
+- The roots are a choice. Adding a root grows the package.
 - Import-time side effects are invisible to an import walk. `bigquery_syntax` is the one known today (it patches sqlglot); a new module that patches a library when imported must be added as a root by hand.
+- "No score moved" rests on the comparison recorded in the pull request that switched KumoSQL over (the commands of the moved evals run in both trees, answers compared) and on the prover repository's floors. It covers the evals that were run, not every case of every eval.

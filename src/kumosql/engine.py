@@ -9,8 +9,8 @@ inside a ``BEGIN ... END`` block.
 from __future__ import annotations
 
 from . import scripts as _scripts
-from .lift_subqueries import LiftSubqueriesRule
-from .rule_driver import (
+from kumo_sql_prover.lift_subqueries import LiftSubqueriesRule
+from kumo_sql_prover.rule_driver import (
     FATAL_DIAGNOSTIC_CODES,
     RewriteRule,
     RuleDiagnostic,

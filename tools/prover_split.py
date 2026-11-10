@@ -11,9 +11,10 @@ walk is on the syntax tree, so nothing is executed). ``FORBIDDEN`` names the pro
 never reach: the check is how a regression of the first step of the split (``equivalence`` importing
 ``lift_subqueries``, which imported the rule registry and, through it, BigQuery scripting) is caught.
 
-Before the move this script reads ``src/kumosql``; after it, the same closure is the content of the
-``kumo_sql_prover`` package, and ``--package`` points the script at that source tree instead (the check then
-also fails on any import of ``kumosql``).
+Before the move this script read ``src/kumosql``. Since the move it reads the installed ``kumo_sql_prover`` package
+(``--source`` and ``--package`` choose another tree): the same closure is that package, and ``--check`` then also
+fails on any import of ``kumosql`` inside it, the one direction an import must never take. ``--plan`` and ``--paths``
+describe the move itself and need the pre-split tree (the history keeps it: ``git show 7011437d:src/kumosql``).
 """
 
 from __future__ import annotations
@@ -49,6 +50,9 @@ ROOTS = (
     # Teaches sqlglot's BigQuery parser syntax it lacks, once, when imported; every parse the prover makes relies on
     # it, so the prover's own package imports it first (as ``kumosql/__init__`` always did).
     "bigquery_syntax",
+    # The verdict cache of the benchmark runs hashes the prover's own source; it lives with the prover, whose runners
+    # call it. No prover module imports it, so it is a root.
+    "verdict_cache",
 )
 
 #: Product modules the prover must not import, directly or through a chain. ``engine`` is the registry of the
@@ -104,11 +108,17 @@ COPIED_FILES = (
     "tests/test_scoreboard.py",
     "tests/test_eval_diff.py",
     "tests/test_docs.py",
+    "tools/docs_index.py",
+    "tests/test_canaries.py",
     "docs/evals/eval-diff.md",
     "docs_simple/evals/eval-diff.md",
     "benchmarks/README.md",
     "docs_simple/benchmarks/README.md",
 )
+
+
+#: Tests that exist on both sides (listed in ``COPIED_FILES``): the runners they load stay in KumoSQL as copies.
+COPIED_TESTS = frozenset(Path(f).name for f in COPIED_FILES if f.startswith("tests/"))
 
 
 def module_index(source: Path, package: str) -> dict[str, Path]:
@@ -207,6 +217,36 @@ def chain_to(graph: dict[str, set[str]], roots: tuple[str, ...], target: str) ->
     return path[::-1]
 
 
+def locate() -> tuple[str, Path]:
+    """The prover's package name and source folder: this repository's own copy before the split, the installed one after."""
+
+    own = ROOT / "src" / "kumosql"
+    if (own / "equivalence.py").exists():
+        return "kumosql", own
+    import importlib.util
+
+    spec = importlib.util.find_spec("kumo_sql_prover")
+    if spec is None or not spec.submodule_search_locations:
+        raise SystemExit("kumo_sql_prover is not installed: pip install -e .")
+    return "kumo_sql_prover", Path(next(iter(spec.submodule_search_locations)))
+
+
+def product_imports(source: Path) -> dict[str, list[int]]:
+    """Files of ``source`` that import ``kumosql``, with the line numbers (the prover must not)."""
+
+    found: dict[str, list[int]] = {}
+    for path in sorted(source.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                names = [node.module]
+            if any(name == "kumosql" or name.startswith("kumosql.") for name in names):
+                found.setdefault(path.relative_to(source).as_posix(), []).append(node.lineno)
+    return found
+
+
 def analyse(source: Path, package: str) -> dict:
     modules, graph = import_graph(source, package)
     inside = closure(graph, ROOTS)
@@ -217,6 +257,7 @@ def analyse(source: Path, package: str) -> dict:
                 importers[dependency].add(module)
     shared = sorted(importers)
     forbidden = [m for m in FORBIDDEN if m in inside]
+    imports_product = product_imports(source) if package != "kumosql" else {}
     return {
         "modules": sorted(inside),
         "lines": sum(lines_of(modules[m]) for m in inside),
@@ -224,6 +265,7 @@ def analyse(source: Path, package: str) -> dict:
         "prover_only": sorted(inside - set(shared)),
         "product_importers": sorted({m for found in importers.values() for m in found}),
         "forbidden": {m: chain_to(graph, ROOTS, m) for m in forbidden},
+        "imports_kumosql": imports_product,
         "product_modules": len(modules) - len(inside),
         "product_lines": sum(lines_of(path) for name, path in modules.items() if name not in inside),
     }
@@ -343,7 +385,7 @@ def plan(source: Path, package: str, repo: Path) -> dict:
     moved_tests = {
         name
         for name, (refs, used) in test_refs.items()
-        if refs <= prover and used <= moved_tools and (refs or used)
+        if refs <= prover and used <= moved_tools and (refs or used) and name not in COPIED_TESTS
     }
     # A moved runner that something staying still imports (a corpus fetcher, ``bench_common``) stays too; it is
     # copied to the prover rather than moved.
@@ -462,9 +504,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plan", action="store_true", help="also list the tests and tools that move with it")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
     parser.add_argument("--paths", action="store_true", help="print the paths that move, as a git filter-repo paths file")
-    parser.add_argument("--source", type=Path, default=ROOT / "src" / "kumosql", help="package source directory")
-    parser.add_argument("--package", default="kumosql", help="package name used in imports")
+    parser.add_argument("--source", type=Path, default=None, help="package source directory (default: where the prover is)")
+    parser.add_argument("--package", default=None, help="package name used in imports (default: where the prover is)")
     args = parser.parse_args(argv)
+    located_package, located_source = locate()
+    args.source = args.source or located_source
+    args.package = args.package or located_package
+    if (args.plan or args.paths) and args.package != "kumosql":
+        raise SystemExit("--plan and --paths describe the move and need the pre-split tree (src/kumosql with the prover in it)")
 
     if args.paths:
         print("\n".join(filter_repo_paths(args.source, args.package, ROOT)))
@@ -475,11 +522,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
     else:
-        print(
-            f"prover closure: {len(result['modules'])} modules, {result['lines']:,} lines "
-            f"({len(result['shared'])} also imported by {len(result['product_importers'])} product modules); "
-            f"product: {result['product_modules']} modules, {result['product_lines']:,} lines"
-        )
+        if args.package == "kumosql":
+            print(
+                f"prover closure: {len(result['modules'])} modules, {result['lines']:,} lines "
+                f"({len(result['shared'])} also imported by {len(result['product_importers'])} product modules); "
+                f"product: {result['product_modules']} modules, {result['product_lines']:,} lines"
+            )
+        else:
+            print(
+                f"prover closure: {len(result['modules'])} modules, {result['lines']:,} lines of the {args.package} package "
+                f"({result['product_modules']} further modules are outside the roots' closure)"
+            )
         if args.list:
             shared = set(result["shared"])
             for module in result["modules"]:
@@ -489,7 +542,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"moves: {len(p['tests'])} test files, {len(p['tools'])} tools; stays: {len(p['tests_staying'])} test files")
     for module, chain in result["forbidden"].items():
         print(f"forbidden: {module} is reached through {' -> '.join(chain)}", file=sys.stderr)
-    if args.check and result["forbidden"]:
+    for file, numbers in result["imports_kumosql"].items():
+        print(f"forbidden: {file} imports kumosql (line {', '.join(map(str, numbers))})", file=sys.stderr)
+    if args.check and (result["forbidden"] or result["imports_kumosql"]):
         return 1
     return 0
 

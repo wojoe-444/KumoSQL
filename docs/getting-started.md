@@ -186,5 +186,5 @@ Most of the suite is thousands of small tests, so keep a test's fixed cost low. 
 ## Where to go next
 
 - [README](../README.md): the benchmark scoreboard, a summary of every feature and the CLI.
-- [UI guide](ui.md), [rewrite rules](rewrite-rules.md), [provers](provers.md), [pipeline analysis](pipeline-analysis.md) (overlap and roll-up detection), [cost and change reports](cost-and-change-reports.md) and [Dataform repositories](dataform-repositories.md).
+- [UI guide](ui.md), [rewrite rules](rewrite-rules.md), [provers](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md), [pipeline analysis](pipeline-analysis.md) (overlap and roll-up detection), [cost and change reports](cost-and-change-reports.md) and [Dataform repositories](dataform-repositories.md).
 - [UI roadmap](ui-roadmap.md): which UI area reads which data.

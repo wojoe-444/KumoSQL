@@ -27,11 +27,11 @@ from typing import Iterable
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import set_with_clause, with_clause
+from kumo_sql_prover.ast_utils import set_with_clause, with_clause
 from .pipeline_equivalence import _opaque, _resolve
 from .prover_schema import ProverSchema
 from .refactor import _Reads, _alias_of, _parse, _replace_tables, check_observable
-from .smt_equivalence import LIMIT_SOURCE_ASSUMPTION, TIE_ASSUMPTION
+from kumo_sql_prover.smt_equivalence import LIMIT_SOURCE_ASSUMPTION, TIE_ASSUMPTION
 
 SELECTION_ASSUMPTIONS = (LIMIT_SOURCE_ASSUMPTION, TIE_ASSUMPTION)
 

@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/numeric-assumption-report.md)
 
-Issue #484 asked that, across the prover evals, at least 80% of the proofs that touch numeric expressions are re-proved with fewer assumptions. `tools/numeric_assumption_report.py` measures that: it proves the pairs of the prover evals on the commit before PR #602 (the first parent of its merge commit, `b77a2595`) and on this checkout, and compares the assumption labels each proof lists. It does not change the prover. The prover side is in [Equivalence provers](provers.md#numbers-and-runtime-errors) and the [numeric traps eval](evals/numeric-traps.md).
+Issue #484 asked that, across the prover evals, at least 80% of the proofs that touch numeric expressions are re-proved with fewer assumptions. `tools/numeric_assumption_report.py` measures that: it proves the pairs of the prover evals on the commit before PR #602 (the first parent of its merge commit, `b77a2595`) and on this checkout, and compares the assumption labels each proof lists. It does not change the prover. The prover side is in [Equivalence provers](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md#numbers-and-runtime-errors) and the [numeric traps eval](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/evals/numeric-traps.md).
 
 ```
 python tools/numeric_assumption_report.py                       # the prover evals, before = b77a2595, after = this checkout (about 80 minutes)
@@ -103,7 +103,7 @@ The TPC-H pairs keep the labels because their columns are DOUBLE (FLOAT64 here),
 
 ## BigQuery-dialect eval of #602
 
-The 59 pairs of the [numeric traps eval](evals/numeric-traps.md) are typed and BigQuery-dialect, so the semantics apply to all of them. They are not one of the prover evals above: the author of the traps wrote them alongside the change, with some labels resting on rules marked `unverified` there, so this is a development check, not an independent one. Proofs 28 before and 35 after; 4 lost, 11 gained. **19 of 24 numeric-touching proofs re-proved (79.2%) have fewer labels** (replaced 5); the queries-only rule gives 13 of 18 (72.2%), arithmetic alone 11 of 16 (68.8%), and counting the lost proofs against it 19 of 28 (67.9%). The runtime-error label goes from 28 proofs to 0 (6 carry the verdict `same`, 5 `refines`); the NaN and SUM-order labels from 28 to 24.
+The 59 pairs of the [numeric traps eval](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/evals/numeric-traps.md) are typed and BigQuery-dialect, so the semantics apply to all of them. They are not one of the prover evals above: the author of the traps wrote them alongside the change, with some labels resting on rules marked `unverified` there, so this is a development check, not an independent one. Proofs 28 before and 35 after; 4 lost, 11 gained. **19 of 24 numeric-touching proofs re-proved (79.2%) have fewer labels** (replaced 5); the queries-only rule gives 13 of 18 (72.2%), arithmetic alone 11 of 16 (68.8%), and counting the lost proofs against it 19 of 28 (67.9%). The runtime-error label goes from 28 proofs to 0 (6 carry the verdict `same`, 5 `refines`); the NaN and SUM-order labels from 28 to 24.
 
 The 4 lost proofs (`IEEE_DIVIDE(1, f)` filtered to `f = 0`, `IEEE_DIVIDE(1, 0.0)`, and two `IF(y = 0, ...)` division rewrites without the guard) are pairs the case labels call not equivalent or error-introducing, so they were false proofs.
 

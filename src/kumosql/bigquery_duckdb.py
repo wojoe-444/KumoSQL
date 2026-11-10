@@ -32,7 +32,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
-from . import bigquery_syntax as _bigquery_syntax  # noqa: F401
+from kumo_sql_prover import bigquery_syntax as _bigquery_syntax  # noqa: F401
 
 
 class UntranslatableError(ValueError):

@@ -18,25 +18,10 @@ For comparing slow evals between code versions, see [Eval diff](eval-diff.md).
 
 | Guide | Question it tests |
 | --- | --- |
-| [SQLSolver and related corpora](sqlsolver.md) | Which optimizer query pairs can be proved? |
-| [VeriEQL](verieql.md) | Can queries be proved or separated on constraint-respecting data? |
-| [Singh and Bedathur](singh-bedathur.md) | Do alternative LeetCode solutions agree? |
-| [Logos' TPC-H, DSB and TPC-DS pairs](logos.md) | Are Calcite's rewrites of benchmark queries really equivalent? |
-| [Equivalent under conditions](conditional-equivalence.md) | How often is a pair equal under a short list of facts, and is any answer wrong? |
-| [Bounded verification](bounded-verification.md) | Do queries agree on every modeled small database? |
-| [SQL-IQ](sql-iq.md) | Equivalence, candidate choice, and error classification |
-| [LLM-SQL-Solver](llm-sql-solver.md) | Does the checker reject wrong query pairs and handle expert labels? |
-| [QUITE LLM rewrites](quite.md) | When language models rewrite a query, which rewrites can be proved right, and are any wrongly proved? |
-| [Join rewrites](join-rewrites.md) | When does changing a join type preserve results? |
-| [Optimizer wrong-result bugs](optimizer-bugs.md) | Does the prover avoid accepting known faulty rewrites? |
 | [Arcwise corrections of BIRD](arcwise-corrections.md) | Does the checker see that a human-corrected BIRD query differs from the original? |
-| [Numeric traps](numeric-traps.md) | Does the prover handle BigQuery's number and error rules, and tell when a rewrite could start failing? |
 | [Sample databases](sample-databases.md) | Do rewrites and proofs hold on complete real databases with declared keys? |
 | [Sample databases: Pagila](sample-databases-pagila.md) | Do rewrites and proofs also hold on Pagila, a PostgreSQL sample with a partitioned table and many nullable columns? |
-| [DB-GPT examples](dbgpt-rules.md) | Which demonstration rewrites preserve results under reviewed schemas? |
 | [Documented rewrites](documented-rewrites.md) | Do rewrites recommended by vendor docs keep the results? |
-| [Paired engine tests](engine-paired-tests.md) | Which query pairs from Trino, Spark, PostgreSQL and DuckDB tests can be proved equal or shown different? |
-| [DLBench](dlbench.md) | Are translations across SQL dialects faithful? |
 | [Whole-pipeline equivalence](pipeline-equivalence.md) | Are observable outputs preserved across several changed models? |
 | [Targeted test data](targeted-test-data.md) | Can carefully chosen data reveal subtle differences? |
 | [Fuzzing](fuzzing.md) | Can generated queries expose unsafe proofs or rewrites? |
@@ -73,7 +58,7 @@ For comparing slow evals between code versions, see [Eval diff](eval-diff.md).
 | [Schema changes](schema-change-bench.md) | Which downstream models break after a column change? |
 | [Public-source inventory](public-sources.md) | Which research sources are covered, planned, or blocked? |
 
-Feature guides also explain evaluations for [model reuse](../model-reuse.md), [join ordering](../joinorder.md), [output properties](../output-properties.md), [constraint-dependent rewrites](../constraint-rewrites.md), [incremental models](../incremental.md), and [scripts](../scripts.md).
+Feature guides also explain evaluations for [model reuse](../model-reuse.md), [join ordering](../joinorder.md), [output properties](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/output-properties.md), [constraint-dependent rewrites](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/constraint-rewrites.md), [incremental models](../incremental.md), and [scripts](../scripts.md).
 
 ## Find numbers or rerun a suite
 

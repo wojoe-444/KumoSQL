@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/gsql-eval.md)
 
-`kumosql.gsql_eval` runs a BigQuery query on in-memory tables in pure Python and returns the rows BigQuery returns, or declines. It reads the sqlglot BigQuery tree, analyses it once (names resolved, every expression typed) and then executes closures. It exists to be an independent oracle: [the BigQuery-on-DuckDB layer](bigquery-on-duckdb.md) translates SQL for another engine, while this package implements GoogleSQL's own rules, so the two can be compared. Its score is on the [GoogleSQL conformance eval](evals/googlesql-conformance.md).
+`kumosql.gsql_eval` runs a BigQuery query on in-memory tables in pure Python and returns the rows BigQuery returns, or declines. It reads the sqlglot BigQuery tree, analyses it once (names resolved, every expression typed) and then executes closures. It exists to be an independent oracle: [the BigQuery-on-DuckDB layer](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/bigquery-on-duckdb.md) translates SQL for another engine, while this package implements GoogleSQL's own rules, so the two can be compared. Its score is on the [GoogleSQL conformance eval](evals/googlesql-conformance.md).
 
 ```python
 from kumosql.gsql_eval import Database, Table, evaluate, Unsupported
@@ -52,7 +52,7 @@ sqlglot reads some names BigQuery does not have (`LEN`, `HEX`, `CHARINDEX`...) a
 
 ## Differential check against the DuckDB layer
 
-`python tools/gsql_differential.py [--limit N] [--random N --seed S] [--json PATH]` runs every query the evaluator answers (the conformance development cases, plus seeded random expression queries over INT64, FLOAT64, NUMERIC, STRING and DATE) through the [BigQuery-on-DuckDB layer](bigquery-on-duckdb.md) on identical typed tables, and shrinks each difference to a small repro. A difference counts only when DuckDB with its optimizer off (`run_unoptimized`) returns the same rows as with it on. The run is deterministic, reads only the development split and takes about 20 s for 6,000 queries.
+`python tools/gsql_differential.py [--limit N] [--random N --seed S] [--json PATH]` runs every query the evaluator answers (the conformance development cases, plus seeded random expression queries over INT64, FLOAT64, NUMERIC, STRING and DATE) through the [BigQuery-on-DuckDB layer](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/bigquery-on-duckdb.md) on identical typed tables, and shrinks each difference to a small repro. A difference counts only when DuckDB with its optimizer off (`run_unoptimized`) returns the same rows as with it on. The run is deterministic, reads only the development split and takes about 20 s for 6,000 queries.
 
 First run (`--random 3000 --seed 0`, 6,149 queries): 4,715 answered by the evaluator, 2,950 compared, 2,847 agree, 103 differ (28 in value, 75 only in type), 53 distinct repros after shrinking. Findings for the BigQuery-vs-DuckDB guards workstream (#487), each with the evaluator believed right from BigQuery's documentation (not re-checked against live BigQuery):
 

@@ -44,7 +44,7 @@ from typing import Callable, Mapping, Sequence
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import star_modified
+from kumo_sql_prover.ast_utils import star_modified
 
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
 

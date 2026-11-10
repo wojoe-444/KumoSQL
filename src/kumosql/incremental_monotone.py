@@ -641,7 +641,7 @@ def contract_constraints(
     contract does not say they are never NULL.
     """
 
-    from .smt_equivalence import TableConstraints
+    from kumo_sql_prover.smt_equivalence import TableConstraints
 
     kinds = frozenset(kinds)
     changing = {t.lower() for t in tables} if tables else {t.lower() for t in sources}

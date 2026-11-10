@@ -29,7 +29,7 @@ from sqlglot import exp
 
 from . import scopes as scope_store
 from . import state
-from .ast_utils import captured_names, is_cte_reference
+from kumo_sql_prover.ast_utils import captured_names, is_cte_reference
 from .pipeline_equivalence import prove_models
 from .prover_schema import ProverSchema, _select_names
 

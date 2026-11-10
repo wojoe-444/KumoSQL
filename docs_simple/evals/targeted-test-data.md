@@ -23,4 +23,4 @@ The score is the share of faulty variants that the databases tell apart, among v
 
 If every tried database agrees, that is executed evidence, not an unbounded proof. The distinction remains even when the databases are carefully chosen.
 
-The full guide explains the default checker, targeted generators, regression cases, and corpus integration. It also separates detection from correctness and minimization results. [Bounded verification](bounded-verification.md) describes a different approach that covers all modeled databases within a row limit.
+The full guide explains the default checker, targeted generators, regression cases, and corpus integration. It also separates detection from correctness and minimization results. [Bounded verification](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/evals/bounded-verification.md) describes a different approach that covers all modeled databases within a row limit.

@@ -23,10 +23,10 @@ from typing import Any, Mapping, Sequence
 
 from sqlglot import exp
 
-from .ast_utils import extended_grouping, is_aggregate, star_modifier
-from .output_properties import set_returning_item
+from kumo_sql_prover.ast_utils import extended_grouping, is_aggregate, star_modifier
+from kumo_sql_prover.output_properties import set_returning_item
 from .pipeline import ColumnRef, Model, Pipeline, Target, _parse_script, _table_name_for_schema
-from .set_operations import is_by_name
+from kumo_sql_prover.set_operations import is_by_name
 
 __all__ = [
     "AttributeMeaning",

@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .verdict-cache
-          key: verdicts-${{ hashFiles('src/kumosql/**/*.py') }}
+          key: verdicts-${{ hashFiles('pyproject.toml') }}  # the prover is a pinned dependency now; the keys inside hold its source hash
           restore-keys: verdicts-
       - name: Run the full suite
         id: full

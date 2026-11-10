@@ -124,11 +124,7 @@ def fresh_redactor(monkeypatch):
 # Files whose tests take the longest, slowest first. Under pytest-xdist the scheduler hands tests out in
 # collection order, so starting these first keeps one long benchmark from running alone at the end.
 HEAVY_FILES = [
-    "test_qed_benchmarks.py",
-    "test_verieql_benchmarks.py",
-    "test_singh_bedathur_benchmark.py",
     "test_spider2_bench.py",
-    "test_sqlsolver_benchmarks.py",
     "test_sqlfluff_fixtures_bench.py",
     "test_lineage_benchmarks.py",
     "test_pipeline_bench.py",
@@ -139,8 +135,6 @@ HEAVY_FILES = [
     "test_safety_corpus.py",
     "test_bq_syntax_coverage.py",
     "test_targeted_data_bench.py",
-    "test_cosette_benchmarks.py",
-    "test_rbot_benchmarks.py",
     "test_sample_db_bench.py",
     "test_sample_db_pagila.py",
     "test_bq_behavior_eval.py",

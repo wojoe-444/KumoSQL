@@ -27,7 +27,7 @@ from sqlglot.optimizer.annotate_types import annotate_types
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.schema import MappingSchema
 
-from .ast_utils import binding_cte, star_modifier
+from kumo_sql_prover.ast_utils import binding_cte, star_modifier
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline

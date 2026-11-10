@@ -27,7 +27,7 @@ from typing import Iterable, Mapping
 import sqlglot
 from sqlglot import exp
 
-from .smt_equivalence import TableConstraints
+from kumo_sql_prover.smt_equivalence import TableConstraints
 
 DECLARED_FACTS_NOTE = (
     "declared keys and NOT NULL columns hold in the data "

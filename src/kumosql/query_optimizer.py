@@ -37,8 +37,8 @@ import time
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import distinct_on, extended_grouping, plain_distinct
-from .ast_utils import select_sources as _sources, star_modified
+from kumo_sql_prover.ast_utils import distinct_on, extended_grouping, plain_distinct
+from kumo_sql_prover.ast_utils import select_sources as _sources, star_modified
 
 logging.getLogger("sqlglot").setLevel(logging.ERROR)
 
@@ -70,7 +70,7 @@ class Catalog:
         return catalog
 
     def constraints(self) -> dict:
-        from .smt_equivalence import TableConstraints
+        from kumo_sql_prover.smt_equivalence import TableConstraints
 
         return {
             name: TableConstraints(
@@ -904,8 +904,8 @@ def prove(original: str, rewritten: str, catalog: Catalog, *, dialect: str = "po
     Each attempt is stopped after ``wall_s`` seconds and then counts as not proven.
     """
 
-    from .algebraic_equivalence import prove_equivalent_algebraic
-    from .smt_equivalence import SmtEquivalenceResult, SmtStatus
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.smt_equivalence import SmtEquivalenceResult, SmtStatus
 
     def attempt(a: str, b: str):
         try:

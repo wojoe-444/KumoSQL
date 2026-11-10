@@ -42,7 +42,7 @@ from typing import Iterable, Iterator, Mapping, NamedTuple
 import sqlglot
 from sqlglot import ErrorLevel, exp
 
-from .ast_utils import binding_cte, quiet_parser, set_with_clause, with_clause
+from kumo_sql_prover.ast_utils import binding_cte, quiet_parser, set_with_clause, with_clause
 
 MAX_PROCEDURE_DEPTH = 8
 MAX_NESTED_SQL_DEPTH = 3

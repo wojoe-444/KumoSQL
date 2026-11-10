@@ -8,10 +8,10 @@ import os
 from pathlib import Path
 import sys
 
-from .lift_subqueries import lift_subqueries
-from .statement_proof import prove_statements
+from kumo_sql_prover.lift_subqueries import lift_subqueries
+from kumo_sql_prover.statement_proof import prove_statements
 from .rewrite import apply_rules, attach_planner_check, available_rules, check_idempotence
-from .sqlx import looks_like_sqlx
+from kumo_sql_prover.sqlx import looks_like_sqlx
 from .synthetic_check import attach_synthetic_check
 from .evidence_summary import DEFAULT_MIN_CHANGED, summarize_evidence
 from .dryrun import check_rewrite, dry_run
@@ -81,8 +81,8 @@ def prove_main(argv: list[str] | None = None) -> int:
     right_sql = args.right.read_text(encoding="utf-8")
     result = prove_statements(left_sql, right_sql, ignore_row_order=not args.respect_row_order)
     if args.conditional and not result.proven and not args.respect_row_order:
-        from .smt_equivalence import SmtStatus
-        from .statement_proof import prove_statements_smt
+        from kumo_sql_prover.smt_equivalence import SmtStatus
+        from kumo_sql_prover.statement_proof import prove_statements_smt
 
         schema = json.loads(args.schema.read_text(encoding="utf-8")) if args.schema else None
         conditional = prove_statements_smt(left_sql, right_sql, conditional=True, schema=schema)
@@ -100,7 +100,7 @@ def prove_main(argv: list[str] | None = None) -> int:
     for diagnostic in result.diagnostics:
         print(f"diagnostic: {diagnostic}")
     if args.explain_difference and not result.proven and not args.respect_row_order:
-        from .difference_surface import describe, except_when
+        from kumo_sql_prover.difference_surface import describe, except_when
 
         found = except_when(left_sql, right_sql)
         if found is not None:

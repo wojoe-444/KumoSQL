@@ -8,7 +8,7 @@ import re
 
 from sqlglot import exp
 
-from .canonical import canonical_copy, scope_key, visible_ctes
+from kumo_sql_prover.canonical import canonical_copy, scope_key, visible_ctes
 from .pipeline_types import DuplicateGroup, DuplicateOccurrence
 
 def _select_location(select: exp.Expression) -> str:

@@ -28,7 +28,7 @@ import sqlglot
 from sqlglot import exp
 
 from . import state
-from .ast_utils import UnmodeledConstruct, faithful_sql, table_parts as _parts, visible_ctes
+from kumo_sql_prover.ast_utils import UnmodeledConstruct, faithful_sql, table_parts as _parts, visible_ctes
 
 MAX_DECLARATIONS = 2000
 _LOCK = threading.Lock()

@@ -94,7 +94,7 @@ def evaluate(sql_or_tree: Any, database: Database | None = None, time_zone: str 
     literals_decoded = False
     strict_certain = False
     if isinstance(sql_or_tree, str):
-        from ..string_literals import invalid_literal
+        from kumo_sql_prover.string_literals import invalid_literal
         from . import text_guards
         from .literals import decode_literals
 

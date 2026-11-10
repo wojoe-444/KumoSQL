@@ -36,9 +36,9 @@ from typing import Any, Iterable
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import spell_for_duckdb
-from .duckdb_load import small_database
-from .sqlx import _find_interpolation_end, split_sqlx_sections
+from kumo_sql_prover.ast_utils import spell_for_duckdb
+from kumo_sql_prover.duckdb_load import small_database
+from kumo_sql_prover.sqlx import _find_interpolation_end, split_sqlx_sections
 
 
 class IncrementalError(ValueError):
@@ -629,7 +629,7 @@ def _pin_clock(tree: exp.Expression, clock: dt.datetime, read: str) -> exp.Expre
 
     tree = tree.transform(pin)
     if read == "bigquery":
-        from .bigquery_on_duckdb import faithful
+        from kumo_sql_prover.bigquery_on_duckdb import faithful
 
         try:
             tree = faithful(tree)
@@ -678,7 +678,7 @@ class Simulation:
         self.sources = sources
         self.con = _connect()
         if model.dialect == "bigquery":
-            from .bigquery_on_duckdb import configure
+            from kumo_sql_prover.bigquery_on_duckdb import configure
 
             configure(self.con)
         self.clock = dt.datetime(2030, 1, 1)

@@ -58,7 +58,7 @@ The first eight projects score exactly as on master before the five were added (
 
 **Held out:** of the 58 files in the hash-chosen fifth, 35 are handled and 1 has a failure (`marketing-jumpstart`'s `normalized_device.sqlx`). In the five added projects that is 15/28 handled and 1 failure, against 14/28 and 6 failures at the baseline. This is not a clean hold-out: the loader bugs were found and fixed with every file's failures in view, held-out files included (**tuned on test**), so the fifth shows only that the fixes did not break files they were not aimed at. The first eight projects were never held out.
 
-A cleanup rule leaves a statement that holds a JavaScript constant such as `${sp.output_schema}` or `${sp.entropy}` as written, and when a rule or override changes one anyway, the [proof safeguards](../proof-safeguards.md#dataform-expressions) keep the change `unproven` until the SQLX is compiled, because the constant can expand to any SQL. The two wintermi `template_columns` gaps, which take the handled count from 131 to 129, came from a loader change on master, not from the safeguards.
+A cleanup rule leaves a statement that holds a JavaScript constant such as `${sp.output_schema}` or `${sp.entropy}` as written, and when a rule or override changes one anyway, the [proof safeguards](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/proof-safeguards.md#dataform-expressions) keep the change `unproven` until the SQLX is compiled, because the constant can expand to any SQL. The two wintermi `template_columns` gaps, which take the handled count from 131 to 129, came from a loader change on master, not from the safeguards.
 
 ## Bugs found and fixed
 

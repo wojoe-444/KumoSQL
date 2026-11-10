@@ -35,7 +35,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import is_cte_reference, set_with_clause, with_clause
+from kumo_sql_prover.ast_utils import is_cte_reference, set_with_clause, with_clause
 from .minimizer_identity import ambiguous, fresh_catalogs, internal_name, single_query
 from .pipeline import Pipeline
 from .pipeline_types import Model, Target
@@ -704,8 +704,8 @@ def _projected(tree: exp.Expression, columns: Sequence[str]) -> exp.Expression:
 
 def _prove_expanded(setup: _Setup, state: Mapping[str, str], key: str, before, stop: set[str],
                     narrowed: tuple[str, ...] | None = None) -> tuple[bool, list[str], str]:
-    from .algebraic_equivalence import prove_equivalent_algebraic
-    from .smt_equivalence import SmtStatus
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.smt_equivalence import SmtStatus
 
     shared = stop
     try:
@@ -933,7 +933,7 @@ class _Occurrence:
 
 
 def _fingerprint(body: exp.Expression) -> str:
-    from .canonical import canonical_copy
+    from kumo_sql_prover.canonical import canonical_copy
 
     try:
         text = canonical_copy(body).sql(dialect="bigquery", normalize=True, comments=False)

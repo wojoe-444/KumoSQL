@@ -94,7 +94,7 @@ def _group_term(select: exp.Select, node: exp.Expression) -> exp.Expression:
 def _determines_row(select: exp.Select, parts: list[exp.Expression], with_, constraints, schema, dialect) -> bool:
     """``parts`` (expressions over the select's FROM, after WHERE and GROUP BY) determine the input row."""
 
-    from .output_properties import infer_properties
+    from kumo_sql_prover.output_properties import infer_properties
 
     group = select.args.get("group")
     if group is not None and group.expressions:

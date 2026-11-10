@@ -63,7 +63,7 @@ def raw_string(c, node, cx):
 
 @handles(getattr(exp, "ByteString", None))
 def byte_string(c, node, cx):
-    from ..string_literals import _decode_bytes
+    from kumo_sql_prover.string_literals import _decode_bytes
 
     text = node.this
     if node.args.get("is_bytes") is False:
