@@ -84,7 +84,7 @@ from .solver_lock import Z3_MISSING, bound, bounded_solver, serialized
 from .string_literals import canonical_literals
 from .type_names import invalid_type_name
 from .sqlx_fragments import masked_template_problem
-from . import numeric_column_reading, smt_errors, smt_group_sums, smt_numeric, smt_values, string_number_compare, string_number_literals
+from . import numeric_column_reading, smt_errors, smt_group_sums, smt_literal_coercion, smt_numeric, smt_values, string_number_compare, string_number_literals
 from .float_sum_order import Ledger
 
 try:  # pragma: no cover - exercised by the import itself
@@ -1021,6 +1021,11 @@ class _Compiler:
         self.untyped_sources = False  # an UNNEST or opaque source, whose columns have no declared type
         self.big_literals: list[str] = []  # INT64 literals past 2**53, which need an all-INT64 context
         self.float_capable = False  # a literal, cast or function in the queries that may produce a FLOAT64
+        # BigQuery types a decimal literal with the operands around it (smt_literal_coercion): the value planned for
+        # each literal by the operator being compiled, and one unknown numeric kind per operand of undeclared type.
+        self._literal_plans: dict[int, tuple] = {}
+        self._typed_literals: dict[int, exp.Literal] = {}
+        self.kind_unknowns: dict = {}
         self.sums = Ledger()  # SUM and AVG calls, for the row-order assumption (float_sum_order.py)
         self.string_literals: set[str] = set()
         self.timestamp_literals: set[str] = set()
@@ -1141,6 +1146,8 @@ class _Compiler:
         """Convert the outputs of set-operation operands to the common type of each column (``_coerce``)."""
 
         kinds = [_output_kinds(child, self.dialect) or [] for child in children]
+        if self.dialect == "bigquery":
+            self._check_literal_columns(children, kinds)
         blocks = [(kind, block) for kind, sub in zip(kinds, subs) for block in sub.branches]
         for j in range(min((len(block.outputs) for _, block in blocks), default=0)):
             entries = []
@@ -1150,6 +1157,34 @@ class _Compiler:
                 entries.append((kind[j] if j < len(kind) else None, literal, v))
             for (_, block), v in zip(blocks, self._coerce(entries)):
                 block.outputs[j] = v
+
+    def _check_literal_columns(self, children: list, kinds: list) -> None:
+        """A decimal literal that is a column of a set-operation operand takes the type of that column in the other
+        operands (``SELECT n FROM t UNION ALL SELECT 0.1`` holds the NUMERIC 0.1, not a double). The prover reads it
+        as a double, so it declines unless every other operand's column is a literal or visibly FLOAT64."""
+
+        C = smt_literal_coercion
+
+        def columns(node):
+            while isinstance(node, exp.Subquery):
+                node = node.this
+            if isinstance(node, exp.SetOperation):
+                left, right = columns(node.this), columns(node.expression)
+                return None if left is None or right is None else [a + b for a, b in zip(left, right)]
+            if isinstance(node, exp.Select) and not any(isinstance(i, exp.Star) or (isinstance(i, exp.Column) and isinstance(i.this, exp.Star)) for i in node.expressions):
+                return [[i.this if isinstance(i, exp.Alias) else i] for i in node.expressions]
+            return None
+
+        outputs = [columns(child) for child in children]
+        for index, mine in enumerate(outputs):
+            for j, items in enumerate(mine or []):
+                if not any(C.unstable(item) for item in items):
+                    continue
+                for other, other_kinds in zip(outputs[:index] + outputs[index + 1:], kinds[:index] + kinds[index + 1:]):
+                    floating = j < len(other_kinds) and other_kinds[j] is True
+                    literal = other is not None and j < len(other) and all(_plain_literal(item, self.dialect) for item in other[j])
+                    if not (floating or literal):
+                        raise Unsupported("a decimal literal in a set operation takes the type of the other operand's column")
 
     def _set_operation(self, node: exp.Expression, ctes: dict) -> _Union:
         """``A INTERSECT B`` and ``A EXCEPT B`` (set semantics) as existence tests.
@@ -1756,6 +1791,8 @@ class _Compiler:
         raise Unsupported(f"cannot resolve column {name} without a schema")
 
     def _pred(self, e, env, agg, aliases) -> _Pred:
+        if self.dialect == "bigquery":
+            self._plan_literals(e, env, agg, aliases)
         if isinstance(e, exp.Paren):
             return self._pred(e.this, env, agg, aliases)
         if isinstance(e, exp.And):
@@ -1940,6 +1977,8 @@ class _Compiler:
 
     def _val(self, e, env, agg: _AggCtx | None, aliases) -> _Val:
         V = _value_sort()
+        if self.dialect == "bigquery":
+            self._plan_literals(e, env, agg, aliases)
         if isinstance(e, exp.Paren):
             return self._val(e.this, env, agg, aliases)
         if isinstance(e, exp.Column):
@@ -2245,12 +2284,31 @@ class _Compiler:
         an integer and its FLOAT64 rounding compare alike with it."""
 
         entries = []
-        for e, v in zip(exprs, vals):
+        for position, (e, v) in enumerate(zip(exprs, vals)):
             kind, literal = _float64_kind(e, self.dialect), _plain_literal(e, self.dialect) or z3.is_true(v.null)
-            if literal and kind and abs(_literal_value(e, self.dialect)) < 2**53:
+            if literal and kind and abs(_literal_value(e, self.dialect)) < 2**53 and self._literal_compares_exactly(e, position, exprs, vals):
                 kind = False
             entries.append((kind, literal, v))
         return self._coerce(entries)
+
+    def _literal_compares_exactly(self, e, position: int, exprs: list, vals: list[_Val]) -> bool:
+        """Whether the FLOAT64 value ``e`` (a literal, or arithmetic over literals) compares with the other operands
+        as the exact number the model holds for it. A literal written in the comparison does: BigQuery converts the
+        literal to the type of a NUMERIC or BIGNUMERIC operand, and an INT64 below 2**53 is its own double. A FLOAT64
+        that is not a literal there (``0.1 + 0.2``, a literal a subquery returns) makes BigQuery convert the other
+        operand instead, and a NUMERIC or BIGNUMERIC value changes when it becomes a double."""
+
+        if self.dialect != "bigquery":
+            return True
+        leaf = smt_literal_coercion.literal_leaf(e)
+        if leaf is not None and self._typed_literals.get(id(leaf[0])) is leaf[0]:
+            return True
+        for k, (other, v) in enumerate(zip(exprs, vals)):
+            if k == position or _plain_literal(other, self.dialect) or z3.is_true(v.null):
+                continue
+            if self._declared_class(v) not in (smt_values.INT64, smt_values.FLOAT64) and _float64_kind(other, self.dialect) is not True:
+                return False
+        return True
 
     def _compared_vals(self, exprs: list, env, agg, aliases) -> list[_Val]:
         return self._compared(exprs, [self._val(e, env, agg, aliases) for e in exprs])
@@ -2290,9 +2348,9 @@ class _Compiler:
         if isinstance(e, exp.Neg):
             return self._class_of(e.this, env, agg, aliases)
         if isinstance(e, (exp.Add, exp.Sub, exp.Mul, exp.Mod)):
-            return S.arithmetic_class(self._class_of(e.this, env, agg, aliases), self._class_of(e.expression, env, agg, aliases))
+            return S.arithmetic_class(*self._operand_classes([e.this, e.expression], env, agg, aliases))
         if isinstance(e, exp.Div):
-            return S.division_class(self._class_of(e.this, env, agg, aliases), self._class_of(e.expression, env, agg, aliases))
+            return S.division_class(*self._operand_classes([e.this, e.expression], env, agg, aliases))
         if isinstance(e, (exp.IntDiv, exp.Count, exp.CountIf)):
             return S.INT64
         if isinstance(e, (exp.Abs, exp.Sum, exp.Min, exp.Max)) and isinstance(e.this, exp.Expression):
@@ -2304,8 +2362,27 @@ class _Compiler:
         if isinstance(e, (exp.Cast, exp.TryCast)):
             return S.type_class(e.args["to"].sql(dialect="bigquery")) or None
         if isinstance(e, (exp.Coalesce, exp.If, exp.Case, exp.Nullif)):
-            return S.supertype([self._class_of(b, env, agg, aliases) for b in _branch_values(e, self.dialect)])
+            return S.supertype(self._operand_classes(_branch_values(e, self.dialect), env, agg, aliases))
         return None
+
+    def _operand_classes(self, operands: list, env, agg, aliases) -> list:
+        """``_class_of`` each operand of one operator, with a decimal literal typed as BigQuery types it there: NUMERIC
+        or BIGNUMERIC when that is the common type of the other operands, FLOAT64 otherwise (``smt_literal_coercion``)."""
+
+        S = smt_values
+        literal = [smt_literal_coercion.literal_leaf(o) is not None for o in operands]
+        classes = [None if lit else self._class_of(o, env, agg, aliases) for o, lit in zip(operands, literal)]
+        if not any(literal):
+            return classes
+        others = [c for c, lit in zip(classes, literal) if not lit and c != "NULL"]
+        if not others:
+            mine = S.FLOAT64
+        elif any(c is None for c in others):
+            mine = None
+        else:
+            common = others[0] if len(set(others)) == 1 else S.supertype(others)
+            mine = common if common in (S.NUMERIC, S.BIGNUMERIC) else S.FLOAT64
+        return [mine if lit else c for c, lit in zip(classes, literal)]
 
     def _site(self, kind: str, e, cond, under=None) -> None:
         """Record an operation that can raise a runtime error where ``cond`` holds, and assume it does not.
@@ -2442,8 +2519,130 @@ class _Compiler:
             elif _DATEISH.match(text) and not _CANONICAL_DATE.match(text):
                 raise Unsupported(f"date/time-like literal {text!r} (only 'YYYY-MM-DD' and 'YYYY-MM-DD HH:MM:SS' are modeled)")
             return _Val(z3.BoolVal(False), V.Str(z3.StringVal(text)))
+        planned = self._literal_plans.get(id(e))
+        if planned is not None and planned[0] is e:
+            self._number(e.this, negate)  # the same range checks as the FLOAT64 reading
+            return _Val(z3.BoolVal(False), V.Num(-planned[1] if negate else planned[1]))
         value = self._number(e.this, negate)
         return _Val(z3.BoolVal(False), V.Num(z3.RealVal(f"{value.numerator}/{value.denominator}")))
+
+    # ---- decimal literals next to NUMERIC and BIGNUMERIC operands (BigQuery) -----------------
+
+    def _plan_literals(self, e, env, agg, aliases) -> None:
+        """Before the operands of ``e`` are compiled: give each decimal literal among them the value BigQuery gives
+        it there (``smt_literal_coercion``). A literal typed with INT64, FLOAT64 or other literals is the nearest
+        double; with a NUMERIC or BIGNUMERIC operand it is its decimal text rounded to that type; with an operand of
+        undeclared type it is whichever of those the operand's type makes it, one unknown per operand."""
+
+        C = smt_literal_coercion
+        if isinstance(e, (exp.Column, exp.Literal, exp.Paren, exp.Neg)):
+            return
+        typed = C.groups(e)
+        if not typed:
+            # Not an operator that types its operands together: a literal directly under it is a FLOAT64, whatever an
+            # earlier use of the same node object was planned as.
+            for child in e.args.values():
+                for item in child if isinstance(child, list) else [child]:
+                    leaf = C.literal_leaf(item) if isinstance(item, exp.Expression) else None
+                    if leaf is not None:
+                        self._literal_plans.pop(id(leaf[0]), None)
+                        self._typed_literals.pop(id(leaf[0]), None)
+            return
+        precise = not isinstance(e, exp.Func) or isinstance(e, (exp.Case, exp.If, exp.Coalesce, exp.Nullif, exp.Greatest, exp.Least))
+        subquery_side = isinstance(e, exp.In) and any(e.args.get(k) is not None for k in ("query", "unnest", "field"))
+        for members in typed:
+            leaves = [(member, C.literal_leaf(member)) for member in members]
+            if not any(leaf is not None and C.unstable(member) for member, leaf in leaves):
+                for _, leaf in leaves:
+                    if leaf is not None:
+                        self._typed_literals[id(leaf[0])] = leaf[0]
+                        self._literal_plans.pop(id(leaf[0]), None)
+                continue
+            others = [m for m, leaf in leaves if leaf is None and not isinstance(m.unnest() if isinstance(m, exp.Paren) else m, exp.Null)]
+            others = [m for m in others if not (isinstance(m, exp.Literal) or (isinstance(m, exp.Neg) and isinstance(m.this, exp.Literal)))]
+            if precise:
+                kinds = [self._numeric_kind(m, env, agg, aliases) for m in others]
+                if subquery_side:
+                    kinds.append(self._kind_unknown(("fresh", next(self.counter))))
+            elif all(self._numeric_kind(m, env, agg, aliases) in (C.INT64, C.FLOAT64) for m in others):
+                kinds = []
+            else:
+                # Another function: which of its signatures applies is not modelled, so the literal has an unknown
+                # reading, the same one in every call written the same way over the same columns.
+                kinds = [self._kind_unknown(self._kind_key(e, env, agg, aliases) or ("fresh", next(self.counter)))]
+            for member, leaf in leaves:
+                if leaf is None:
+                    continue
+                self._typed_literals[id(leaf[0])] = leaf[0]
+                if C.unstable(member):
+                    self._literal_plans[id(leaf[0])] = (leaf[0], self._literal_reading(leaf[0], kinds))
+                else:
+                    self._literal_plans.pop(id(leaf[0]), None)
+
+    def _numeric_kind(self, e, env, agg, aliases):
+        """The numeric kind of operand ``e`` (``smt_literal_coercion.INT64`` .. ``FLOAT64``), or a Z3 integer standing
+        for it when the type of ``e`` is not declared or not visible."""
+
+        C = smt_literal_coercion
+        cls = self._class_of(e, env, agg, aliases)
+        if cls in C.KIND:
+            return C.KIND[cls]
+        if cls is not None:
+            return C.FLOAT64  # a string, a BOOL, a date: BigQuery rejects the comparison, any reading will do
+        return self._kind_unknown(self._kind_key(e, env, agg, aliases) or ("fresh", next(self.counter)))
+
+    def _kind_unknown(self, key):
+        if key not in self.kind_unknowns:
+            self.kind_unknowns[key] = z3.Int(f"kind!{len(self.kind_unknowns)}")
+        return self.kind_unknowns[key]
+
+    def _kind_key(self, e, env, agg, aliases):
+        """A key that two expressions share only when they have the same SQL type: the text of ``e`` with every
+        column replaced by the base-table column it reads. ``None`` when a column is not a base-table column (a
+        derived value has the type of its own expression) or ``e`` holds a subquery."""
+
+        parts = []
+        for node in e.walk():
+            if isinstance(node, (exp.Select, exp.Subquery, exp.SetOperation)):
+                return None
+            if isinstance(node, exp.Column):
+                try:
+                    v = self._val(node, env, agg, aliases)
+                except Unsupported:
+                    return None
+                key = self._type_key(v)
+                if not isinstance(key, tuple):
+                    return None
+                parts.append(key)
+        shape = e.copy()
+        for node in list(shape.find_all(exp.Column)):
+            if node is shape:
+                return ("column", parts[0])
+            node.replace(exp.Placeholder())
+        return ("expression", shape.sql(dialect="bigquery"), tuple(parts))
+
+    def _literal_reading(self, literal: exp.Literal, kinds: list):
+        """The value (a Z3 real) of the unsigned decimal ``literal`` typed with operands of ``kinds``."""
+
+        C = smt_literal_coercion
+        try:
+            floating, numeric, bignumeric = C.readings(literal.this)
+        except smt_values.NotModeled as error:
+            raise Unsupported(str(error)) from error
+
+        def real(value):
+            if value is None:
+                raise Unsupported(f"decimal literal {literal.this[:40]} does not fit the NUMERIC or BIGNUMERIC operand it is compared with")
+            return z3.RealVal(f"{value.numerator}/{value.denominator}")
+
+        known = max((k for k in kinds if isinstance(k, int)), default=C.INT64)
+        unknown = [k for k in kinds if not isinstance(k, int)]
+        if known == C.FLOAT64 or not unknown:
+            return real({C.NUMERIC: numeric, C.BIGNUMERIC: bignumeric}.get(known, floating))
+        widest = z3.IntVal(known)
+        for k in unknown:
+            widest = z3.If(k > widest, k, widest)
+        return z3.If(widest == C.NUMERIC, real(numeric), z3.If(widest == C.BIGNUMERIC, real(bignumeric), real(floating)))
 
     def _number(self, text: str, negate: bool) -> Fraction:
         """The value of a numeric literal. In BigQuery an integer is an INT64 and a decimal or exponent literal the
@@ -2813,6 +3012,7 @@ class _Prover:
         self.wall_clock = False  # a check stopped on the wall clock, not the work cap: the verdict can vary by machine
         self.opaque_sets: set[str] = set()
         self.candidates: list[tuple[object, object, list[_Occ], list[_Val], list[str | None]]] = []
+        self.kind_unknowns: list = []  # the compiler's unknown numeric kinds (decimal literals next to undeclared types)
 
     def declared_kind(self, table: str, column: str) -> str | None:
         """``"int"``, ``"number"`` or ``"string"`` for a column whose declared type fixes what a value in it is, else ``None``."""
@@ -4453,6 +4653,11 @@ def _block_occs(block) -> list:
     return found
 
 
+def _model_int(model, term) -> int | None:
+    value = model.eval(term, model_completion=True)
+    return value.as_long() if z3.is_int_value(value) else None
+
+
 def _find_counterexample(prover: _Prover, left: _Union, right: _Union) -> Counterexample | None:
     blocks = list(left.branches) + list(right.branches)
     all_occs = [o for b in blocks for o in b.occs]
@@ -4463,7 +4668,10 @@ def _find_counterexample(prover: _Prover, left: _Union, right: _Union) -> Counte
     empty = z3.Solver()
     empty.check()
     for assertions, base, occs, values, kinds in [(None, empty.model(), [], [], [])] + prover.candidates:
-        model = prover._counterexample(assertions, base, values, kinds) if occs else base
+        pins = [kind == smt_literal_coercion.FLOAT64 for kind in prover.kind_unknowns]
+        model = prover._counterexample(list(assertions) + pins if pins else assertions, base, values, kinds) if occs else base
+        if any(_model_int(model, kind) in (smt_literal_coercion.NUMERIC, smt_literal_coercion.BIGNUMERIC) for kind in prover.kind_unknowns):
+            continue  # this model reads an undeclared column as NUMERIC or BIGNUMERIC; the database is shown as plain numbers
         db: dict[str, list[dict]] = {occ.table: [] for occ in all_occs}
         for occ in occs:
             db.setdefault(occ.table, []).append({name: _cell(model, v, prover.declared_kind(occ.table, name)) for name, v in occ.cols.items()})
@@ -4723,6 +4931,7 @@ def _prove_core(
         prover = _Prover(timeout_ms, constraints, compiler.types)
         prover.ordered, prover.string_literals = compiler.ordered, compiler.string_literals
         prover.opaque_sets = compiler.opaque_sets
+        prover.kind_unknowns = list(compiler.kind_unknowns.values())
         used[0] = compiler.used_setsrc
         try:
             proven, reason = _prove(prover, left, right)
@@ -4737,6 +4946,13 @@ def _prove_core(
                 )
             return SmtEquivalenceResult(SmtStatus.PROVEN_EQUIVALENT, reason, assumptions=_error_assumptions(assumed, report), errors=report)
         if not compiler.uses_uf:
+            if compiler.kind_unknowns:
+                # A proof holds whatever the undeclared types are. A counterexample is shown as plain numbers, so it is
+                # sought with every undeclared operand read as FLOAT64, where a decimal literal is the nearest double.
+                pins = [kind == smt_literal_coercion.FLOAT64 for kind in compiler.kind_unknowns.values()]
+                for union in (left, right):
+                    for block in union.branches:
+                        block.facts = list(block.facts) + pins
             counterexample = _find_counterexample(prover, left, right)
             if counterexample is not None and compiler.bounded_sums and not _small_database(counterexample):
                 counterexample = None
