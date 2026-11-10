@@ -400,6 +400,42 @@ def targeted_datasets(
     return out
 
 
+def isolated_boundary_datasets(
+    sql: str,
+    schema: Schema,
+    rules: Mapping[str, DataRules] | None = None,
+    *,
+    dialect: str = "bigquery",
+) -> list[LabeledDataset]:
+    """Each constant's boundary rows in one table at a time, every other referenced table empty.
+
+    Facts are kept by column name, so ``targeted_datasets`` puts a constant's boundary rows into
+    every table with a column of that name: for ``t.a >= 3 AND NOT EXISTS (SELECT 1 FROM u WHERE
+    u.a = t.a)`` the ``u`` partner is always there and the row at the boundary never survives. Here
+    it stands alone. Only columns held by two or more referenced tables get these databases.
+    """
+
+    facts = _Facts(sql, schema, dialect)
+    names = _referenced(sql, schema, dialect)
+    rng = random.Random(2)
+    out: list[LabeledDataset] = []
+    for index, (column, values) in enumerate(facts.predicate_groups()):
+        holders = [k for k in names if any(c.lower() == column for c in schema[k])]
+        if len(holders) < 2:
+            continue
+        for key in holders:
+            columns = _columns(schema, key)
+            others = {c: v for c, v in facts.satisfy.items() if c != column and any(n.lower() == c for n, _ in columns)}
+            fixed = [{**others, column: value} for value in values]
+            if _nullable(rules, key, column):
+                fixed.append({**others, column: None})
+            rows = _build_rows(key, columns, facts, rules, rng, 0, null_rate=0.0, fixed_rows=fixed)
+            overrides = {k: (rows if k == key else []) for k in names}
+            dataset = _dataset(300 + len(out), schema, names, facts, rules, rng, overrides=overrides)
+            out.append(LabeledDataset(f"isolated:{key}:{column}:{index}", dataset))
+    return out
+
+
 def _nullable(rules: Mapping[str, DataRules] | None, key: str, column: str) -> bool:
     table_rules = rules.get(key.lower()) if rules else None
     if table_rules is None:
