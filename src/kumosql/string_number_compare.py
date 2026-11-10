@@ -227,7 +227,20 @@ class _Kinds:
         if found and all(t in self.types for t in found):
             kinds = {_type_kind(self.types[t][name]) for t in found if name in self.types[t]}
             return kinds.pop() if len(kinds) == 1 else None
-        return None if qualifier in self.derived else self.by_name.get(name)
+        return None if qualifier in self.derived else self._declared_by_name(name)
+
+    def _declared_by_name(self, name: str) -> str | None:
+        """The declared kind of a column known by its name alone: the one kind the tables this query reads give it.
+
+        A table the schema does not type may be the one that holds the column, so the name then has no declared kind;
+        a table the query does not read says nothing about it (another table's ``s VARCHAR`` does not type ``t.s``).
+        """
+
+        read = {table for tables in self.tables.values() for table in tables if table not in self.derived}
+        if not read or any(table not in self.types for table in read):
+            return None
+        kinds = {_type_kind(self.types[table][name]) for table in read if name in self.types[table]}
+        return kinds.pop() if len(kinds) == 1 else None
 
     def kinds(self, node: exp.Expression, depth: int = 0) -> set[str]:
         """Kinds ``node`` can hold; empty when nothing is known."""
@@ -277,6 +290,7 @@ class _Kinds:
     def _build(self) -> None:
         for _ in range(4):  # a kind found late flows to the expressions built on it
             self._unqualified()
+            self._unqualified_derived()
             self._projections()
             self._comparisons()
             self._using()
@@ -288,6 +302,69 @@ class _Kinds:
             if "" in qualifiers:
                 for qualifier in qualifiers - {""}:
                     self.union(("", name), (qualifier, name))
+
+    def _exposed(self, select: exp.Select) -> list[tuple[str, set[str]]] | None:
+        """``(alias, column names)`` of every source of ``select``; None when some source's columns are not known."""
+
+        source = select.args.get("from_") or select.args.get("from")
+        nodes = ([source.this] if source else []) + [join.this for join in select.args.get("joins") or []]
+        if select.args.get("laterals"):
+            return None
+        found = []
+        for node in nodes:
+            alias = (node.alias_or_name or "").lower() if isinstance(node, (exp.Table, exp.Subquery)) else ""
+            if not alias or (isinstance(node.args.get("alias"), exp.TableAlias) and node.args["alias"].args.get("columns")):
+                return None
+            if isinstance(node, exp.Subquery) and isinstance(node.this, exp.Query):
+                names = {name.lower() for name in node.this.named_selects}
+            elif isinstance(node, exp.Table) and not node.args.get("db") and node.name.lower() in self.derived and alias == node.name.lower():
+                names = {name.lower() for name in self.derived[alias].named_selects}
+            elif isinstance(node, exp.Table) and node.name.lower() in self.types and node.name.lower() not in self.derived:
+                names = set(self.types[node.name.lower()])
+            else:
+                return None
+            if "*" in names or "" in names:
+                return None
+            found.append((alias, names))
+        return found
+
+    def _unqualified_derived(self) -> None:
+        """A column written without its table is the output column of a derived table or CTE when, in every select that
+        reads the name that way, that one source alone can hold it.
+
+        ``SELECT c FROM (SELECT name AS c FROM dept) AS d WHERE c > 'a' AND c < 'z'`` never writes ``d.c``, so
+        :meth:`_unqualified` has nothing to tie ``c`` to and it looked like a column of no declared type. The name is
+        resolved select by select; a select alias of that name, a source whose columns are not known, a name two sources
+        hold or none does (an enclosing query's column), or two selects that read it from different sources leave it
+        untied, as before.
+        """
+
+        holders: dict[str, set[str] | None] = {}
+        for select in self.tree.find_all(exp.Select):
+            bare = {
+                c.name.lower()
+                for c in select.find_all(exp.Column)
+                if not c.table and c.name and not isinstance(c.this, exp.Star) and c.find_ancestor(exp.Select) is select
+            }
+            if not bare:
+                continue
+            exposed = self._exposed(select)
+            aliases = {
+                item.alias.lower()
+                for item in select.expressions
+                if isinstance(item, exp.Alias) and not (isinstance(item.this, exp.Column) and not item.this.table and item.this.name.lower() == item.alias.lower())
+            }
+            for name in bare:
+                sources = [alias for alias, names in exposed if name in names] if exposed is not None else []
+                if len(sources) != 1 or name in aliases or holders.get(name, set()) is None:
+                    holders[name] = None
+                else:
+                    holders.setdefault(name, set()).add(sources[0])
+        for name, sources in holders.items():
+            if sources and len(sources) == 1:
+                alias = next(iter(sources))
+                if alias in self.derived:
+                    self.union(("", name), (alias, name))
 
     def _sources(self, select: exp.Select) -> list[str]:
         source = select.args.get("from_") or select.args.get("from")

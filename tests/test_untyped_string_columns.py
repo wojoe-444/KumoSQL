@@ -96,3 +96,58 @@ def test_a_string_with_no_exact_small_integer_is_declined():
 @pytest.mark.parametrize("dialect", ("duckdb", "postgres", "bigquery", "snowflake"))
 def test_only_mysql_is_checked(dialect):
     assert numeric_column_reading.reading(*WITNESSES[0], dialect) is None
+
+
+THROUGH_DERIVED = (
+    "SELECT c FROM (SELECT s AS c FROM t) AS d WHERE c = 'x' AND c = 'y'",
+    "SELECT c FROM (SELECT s AS c FROM t) AS d WHERE FALSE",
+)
+
+
+@pytest.mark.parametrize("prover", PROVERS)
+def test_a_declared_text_column_read_by_a_bare_name_through_a_derived_table_keeps_the_proof(prover):
+    """``c`` is never written ``d.c``; it is still the derived table's output, a declared VARCHAR (VeriEQL Calcite pair 147)."""
+
+    types = {"t": {"s": "VARCHAR", "k": "INT"}}
+    assert prover(*THROUGH_DERIVED, dialect="mysql", types=types).status is SmtStatus.PROVEN_EQUIVALENT
+
+
+@pytest.mark.parametrize("prover", PROVERS)
+@pytest.mark.parametrize("types", [None, {"t": {"s": "INT", "k": "INT"}}, {"u": {"s": "VARCHAR"}}])
+def test_an_untyped_or_integer_column_read_through_a_derived_table_is_not_proven(prover, types):
+    assert not prover(*THROUGH_DERIVED, dialect="mysql", types=types).proven
+
+
+@pytest.mark.parametrize("prover", PROVERS)
+@pytest.mark.parametrize("types", [{"t": {"s": "VARCHAR", "k": "INT"}}, {"t": {"s": "VARCHAR", "k": "INT"}, "u": {"s": "INT"}}])
+def test_a_bare_name_read_from_two_derived_tables_is_not_tied_to_the_typed_one(prover, types):
+    """The second branch reads ``c`` from ``u``, which is untyped or an integer: MySQL returns its rows where ``u.s`` is 0."""
+
+    typed = "SELECT c FROM (SELECT s AS c FROM t) AS d WHERE c = 'a'"
+    left = f"{typed} UNION ALL SELECT c FROM (SELECT s AS c FROM u) AS e WHERE c = 'x' AND c = 'y'"
+    assert not prover(left, typed, dialect="mysql", types=types).proven
+
+
+def test_a_bare_name_is_tied_only_when_one_source_can_hold_it():
+    import sqlglot
+
+    types = {"t": {"s": "VARCHAR", "k": "INT"}}
+
+    def tied(sql):
+        kinds = string_number_compare._Kinds(sqlglot.parse_one(sql, read="mysql"), types)
+        return kinds.find(("", "c")) == kinds.find(("d", "c"))
+
+    assert tied("SELECT c FROM (SELECT s AS c FROM t) AS d WHERE c = 'x'")
+    assert not tied("SELECT c FROM (SELECT s AS c FROM t) AS d, u WHERE c = 'x'")  # u's columns are not known
+    assert not tied("SELECT k AS c FROM (SELECT s AS c, k FROM t) AS d ORDER BY c")  # ORDER BY reads the select alias
+    assert not tied("SELECT 1 FROM (SELECT s AS c FROM t) AS d WHERE EXISTS (SELECT 1 FROM t WHERE c = 'x')")  # read from the enclosing query
+
+
+@pytest.mark.parametrize("prover", PROVERS)
+@pytest.mark.parametrize("types", [{"u": {"s": "VARCHAR"}}, {"t": {"k": "INT"}, "u": {"s": "VARCHAR"}}])
+def test_another_tables_declared_type_does_not_type_a_bare_column(prover, types):
+    """``s`` is read from ``t``, which the schema does not type (or types without ``s``); ``u.s VARCHAR`` says nothing
+    about it. Both provers once borrowed that type for the bare name and proved the pair, which MySQL separates for an
+    integer ``t.s`` that holds 0."""
+
+    assert not prover("SELECT k FROM t WHERE s = 'x' AND s = 'y'", "SELECT k FROM t WHERE FALSE", dialect="mysql", types=types).proven
