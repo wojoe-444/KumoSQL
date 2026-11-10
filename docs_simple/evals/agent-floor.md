@@ -8,7 +8,7 @@ This check asks: when an agent works on a Dataform project through the KumoSQL s
 
 An analyst asks "what breaks if I drop this column?". Without the server, an agent might read all 106 model files (about 141 KB) or the full report (about 895 KB). With the server, the answer is one message of under 2 KB that lists the affected models, says what it could not tell, and names the next step.
 
-The check asks about twenty questions like this on the largest public project in the repository (what is this table, where does this column come from, what breaks if I change it, does one like it exist) and fails when an answer is bigger than 2,000 bytes, a question needs more than three calls, a call is slow, or the server answers with an error.
+The check asks about twenty-six questions like this on the largest public project in the repository (what is this table, where does this column come from, what breaks if I change it, does one like it exist, is my draft query safe to run) and fails when an answer is bigger than 2,000 bytes, a question needs more than three calls, a call is slow, or the server answers with an error.
 
 ## What it does not show
 

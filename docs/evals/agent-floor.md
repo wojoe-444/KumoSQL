@@ -16,7 +16,7 @@ About twenty questions on the largest public Dataform project in the fixtures, `
 | Does one already exist? | a table like the most-read one, a draft query |
 | Several calls | can I delete a table nothing reads (describe, then impact), orient me in an unfamiliar table (describe, trace, impact) |
 
-The tables and columns are chosen by fixed rules from the project's own table cards (most readers, no readers, widest, and so on), so the same questions are asked every run. Questions for tools that do not exist yet are listed as `waiting` and do not fail; the questions for `find_tables`, `check_query`, `compare_queries` and `profile_table` are added when those tools land.
+The tables and columns are chosen by fixed rules from the project's own table cards (most readers, no readers, widest, and so on), so the same questions are asked every run. Questions for tools that do not exist yet are listed as `waiting` and do not fail. The questions for `find_tables`, `profile_table`, `check_query` and `compare_queries` are in the list (no BigQuery is touched: the dry-run and run paths are not part of this floor).
 
 ## What is measured and what fails the floor
 
@@ -43,7 +43,7 @@ The result file is `agent-floor`. The test is `tests/test_agent_floor.py` (an ev
 
 ## Results
 
-At the first run: 20 of 20 questions inside their bounds, largest answer 1,971 bytes, median task 1,036 bytes in total, at most 3 calls, median latency under 1 ms per task after a 2.1 s load. Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
+With all eight tools: 26 of 26 questions inside their bounds, largest answer 1,971 bytes, median task 991 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
 
 ## Limits of the evidence
 

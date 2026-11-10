@@ -125,6 +125,13 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Is a column nothing reads used anywhere?", ("impact",), lambda ask: ask("impact", table=c["leaf"], column=c["leaf_column"])),
         ("Does a table like the most-read one already exist?", ("find_existing",), lambda ask: ask("find_existing", table=c["most_read"])),
         ("Does a table for this draft query already exist?", ("find_existing",), lambda ask: ask("find_existing", sql=c["draft"])),
+        ("Is there a table that already holds the most-read table's subject?", ("find_tables",), lambda ask: ask("find_tables", need=c["most_read"].replace("_", " "))),
+        ("Is there a table with a given column?", ("find_tables",), lambda ask: ask("find_tables", need=c["most_read"].replace("_", " "), column=c["most_read_column"])),
+        ("Can I plan a profile of a table without touching BigQuery?", ("profile_table",), lambda ask: ask("profile_table", table=c["most_read"])),
+        ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
+        ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
+        ("Is my rewrite of a draft query equivalent to the original?", ("compare_queries",),
+         lambda ask: ask("compare_queries", left=c["draft"], right=f"SELECT * FROM (SELECT {c['draft'][len('SELECT '):]}) AS t")),
         ("Can I delete a table nothing reads? (describe it, then ask what breaks)", ("describe_table", "impact"),
          lambda ask: (ask("describe_table", table=c["leaf"]), ask("impact", table=c["leaf"], change="drop_table"))),
         ("Orient me in an unfamiliar table: what is it, where does a column come from, what reads it?", ("describe_table", "trace_column", "impact"),
@@ -200,7 +207,7 @@ def results_row(result: dict) -> dict:
         "docs": "docs/evals/agent-floor.md",
         "command": "python tools/agent_floor.py --write-results",
         "date": __import__("datetime").date.today().isoformat(),
-        "caveats": "One public project with no source schemas and no job history. In-process calls (no stdio transfer time). No language model is involved, so the turn and token counts of a real agent are not measured here (roadmap step 7). Questions for tools that do not exist yet are listed as waiting, not scored.",
+        "caveats": "One public project with no source schemas and no job history. In-process calls (no stdio transfer time). No language model is involved, so the turn and token counts of a real agent are not measured here (see docs/field-trial.md). The BigQuery dry-run and run paths of check_query and profile_table are not part of this floor. Questions for a tool the server does not have are listed as waiting, not scored.",
     }
 
 
