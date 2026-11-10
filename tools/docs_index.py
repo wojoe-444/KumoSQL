@@ -6,7 +6,7 @@ never touched or duplicated: the generated block only holds what the hand-writte
 wants a page in a better place moves its line above the block.
 
 ``tests/test_docs.py`` does not fail a pull request for a page missing from an index, so a feature page does not have to
-edit a shared list. The nightly job runs ``--write`` and opens a pull request when the block changes.
+edit a shared list. Run ``--write`` by hand (no CI does it) and commit the block when it changes.
 """
 
 from __future__ import annotations

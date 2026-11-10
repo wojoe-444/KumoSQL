@@ -65,10 +65,10 @@ Pin or bound every dependency (DuckDB, z3-solver, sqlfluff, pytest) and commit a
 
 - Move every eval floor and every test over about 2 seconds out of the default pull-request tier. Keep one small canary per benchmark family in the gate (around 20 cases that run in seconds).
 - Fail the gate run when it exceeds its budget, so it cannot grow back unnoticed.
-- Run the gate on GitHub Actions for pull requests. `.github/workflows/tests.yml` already separates the routine run from the scheduled full run; Actions has to be enabled for the repository.
+- Run the gate locally on the exact candidate before merging (`python tools/run_tests.py --gate`). The owner decided on 2026-11-10 that no CI runs through GitHub, so the gate is a local command, not a hosted check; the scheduled full run is a local or Dell run.
 - Cache proof verdicts by a hash of the query pair plus a hash of the prover's source, so benchmarks re-prove only when the prover changed.
 
-**Done when** the pull-request check finishes in under 5 minutes on a standard runner and the nightly job owns the benchmark scores. This step changes the test policy in `CLAUDE.md`, so it needs the owner's sign-off in its pull request.
+**Done when** the local gate finishes in under 5 minutes on four cores and the scheduled full run (not the gate) owns the benchmark scores. This step changes the test policy in `CLAUDE.md`, so it needs the owner's sign-off in its pull request.
 
 ### 3. Stop hand-keeping generated things
 
