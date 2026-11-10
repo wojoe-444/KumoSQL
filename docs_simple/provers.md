@@ -74,6 +74,10 @@ Some writes cannot be compared faithfully, so the check answers `error` instead 
 
 Repeating the same comparison should find the same counterexample regardless of earlier comparisons or unrelated imports. For example, removing a lookup join can lose its treatment of a user whose plan is NULL: the join drops that user, while reading the users table keeps them. The solver isolates its candidate search to avoid changing this witness with process history. The search can still miss a difference or run out of time; returned examples must respect the declared data guarantees and make the query results differ.
 
+An example database also has to be one that could exist. Three things used to go wrong. A text column could be shown holding the number 1, or a whole-number column holding `'A'`. Text could be put in an order it does not have: the check reported that `WHERE s < ''` and a filter that keeps nothing are different, with the example `s = 'A'`, although nothing sorts before empty text. And with about ninety text values in the queries, the search for a readable example never came back, whatever time limit was set. Now each value matches the declared type of its column, text is ordered the way BigQuery and DuckDB order it (an example that breaks this is thrown away, and the answer is "unknown" if no better one is found), and every step of the search has a time limit.
+
+The limits: this needs declared column types, so a column without one can still be shown with a number where the queries compare it with text. Text order is plain character order, so an example may not hold in a database set up to ignore upper and lower case. The [full reference](../docs/provers.md#smt-equivalence-prover) has the details and the tests.
+
 ## Strings compared with numbers
 
 `WHERE '2' <> 2` looks like a condition that is never true, but engines disagree: MySQL turns the string into a number and finds them equal, DuckDB and PostgreSQL cast it the same way, and BigQuery refuses the query. Treating the two as always different once led the checker to say this query matches one with no filter, when real engines return different rows.
