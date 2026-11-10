@@ -302,6 +302,8 @@ def pytest_collection_modifyitems(config, items):
     heavy = {name: position for position, name in enumerate(HEAVY_FILES)}
 
     def is_slow(item):
+        if item.get_closest_marker("canary"):
+            return False  # a canary stands for its benchmark family in the gate, so it is never moved to the slow tier
         # without recorded durations the hand-kept list of heavy files stands in for the slow tier
         return seconds(item.nodeid) is not None or (not slow and item.path.name in heavy)
 

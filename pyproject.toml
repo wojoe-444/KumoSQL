@@ -72,6 +72,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "slow: a long benchmark run, deselected by default (pytest -m slow runs it)",
+    "canary: a few cases of a benchmark family; stays in the pull-request gate (never in the slow tier)",
     "eval: scores KumoSQL on a benchmark corpus and holds its floors (set in tests/conftest.py)",
     "xdist_group(name): keep these tests on one pytest-xdist worker (used with --dist loadgroup)",
 ]
