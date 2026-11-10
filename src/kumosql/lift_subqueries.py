@@ -30,7 +30,7 @@ from .ast_utils import (
     top_level_query,
     with_clause,
 )
-from .engine import FATAL_DIAGNOSTIC_CODES, RewriteRule, RuleDiagnostic, register_rule
+from .rule_driver import FATAL_DIAGNOSTIC_CODES, RewriteRule, RuleDiagnostic
 from .sqlx import looks_like_sqlx, mask_sqlx_interpolations, split_sqlx_sections
 
 # Backwards-compatible names for code that imported the private helpers.
@@ -377,7 +377,6 @@ def _transform_statement(statement: exp.Expression) -> int:
     return lifted
 
 
-@register_rule
 class LiftSubqueriesRule(RewriteRule):
     """Promote every FROM/JOIN subquery into a uniquely named top-level CTE."""
 

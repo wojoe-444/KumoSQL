@@ -4,7 +4,7 @@ import pytest
 from sqlglot import exp
 
 from kumosql import apply_rule
-from kumosql import engine
+from kumosql import rule_driver as engine
 from kumosql.ast_utils import parse_statements
 from kumosql.engine import RewriteRule
 
