@@ -223,15 +223,35 @@ def analyse(source: Path, package: str) -> dict:
 _PACKAGE_REF = re.compile(r"""\bkumosql(?:\.([A-Za-z_][A-Za-z_0-9]*))?""")
 
 
-def referenced_modules(text: str, modules: dict[str, Path], package: str = "kumosql") -> set[str]:
-    """Package modules a file names: imports (``from kumosql import a, b``) and dotted strings (``"kumosql.a.f"``)."""
+def package_exports(source: Path, modules: dict[str, Path]) -> dict[str, str]:
+    """Name -> module for what the package's ``__init__`` re-exports (``kumosql.prove_equivalent``)."""
 
+    init = source / "__init__.py"
+    exports: dict[str, str] = {}
+    if not init.exists():
+        return exports
+    for node in ast.parse(init.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.ImportFrom) and node.level == 1 and node.module in modules:
+            for alias in node.names:
+                exports[alias.asname or alias.name] = node.module
+    return exports
+
+
+def referenced_modules(
+    text: str, modules: dict[str, Path], package: str = "kumosql", exports: dict[str, str] | None = None
+) -> set[str]:
+    """Package modules a file names: ``from kumosql import a, b``, dotted strings (``"kumosql.a.f"``) and the
+    names ``kumosql/__init__`` re-exports (``kumosql.format_sql`` counts as ``formatting``)."""
+
+    exports = exports or {}
     found: set[str] = set()
     for match in re.finditer(rf"\bfrom\s+{package}\s+import\s+\(?([^\n)]*(?:\n[^\n)]*)*?)\)?(?:\n|$)", text):
         for name in re.split(r"[,\s]+", match.group(1)):
             name = name.strip("()")
             if name in modules:
                 found.add(name)
+            elif name in exports:
+                found.add(exports[name])
     for match in re.finditer(rf"\b{package}\.([A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*)", text):
         dotted = match.group(1).split(".")
         for end in range(len(dotted), 0, -1):
@@ -239,6 +259,9 @@ def referenced_modules(text: str, modules: dict[str, Path], package: str = "kumo
             if candidate in modules:
                 found.add(candidate)
                 break
+        else:
+            if dotted[0] in exports:
+                found.add(exports[dotted[0]])
     return found
 
 
@@ -249,12 +272,18 @@ def tool_imports(text: str, tools: set[str]) -> set[str]:
     for match in re.finditer(r"^\s*(?:from|import)\s+([A-Za-z_][A-Za-z_0-9]*)", text, re.MULTILINE):
         if match.group(1) in tools:
             found.add(match.group(1))
+    # tests also load a runner by path (``TOOLS / "qed_bench.py"``) or name (``importlib.import_module("qed_bench")``)
+    for match in re.finditer(r"""["']([A-Za-z_][A-Za-z_0-9]*)(?:\.py)?["']|tools/([A-Za-z_][A-Za-z_0-9]*)\.py""", text):
+        name = match.group(1) or match.group(2)
+        if name in tools:
+            found.add(name)
     return found
 
 
 def plan(source: Path, package: str, repo: Path) -> dict:
     modules, graph = import_graph(source, package)
     prover = closure(graph, ROOTS)
+    exports = package_exports(source, modules)
     tools_dir = repo / "tools"
     tests_dir = repo / "tests"
     tools = {p.stem: p for p in tools_dir.glob("*.py")} | {p.name: p for p in tools_dir.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
@@ -262,18 +291,18 @@ def plan(source: Path, package: str, repo: Path) -> dict:
     for name, path in tools.items():
         files = [path] if path.is_file() else sorted(path.rglob("*.py"))
         text = "\n".join(f.read_text(encoding="utf-8", errors="replace") for f in files)
-        tool_refs[name] = (referenced_modules(text, modules, package), tool_imports(text, set(tools) - {name}))
+        tool_refs[name] = (referenced_modules(text, modules, package, exports), tool_imports(text, set(tools) - {name}))
     test_files = sorted(tests_dir.glob("test_*.py"))
     test_refs = {}
     for path in test_files:
         text = path.read_text(encoding="utf-8", errors="replace")
-        test_refs[path.name] = (referenced_modules(text, modules, package), tool_imports(text, set(tools)))
+        test_refs[path.name] = (referenced_modules(text, modules, package, exports), tool_imports(text, set(tools)))
 
     # A tool belongs to the prover when everything it names is the prover or another such tool. Start from every
     # tool and drop the ones that name a product module or a dropped tool, until nothing changes (tools import
     # tools). What is left and is reached from a tool that names the prover (or names it itself) moves; a helper
     # with no prover reference that the prover tools do not import (a corpus fetcher) stays.
-    stays = {"eval_diff", "run_tests", "test_history", "prover_split", "xdist_scheduler"}
+    stays = {"eval_diff", "run_tests", "test_history", "test_sqlglot_matrix", "prover_split", "xdist_scheduler"}
     copied = {"scoreboard"}  # generic, used by both repositories: copied, never moved
     candidates = set(tools) - stays
     changed = True
