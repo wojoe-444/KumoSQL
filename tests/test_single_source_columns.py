@@ -197,7 +197,7 @@ def test_differential_qualified_queries_return_the_same_rows():
             assert Counter(results[index]) == Counter(results[len(queries) + index]), (sql, rewritten[index], rows)
 
 
-# --- the R-Bot Calcite pairs (as tools/rbot_bench.py's normalise prints them) -------------------------------
+# --- the R-Bot Calcite pairs (as the R-Bot harness prints them; its floor in test_rbot_benchmarks.py reads the fixture) -------------------------------
 
 ANY_IN_PROJECT = (
     "SELECT name, deptno > ANY (SELECT deptno FROM {emp}) FROM dept",
@@ -246,20 +246,6 @@ def pair(template, **names):
 ], ids=["testAnyInProjectNonNullable", "testSelectAnyCorrelated", "testWhereAnyCorrelatedInSelect"])
 def test_rbot_any_pairs_are_proved(left, right):
     assert proved(left, right)
-
-
-def test_the_pairs_above_are_the_fixture_as_the_harness_reads_it():
-    import importlib.util
-    from pathlib import Path
-
-    path = Path(__file__).resolve().parent.parent / "tools" / "rbot_bench.py"
-    spec = importlib.util.spec_from_file_location("rbot_bench_single_source_columns_under_test", path)
-    bench = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(bench)
-    read = {name: (bench.normalise(left), bench.normalise(right)) for name, left, right in bench.load_pairs()}
-    assert read["testAnyInProjectNonNullable"] == pair(ANY_IN_PROJECT, emp="emp", agg="MIN")
-    assert read["testSelectAnyCorrelated"] == pair(SELECT_ANY_CORRELATED, agg="MIN")
-    assert read["testWhereAnyCorrelatedInSelect"] == pair(WHERE_ANY_CORRELATED, agg="MIN")
 
 
 DEPTS = [(1, "x"), (3, "x"), (2, "y")]
