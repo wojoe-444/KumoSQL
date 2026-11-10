@@ -33,6 +33,7 @@ This folder is the plain-language companion to [the full documentation](../docs/
 | Extract a copied WITH query into one model | [Shared models](shared-models.md) |
 | Shrink a Dataform project to the outputs you need | [Project reduction](project-reduction.md) |
 | Summarize what is stored in a table, for people or agents | [Data profiling](data-profiling.md) |
+| Let an AI agent ask short questions about a project | [Agent server](mcp-server.md) |
 | Learn what a query guarantees about its rows | [Output properties](output-properties.md) |
 | Know the column types a query returns without running it | [Type inference](type-inference.md) |
 | Find results that change when rows tie | [Ties](ties.md) |

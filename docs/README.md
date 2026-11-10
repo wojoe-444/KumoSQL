@@ -29,6 +29,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 | [Project reduction](project-reduction.md) | The smallest Dataform project that still produces the outputs you keep, as a proved patch on the `.sqlx` files |
 | [GoogleSQL type inference](type-inference.md) | The output column types of a BigQuery query, STRUCT and ARRAY included, without running it: the catalog, unknown, coercion and supertype rules, set operations, pipe syntax, findings and the scan tool |
 | [Data profiling](data-profiling.md) | Per-column statistics of a table's values (nulls, distinct, min, max, quartiles, most common values) on BigQuery or DuckDB, saved profiles, and the read-only MCP resources agents read |
+| [Agent-facing server](mcp-server.md) | `python -m kumosql mcp`: one stdio MCP server that loads a project once and answers one question per call (describe a table, trace a column, assess a change, find an existing table) in about 2 KB, with counts, explicit unknowns and a next step |
 | [Output properties](output-properties.md) | Never-NULL columns, unique keys and row bounds, inferred without running a query |
 | [Ties and nondeterministic results](ties.md) | Windows, LIMITs and aggregates whose result can depend on how tied rows are ordered, what would pin them down, and small databases that show the difference (tie witnesses) |
 | [Constraint-dependent rewrites](constraint-rewrites.md) | Rewrites that hold only under declared NOT NULL columns, keys and foreign keys |

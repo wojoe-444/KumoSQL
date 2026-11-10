@@ -56,6 +56,7 @@ reduce-project = "kumosql.project_reduction:main"
 kumosql-shared-model = "kumosql.shared_models:main"
 kumosql-profile-table = "kumosql.data_profile_cli:main"
 kumosql-profile-mcp = "kumosql.profile_mcp:main"
+kumosql-mcp = "kumosql.mcp_server:main"
 
 [build-system]
 requires = ["setuptools>=68"]

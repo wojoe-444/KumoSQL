@@ -29,6 +29,7 @@ COMMANDS = {
     "kumosql-shared-model": "kumosql.shared_models:main",
     "kumosql-profile-table": "kumosql.data_profile_cli:main",
     "kumosql-profile-mcp": "kumosql.profile_mcp:main",
+    "kumosql-mcp": "kumosql.mcp_server:main",
     "kumosql-compare-outputs": "kumosql.cli:compare_outputs_main",
     "kumosql-ui": "kumosql.ui:main",
     "kumosql-scopes": "kumosql.cli:scopes_main",
