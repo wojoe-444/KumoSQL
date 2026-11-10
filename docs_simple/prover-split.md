@@ -2,7 +2,7 @@
 
 [All simple guides](README.md) · [Full reference](../docs/prover-split.md)
 
-The part of KumoSQL that proves two queries return the same rows was large, slow to test and changed for different reasons than the part that reads Dataform projects. It now has its own repository, [Kumo_SQL_Prover](https://github.com/wojoe-444/Kumo_SQL_Prover), and KumoSQL uses a fixed released version of it (a tag such as `v0.1.0`, named in `pyproject.toml`).
+The part of KumoSQL that proves two queries return the same rows was large, slow to test and changed for different reasons than the part that reads Dataform projects. It now has its own repository, [Kumo_SQL_Prover](https://github.com/wojoe-444/Kumo_SQL_Prover), and KumoSQL uses a fixed released version of it (the commit released as `v0.1.0`, named in `pyproject.toml`).
 
 ## What this means in practice
 

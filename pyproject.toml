@@ -7,9 +7,10 @@ requires-python = ">=3.11"
 dependencies = [
     "sqlglot==30.21.0",
     "sqlfluff>=4.3,<5",
-    # The equivalence prover lives in its own repository and is pinned to a tagged release (docs/prover-split.md).
-    # A prover change reaches KumoSQL only as a bump of this tag.
-    "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@v0.1.0",
+    # The equivalence prover lives in its own repository and is pinned to a release (docs/prover-split.md).
+    # A prover change reaches KumoSQL only as a bump of this pin. It names the commit released as v0.1.0 until that
+    # tag exists in the prover repository; then it can read @v0.1.0.
+    "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@cf1f74a2a913cfe621031797dc60fe5448ba80de",
 ]
 
 [project.optional-dependencies]

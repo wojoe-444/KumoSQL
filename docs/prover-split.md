@@ -2,13 +2,13 @@
 
 [Plain-language version](../docs_simple/prover-split.md)
 
-Step 8 of the [roadmap](roadmap.md): the equivalence prover lives in its own repository, [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover), with its tests, benchmark runners, results files and docs. KumoSQL depends on a pinned release of it (`kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@v0.1.0` in `pyproject.toml`), so a prover change reaches KumoSQL only as a bump of that tag. Progress is tracked in [issue 839](https://github.com/wojoe-444/KumoSQL/issues/839).
+Step 8 of the [roadmap](roadmap.md): the equivalence prover lives in its own repository, [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover), with its tests, benchmark runners, results files and docs. KumoSQL depends on a pinned release of it (`kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@cf1f74a...` in `pyproject.toml`: the commit released as v0.1.0), so a prover change reaches KumoSQL only as a bump of that pin. The pin names the commit because the `v0.1.0` tag could not be created from the session that merged the prover; once the tag exists the pin can read `@v0.1.0`. Progress is tracked in [issue 839](https://github.com/wojoe-444/KumoSQL/issues/839).
 
 ## What the prover is
 
 The prover is the import closure of these modules: `equivalence`, `smt_equivalence`, `algebraic_equivalence`, `bounded_equivalence`, `result_equivalence`, `sqlsolver_backend`, `tie_determinism`, `tie_witness`, `uexpr`, `proof_registry` and `proof_format` (the roadmap's list), plus four small modules: `canonical_rules` and `query_mutants`, leaves that the prover's own benchmark runners and fuzzers import, `verdict_cache`, the cache of proof verdicts for the benchmark runs (it hashes the prover's own source, and no prover module imports it, so it is a root), and `bigquery_syntax`, which teaches sqlglot's BigQuery parser the syntax it lacks (`TABLE` arguments, `LIKE ALL UNNEST`, the `WITH(a AS 1, a + 1)` expression) the moment it is imported. That last one is not reached by any import from the roots, but every parse the prover made relied on it because `import kumosql` loads it first; a prover installed alone would have read the same query differently, so it is a root and the package imports it first. Imports inside functions count; the walk is over the syntax tree, so nothing is executed.
 
-That is 125 modules and 56,479 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
+That is 125 modules and 56,675 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
 
 ```sh
 python tools/prover_split.py            # the closure of the installed prover, with line counts
@@ -22,7 +22,7 @@ python tools/prover_split.py --check    # exit 1 when the closure reaches a prod
 
 | What | Moved | Now |
 | --- | --- | --- |
-| Source modules | 125 modules, 56,479 lines | `src/kumo_sql_prover/` in the prover repository |
+| Source modules | 125 modules, 56,675 lines | `src/kumo_sql_prover/` in the prover repository |
 | Test files | 150 of 379 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
 | Benchmark runners (`tools/`) | 40 runners; the 8 only the prover uses are gone from here | `tools/` there. The other 32 are imported by KumoSQL's proof re-check (and a few by staying evals), so a copy stays here; see below |
 | Results files | 50 of 126 | `benchmarks/results/` there; the scoreboard of those evals is generated there |
@@ -49,7 +49,7 @@ The hook has a price: `python -m kumosql.<moved name>` does not work (use `pytho
 
 ## The pin, and bumping it
 
-`pyproject.toml` pins a tag. To take a prover change: release it in the prover repository (a `vX.Y.Z` tag, with release notes saying which evals moved and the commit tested), change the tag here, and run the routine tier plus the canary. A KumoSQL pull request therefore cannot change a prover benchmark: none of the prover's evals, floors or results files live here.
+`pyproject.toml` pins a release. To take a prover change: release it in the prover repository (a `vX.Y.Z` tag, with release notes saying which evals moved and the commit tested), change the pin here, and run the routine tier plus the canary. A KumoSQL pull request therefore cannot change a prover benchmark: none of the prover's evals, floors or results files live here.
 
 ## Canaries
 
