@@ -54,9 +54,12 @@ class Session:
         loader: Callable[[], Pipeline] | None = None,
         profiles: Path | None = None,
         assume_grain: Mapping[str, Sequence[str]] | None = None,
+        root: Path | None = None,
     ) -> None:
         self._assume_grain = dict(assume_grain or {})
         self._pipeline = pipeline
+        #: the project folder; local files a tool is asked to read must sit inside it (the working folder when unknown)
+        self.root = root
         self._loader = loader
         self._lock = threading.RLock()
         self._cache: dict[str, object] = {}
