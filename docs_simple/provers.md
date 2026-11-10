@@ -92,6 +92,14 @@ KumoSQL knows that `SELECT d.b + 1 FROM (SELECT a AS b FROM t ORDER BY a LIMIT 1
 
 Proofs may depend on declared keys, non-NULL columns, arithmetic assumptions, or restrictions on runtime errors. Check those before applying a change to real data. [Constraint-dependent rewrites](constraint-rewrites.md) explains data guarantees, and [bounded verification](evals/bounded-verification.md) explains the row limit.
 
+## A subquery compared on its own is read in your dialect
+
+Some subqueries in `FROM` are too involved for the prover to read row by row, for example one that groups and sums. It treats such a subquery as a black box, and when the two queries hold differently written black boxes it runs a small proof of its own to see whether they are the same table. That small proof used to read both subqueries as BigQuery, even when you said the queries were MySQL, PostgreSQL or DuckDB.
+
+The dialects disagree about decimals. `1.00` is an exact decimal in MySQL and a floating-point number in BigQuery. So under MySQL the prover could not see that `SUM(price * (1 - discount))` and `SUM(price * (1.00 - discount))` are the same sum, and it called two filters equal that are not: `x = 0.1` and `x = 0.10000000000000000001` are the same floating-point number in BigQuery but two different decimals in MySQL, where a row holding exactly 0.1 passes only the first. Now the small proof reads the subqueries in the dialect you named. When a subquery cannot be written back in that dialect without changing it, it is not compared at all, which can only cost a proof.
+
+The evidence is the two examples above as tests in three dialects and a rerun of the benchmarks that read other dialects; it is not a proof that no other step still assumes BigQuery. The [full reference](../docs/provers.md) has the details.
+
 ## Numbers and errors
 
 BigQuery numbers have traps. A whole number past about nine quadrillion loses its last digits once it meets a decimal, `0.1 + 0.2` is not `0.3`, and dividing by zero is an error. Worse, BigQuery does not promise to filter rows before it computes the select list, so `SELECT x / y FROM t WHERE y <> 0` can still divide by zero.
