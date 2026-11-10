@@ -143,13 +143,17 @@ def analyze(
         tree = sqlglot.parse_one(query, read=dialect) if isinstance(query, str) else query.copy()
     except sqlglot.errors.SqlglotError as error:
         return TieReport(unsupported=f"parse error: {error}")
+    except RecursionError:
+        return TieReport(unsupported="parse error: the query is nested too deeply to read")
     if tree is None:
         return TieReport(unsupported="empty query")
-    tree = inline_named_windows(tree)
     try:
+        tree = inline_named_windows(tree)
         return TieReport(sites=tuple(_Analysis(tree, schema, constraints, dialect).sites()))
     except _Unreadable as error:
         return TieReport(unsupported=str(error))
+    except RecursionError:
+        return TieReport(unsupported="the query is nested too deeply to analyze")
 
 
 def tie_dependence(
@@ -916,12 +920,18 @@ def _inside(node: exp.Expression, ancestor: exp.Expression) -> bool:
     return False
 
 
+def _name_parts(table: exp.Table) -> list[exp.Expression]:
+    """The named parts of a table reference. ``t..u`` (an empty middle part) leaves a plain empty string there."""
+
+    return [p for p in (table.args.get("catalog"), table.args.get("db"), table.this) if isinstance(p, exp.Expression) and p.name]
+
+
 def _table_name(table: exp.Table) -> str:
-    return ".".join(p.name.lower() for p in (table.args.get("catalog"), table.args.get("db"), table.this) if p is not None and p.name)
+    return ".".join(p.name.lower() for p in _name_parts(table))
 
 
 def _lookup_name(table: exp.Table, known: Mapping[str, object]) -> str | None:
-    parts = [p.name.lower() for p in (table.args.get("catalog"), table.args.get("db"), table.this) if p is not None and p.name]
+    parts = [p.name.lower() for p in _name_parts(table)]
     for index in range(len(parts)):
         name = ".".join(parts[index:])
         if name in known:

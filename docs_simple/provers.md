@@ -100,6 +100,12 @@ The dialects disagree about decimals. `1.00` is an exact decimal in MySQL and a 
 
 The evidence is the two examples above as tests in three dialects and a rerun of the benchmarks that read other dialects; it is not a proof that no other step still assumes BigQuery. The [full reference](../docs/provers.md) has the details.
 
+## Broken input gets an answer, not a crash
+
+Sometimes the text handed to a checker is not a query it can read: a quote that never closes, sixty parentheses inside each other, a table written `t..u`, or a table description with no columns. These used to stop the program with an internal error, which is hard to tell apart from a real bug and takes down whatever tool was calling the checker. Now each checker gives its ordinary "I cannot tell" answer: the provers say "not proven", the run-both-queries check says "error" with the reason, and the bounded check says "unknown".
+
+For example, comparing `SELECT '` with `SELECT a FROM t` now returns "not proven" with a parse error as the reason. The cases come from an automated search over the entry points and are kept as tests; other odd inputs nobody has tried may still fail. The [full reference](../docs/provers.md) lists them.
+
 ## Numbers and errors
 
 BigQuery numbers have traps. A whole number past about nine quadrillion loses its last digits once it meets a decimal, `0.1 + 0.2` is not `0.3`, and dividing by zero is an error. Worse, BigQuery does not promise to filter rows before it computes the select list, so `SELECT x / y FROM t WHERE y <> 0` can still divide by zero.

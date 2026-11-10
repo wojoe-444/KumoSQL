@@ -1335,7 +1335,10 @@ class Compiler:
             if len(text) > 400:
                 raise Unsupported("integer literal out of range")
             return const(int(text), "int")
-        value = Decimal(text)
+        try:
+            value = Decimal(text)
+        except ArithmeticError:  # sqlglot tokenizes ``1e`` as a number
+            raise Unsupported(f"numeric literal {text[:20]!r}") from None
         if value.is_finite() and value and not -400 <= value.adjusted() <= 400:
             # Out of FLOAT64's range; Fraction(Decimal('1e100000000')) would build a hundred-million-digit integer.
             raise Unsupported("numeric literal out of range")
@@ -2023,6 +2026,8 @@ class DuckDBReplay:
             configure(self.db)
         self.names = {}
         for name, table in schema.tables.items():
+            if not table.columns:
+                raise Unsupported(f"table {name!r} has no columns")
             columns = ", ".join(f'"{c.name}" {_duck_type(c, self.bigquery)}' for c in table.columns)
             self.db.execute(f'CREATE TABLE "{name}" ({columns})')
         self.left = translate(left) if translate is not None else self._translate(left, dialect)
