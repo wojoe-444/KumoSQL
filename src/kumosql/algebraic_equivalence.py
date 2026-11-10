@@ -105,6 +105,8 @@ from .constant_correlation import propagate_constant_correlations
 from .constant_regroup_rules import collapse_constant_regroup
 from .bigquery_constructs import rewrite_bigquery_constructs
 from .boolean_identities import fold_boolean_identities
+from .closed_sources import closed_derived_source, inner_join_conditions, plain_inner_join
+from .listed_output_names import name_listed_outputs
 from .membership_dedup import relax_membership_dedup
 from .case_arm_rules import rewrite_case_arms
 from .unmatched_outer_join import drop_unmatched_left_join
@@ -112,6 +114,12 @@ from .having_count_rules import rewrite_count_tests
 from .semijoin_shapes import rewrite_semijoin_shapes
 from .grouped_self_membership import read_grouped_self_membership
 from .disjoint_union import separate_disjoint_unions
+from .one_row_tails import drop_one_row_tail
+from .string_spelling_rules import string_spelling_rules
+from .tailed_outer_aggregates import wrap_tailed_outer_join_aggregate
+from .printed_spelling import spell_as_printed
+from .tailed_grouping_sets import isolate_tailed_grouping_sets
+from .wrapped_join_filters import push_filter_into_wrapped_join
 from .smt_equivalence import SmtEquivalenceResult, SmtStatus, prove_equivalent_smt
 
 MAX_BRANCHES = 16
@@ -1185,10 +1193,10 @@ def _decorrelated(inner: exp.Select, table_columns, outer_resolves):
     if len(inner.expressions) != 1 or not _no_extras(inner, allow_group=False) or inner.args.get("limit"):
         return None
     sources = _sources_of(inner)
-    if not sources or any(not isinstance(i, exp.Table) or not i.alias_or_name for i in sources):
+    if not sources or any(not (isinstance(i, exp.Table) or closed_derived_source(i, table_columns)) or not i.alias_or_name for i in sources):
         return None
     for join in inner.args.get("joins") or []:
-        if join.args.get("side") or join.args.get("kind") in _OUTER or join.args.get("using") is not None or join.args.get("on") is not None:
+        if join.args.get("side") or join.args.get("kind") in _OUTER or join.args.get("using") is not None or not plain_inner_join(join):
             return None
     known = [(i.alias_or_name.lower(), table_columns(i)) for i in sources]
     if any(cols is None for _, cols in known) or len({a for a, _ in known}) != len(known):
@@ -1221,11 +1229,11 @@ def _decorrelated(inner: exp.Select, table_columns, outer_resolves):
             return None
         return kinds.pop()
 
-    if any(isinstance(n, (exp.Subquery, exp.Exists)) for n in inner.walk() if n is not inner):
+    if any(isinstance(n, (exp.Subquery, exp.Exists)) for n in inner.walk() if n is not inner and not any(_within(n, s) for s in sources)):
         return None
     local, keys = [], []
     where = inner.args.get("where")
-    for condition in _conjuncts(where.this) if where is not None else []:
+    for condition in [c for part in ([where.this] if where is not None else []) + inner_join_conditions(inner) for c in _conjuncts(part)]:
         columns = list(condition.find_all(exp.Column))
         kinds = {side(c) for c in columns}
         if kinds == {"inner"} or not columns:
@@ -4851,7 +4859,7 @@ def normalize(
     can hide a match the first attempt finds.
     """
 
-    tree = expand_alias_columns(check_modeled(canonical_negation(strip_positions(sqlglot.parse_one(sql, read=dialect)))), schema)
+    tree = expand_alias_columns(name_listed_outputs(check_modeled(canonical_negation(strip_positions(sqlglot.parse_one(sql, read=dialect))))), schema)
     if group_by_constants:
         tree = _drop_constant_groupings(tree)
     tree = _resolve_ordinals(tree, group_by=not group_by_constants)
@@ -4887,7 +4895,7 @@ def normalize(
                 tree = replacement
             else:
                 select.replace(replacement)
-    tree = grouping_sets_to_union(tree)
+    tree = grouping_sets_to_union(isolate_tailed_grouping_sets(tree))  # pre-pass: a row tail moves one level up first
     tree = _drop_group_in_membership_tests(tree)
     tree = _fold_dates(extract_to_ranges(tree))
     tree = _fold_boolean_constants(_fold_constants(tree))
@@ -4957,6 +4965,10 @@ def normalize(
                     lambda sel: drop_unmatched_left_join(sel, schema, dialect),
                     rewrite_count_tests,
                     lambda sel: rewrite_semijoin_shapes(sel, schema, types_map),
+                    lambda sel: string_spelling_rules(sel, types_map, dialect),
+                    wrap_tailed_outer_join_aggregate,
+                    push_filter_into_wrapped_join,
+                    drop_one_row_tail,
             ):
                 rewritten = rule(node)
                 if rewritten is not None:
@@ -4988,6 +5000,7 @@ def normalize(
             if replacement is not None:
                 subquery.replace(replacement)
     tree = expose_set_identity(tree, schema)
+    tree = spell_as_printed(tree, dialect)  # post-pass: the tree must match the text printed from it
     return faithful_sql(parenthesize_is_operands(_parenthesize_boolean(_parenthesize_set_operations(_constant_keys(canonical_empty(tree))))), dialect)
 
 

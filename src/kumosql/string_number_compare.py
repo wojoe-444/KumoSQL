@@ -11,7 +11,8 @@ filter. No engine reads it that way:
 :func:`problem` names the first such comparison so the prover returns "not proven". It looks at
 equality, ordering, ``BETWEEN``, ``IN`` lists, simple ``CASE`` operands and ``NULLIF``, comparing
 
-- a string literal with a number literal, arithmetic, a numeric ``CAST``, a ``COUNT`` or a column declared numeric;
+- a string literal with a number literal, arithmetic, a numeric ``CAST``, a ``COUNT`` or a column declared numeric
+  (``x + INTERVAL ..`` and ``x - INTERVAL ..`` are a date, a timestamp or an interval, so they are not read as numbers);
 - a number literal (or the other numeric forms) with a column declared as a string;
 - one column compared with a string literal in one place and a number literal in another (``a = 'abc' AND a = 0``
   is not empty on MySQL when ``a`` is an integer column, since ``'abc'`` reads as 0).
@@ -85,11 +86,19 @@ def _kind(node: exp.Expression, columns: dict[str, str]) -> str | None:
         return "string" if node.is_string else "number"
     if isinstance(node, exp.Cast):
         return _data_type_kind(node.args.get("to"))
+    if _interval_arithmetic(node):
+        return None
     if isinstance(node, _NUMBER_NODES):
         return "number"
     if isinstance(node, exp.Column):
         return columns.get(node.name.lower())
     return None
+
+
+def _interval_arithmetic(node: exp.Expression) -> bool:
+    """``x + INTERVAL ..`` or ``x - INTERVAL ..``: a date, a timestamp or an interval, never a number."""
+
+    return isinstance(node, (exp.Add, exp.Sub)) and any(isinstance(_unwrap(side), exp.Interval) for side in (node.this, node.expression))
 
 
 def _pairs(tree: exp.Expression):
@@ -233,6 +242,8 @@ class _Kinds:
         if isinstance(node, exp.Cast):
             kind = _data_type_kind(node.args.get("to"))
             return {kind} if kind else set()
+        if _interval_arithmetic(node):
+            return set()
         if isinstance(node, _NUMBER_NODES):
             return {"number"}
         if isinstance(node, _STRING_NODES):
