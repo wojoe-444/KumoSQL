@@ -45,6 +45,14 @@ def _conjuncts(node: exp.Expression) -> list[exp.Expression]:
     return [node]
 
 
+def _spelling(node: exp.Expression) -> str:
+    """The text two expressions are compared by: identifier case is ignored, as everywhere in the prover, but the
+    text of an expression that holds a string literal is kept as written (``NULLIF(x, 'A')`` is not ``NULLIF(x, 'a')``)."""
+
+    text = node.sql()
+    return text if any(isinstance(n, exp.Literal) and n.is_string for n in node.walk()) else text.lower()
+
+
 def _plain_count(node: exp.Expression) -> tuple[str, str] | None:
     """``("*", "")``, ``("all", arg)`` or ``("distinct", args)`` for an unmodified ``COUNT``, else ``None``."""
 
@@ -57,10 +65,10 @@ def _plain_count(node: exp.Expression) -> tuple[str, str] | None:
     if type(arg) is exp.Distinct:
         if arg.args.get("on") or not arg.expressions:
             return None
-        return "distinct", ", ".join(e.sql().lower() for e in arg.expressions)
+        return "distinct", ", ".join(_spelling(e) for e in arg.expressions)
     if not isinstance(arg, exp.Expression) or any(isinstance(n, (exp.Select, exp.Subquery, exp.Window, exp.AggFunc)) for n in arg.walk()):
         return None
-    return "all", _unwrap(arg).sql().lower()
+    return "all", _spelling(_unwrap(arg))
 
 
 def _natural(node: exp.Expression) -> int | None:
@@ -97,7 +105,7 @@ def _is_not_null(test: exp.Expression, key_sql: str) -> bool:
     if type(test) is not exp.Not:
         return False
     inner = _unwrap(test.this)
-    return type(inner) is exp.Is and type(inner.expression) is exp.Null and _unwrap(inner.this).sql().lower() == key_sql
+    return type(inner) is exp.Is and type(inner.expression) is exp.Null and _spelling(_unwrap(inner.this)) == key_sql
 
 
 def rewrite_count_tests(select: exp.Select) -> exp.Expression | None:
@@ -127,7 +135,7 @@ def rewrite_count_tests(select: exp.Select) -> exp.Expression | None:
     group = select.args.get("group")
     added: list[exp.Expression] = []
     if group is not None and group.expressions and not extended_grouping(group) and not group.args.get("all"):
-        keys = {k.sql().lower(): k for k in group.expressions if type(k) is exp.Column and not isinstance(k.this, exp.Star)}
+        keys = {_spelling(k): k for k in group.expressions if type(k) is exp.Column and not isinstance(k.this, exp.Star)}
         shadowed = {
             item.alias.lower() for item in select.expressions
             if isinstance(item, exp.Alias) and not (isinstance(item.this, exp.Column) and item.this.name.lower() == item.alias.lower())

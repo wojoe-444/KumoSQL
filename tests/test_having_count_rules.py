@@ -82,6 +82,15 @@ def test_other_tests_stay(sql):
     assert rewritten(sql, "postgres" if "FILTER" in sql else "mysql") is None
 
 
+def test_string_literals_in_a_counted_expression_keep_their_case():
+    """``COUNT(DISTINCT NULLIF(c, 'A'))`` bounds ``COUNT(NULLIF(c, 'A'))`` from below, not ``COUNT(NULLIF(c, 'a'))``."""
+
+    same = "SELECT a FROM t GROUP BY a HAVING COUNT(NULLIF(c, 'A')) >= 1 AND COUNT(DISTINCT NULLIF(c, 'A')) >= 1"
+    other = "SELECT a FROM t GROUP BY a HAVING COUNT(NULLIF(c, 'a')) >= 1 AND COUNT(DISTINCT NULLIF(c, 'A')) >= 1"
+    assert rewritten(same) == "SELECT a FROM t GROUP BY a HAVING COUNT(DISTINCT NULLIF(c, 'A')) >= 1"
+    assert rewritten(other) is None
+
+
 PROOFS = [
     ("SELECT DISTINCT a FROM t GROUP BY c, a HAVING COUNT(DISTINCT b) > 1",
      "SELECT DISTINCT a FROM t GROUP BY c, a HAVING COUNT(*) > 1 AND COUNT(DISTINCT b) > 1"),

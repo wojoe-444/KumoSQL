@@ -32,6 +32,8 @@ from .ast_utils import plain_distinct, select_sources
 
 _UNION_ARGS = frozenset({"this", "expression", "distinct"})
 _BANNED = ("qualify", "kind", "into", "laterals", "pivots", "connect", "sample", "with_", "with")
+# PostgreSQL returns a row per element of a set-returning function in the select list; sqlglot classes only some as UDTF.
+_ROW_MAKERS = (exp.UDTF, exp.GenerateSeries, exp.ExplodingGenerateSeries, exp.Anonymous)
 
 
 def _unwrap_branch(node: exp.Expression) -> exp.Expression | None:
@@ -65,7 +67,7 @@ def _own_aggregate(select: exp.Select) -> bool:
 def _one_row_per_input(select: exp.Select) -> bool:
     """No select-list function that returns several rows (or an unknown one, which might)."""
 
-    return not any(isinstance(node, (exp.UDTF, exp.Anonymous)) for item in select.expressions for node in item.walk())
+    return not any(isinstance(node, _ROW_MAKERS) for item in select.expressions for node in item.walk())
 
 
 def _never_repeats(select: exp.Select) -> bool:

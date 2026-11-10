@@ -75,6 +75,14 @@ def test_other_set_operations_stay(sql):
     assert rewritten(sql) is None
 
 
+def test_a_set_returning_function_in_the_select_list_may_repeat_a_row():
+    """PostgreSQL returns a row per element: ``SELECT 'x', GENERATE_SERIES(1, 2) * 0`` is two equal rows, which UNION folds."""
+
+    sql = "SELECT 'x', GENERATE_SERIES(1, 2) * 0 UNION SELECT 'y', COUNT(b) FROM t"
+    tree = sqlglot.parse_one(sql, read="postgres")
+    assert separate_disjoint_unions(tree).sql(dialect="postgres") == sqlglot.parse_one(sql, read="postgres").sql(dialect="postgres")
+
+
 PROOFS = [
     ("SELECT 'low' AS bin, COUNT(a) AS n FROM t WHERE b < 5 UNION SELECT 'high', COUNT(a) FROM t WHERE b >= 5",
      "SELECT 'low' AS bin, COUNT(CASE WHEN b < 5 THEN a END) AS n FROM t UNION ALL SELECT 'high', COUNT(CASE WHEN b >= 5 THEN a END) FROM t"),

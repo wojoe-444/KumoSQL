@@ -73,8 +73,8 @@ def test_exists_tied_by_one_equality_is_an_in():
     assert rewritten("SELECT id FROM c WHERE EXISTS(SELECT 1 FROM o WHERE o.id = c.id AND o.p IN (SELECT z FROM w))") == (
         "SELECT id FROM c WHERE c.id IN (SELECT o.id FROM o WHERE o.p IN (SELECT z FROM w))"
     )
-    assert rewritten("SELECT id FROM c WHERE name > 1 AND EXISTS(SELECT 1 FROM (SELECT DISTINCT id FROM o) AS d WHERE c.id = d.id)") == (
-        "SELECT id FROM c WHERE name > 1 AND c.id IN (SELECT d.id FROM (SELECT DISTINCT id FROM o) AS d)"
+    assert rewritten("SELECT id FROM c WHERE name > 1 AND EXISTS(SELECT 1 FROM (SELECT DISTINCT id FROM o WHERE p IN (SELECT z FROM w)) AS d WHERE c.id = d.id)") == (
+        "SELECT id FROM c WHERE name > 1 AND c.id IN (SELECT d.id FROM (SELECT DISTINCT id FROM o WHERE p IN (SELECT z FROM w)) AS d)"
     )
 
 
@@ -125,6 +125,7 @@ def test_tested_join_partner_in_an_in_subquery_is_a_nested_in():
     "SELECT id FROM c WHERE EXISTS(SELECT 1 FROM o WHERE o.id = c.id AND o.p = c.name AND o.oid IN (SELECT z FROM w))",
     "SELECT id FROM c WHERE EXISTS(SELECT 1 FROM o WHERE o.id = c.id AND o.p IN (SELECT z FROM w)) OR name = 1",
     "SELECT id FROM c WHERE EXISTS(SELECT 1 FROM o WHERE o.id = c.id AND o.p = 1)",
+    "SELECT id FROM c WHERE EXISTS(SELECT 1 FROM (SELECT DISTINCT id FROM o WHERE p = 1) AS d WHERE c.id = d.id)",  # a derived table that only filters
     "SELECT id FROM c WHERE EXISTS(SELECT MAX(o.p) FROM o WHERE o.id = c.id AND o.p IN (SELECT z FROM w))",
     # step 3: no DISTINCT to move under, a correlated subquery, a LIMIT below the filter
     "SELECT d.id FROM (SELECT id, COUNT(*) AS n FROM o GROUP BY id) AS d WHERE NOT d.n IN (SELECT z FROM w)",
@@ -181,6 +182,16 @@ PROOFS = [
 
 @pytest.mark.parametrize("left, right", PROOFS)
 def test_target_pairs_are_proved(left, right):
+    assert proved(left, right)
+
+
+@pytest.mark.parametrize("filter_", ["o.id <> 1", "o.id < o.id", "o.id IS NOT NULL"])
+def test_a_plain_exists_still_meets_its_semi_join(filter_):
+    """The EXISTS step once rewrote the derived-table side only, and these proofs (the soundness fuzzer's semi-join
+    family, SQLSolver TPC-H Q20) were lost: a correlated EXISTS with no membership test stays as written."""
+
+    left = f"SELECT c.id, c.name FROM c WHERE EXISTS (SELECT 1 FROM o WHERE o.id = c.name AND {filter_})"
+    right = f"SELECT c.id, c.name FROM c JOIN (SELECT DISTINCT o.id FROM o WHERE {filter_}) AS d ON d.id = c.name"
     assert proved(left, right)
 
 
@@ -249,7 +260,7 @@ REWRITES = [
     "SELECT id, name FROM c WHERE NOT id IN (SELECT d.k FROM (SELECT x.id AS k, x.p FROM o AS x WHERE x.p = 1) AS d WHERE d.p = c.name)",
     "SELECT id FROM c WHERE id IN (SELECT d.k FROM (SELECT a.id + 1 AS k, b.z FROM o AS a JOIN w AS b ON a.id = b.id AND a.oid <= b.z) AS d)",
     "SELECT id FROM c WHERE EXISTS(SELECT 1 FROM o WHERE o.id = c.id AND NOT o.p IN (SELECT z FROM w))",
-    "SELECT name FROM c WHERE name > 1 AND EXISTS(SELECT 1 FROM (SELECT DISTINCT id FROM o WHERE p = 1) AS d WHERE c.id = d.id)",
+    "SELECT name FROM c WHERE name > 1 AND EXISTS(SELECT 1 FROM (SELECT DISTINCT id FROM o WHERE p IN (SELECT z FROM w)) AS d WHERE c.id = d.id)",
     "SELECT d.id FROM (SELECT DISTINCT id FROM o WHERE p = 1) AS d WHERE NOT d.id IN (SELECT id FROM w) AND d.id > 0",
     "SELECT COUNT(*), MAX(k) FROM (SELECT DISTINCT x.id AS k, x.p FROM o AS x) AS d WHERE k IN (SELECT id FROM w WHERE z = 2) OR p = 3",
     "SELECT c.name FROM (SELECT DISTINCT id FROM o) AS a, (SELECT id, z FROM w) AS b, c WHERE a.id = b.id AND a.id = c.id",

@@ -17,8 +17,10 @@ or aggregate). Only the subquery of an ``IN`` is rewritten, where the membership
 ``EXISTS (SELECT .. FROM s WHERE s.c = o.k AND rest)`` is TRUE exactly when ``o.k IN (SELECT s.c FROM s WHERE
 rest)`` is TRUE: some row of ``s`` passes ``rest`` and equals ``o.k``. Where it is not TRUE the ``IN`` may be
 NULL instead of FALSE, which a ``WHERE`` conjunct treats the same, so nothing but a top-level conjunct is
-rewritten (never under ``NOT``). ``rest`` may read only ``s``; the step is taken only when ``s`` is a derived
-table or ``rest`` holds a membership test, the cases the other rules then open up.
+rewritten (never under ``NOT``). ``rest`` may read only ``s``; the step is taken only when ``rest`` holds a
+membership test, or ``s`` is a derived table whose own ``WHERE`` holds one, the cases the other rules then open
+up. Any other correlated ``EXISTS`` stays: it is the form a semi-join is compared in (a join with a ``SELECT
+DISTINCT`` derived table, a ``LEFT SEMI JOIN``), and rewriting one side only would lose those proofs.
 
 **3. A filter with a closed subquery moves into a ``SELECT DISTINCT`` derived table.**
 ``SELECT .. FROM (SELECT DISTINCT c FROM t WHERE p) AS d WHERE d.c NOT IN (SELECT z FROM u)`` filters on a value
@@ -264,7 +266,13 @@ def _exists_to_in(select: exp.Select, schema: dict | None) -> exp.Select | None:
             for nested in test.find_all(exp.Select):
                 if nested.find_ancestor(exp.Select) is body and not _closed(nested, schema):
                     closed = False
-        opens = _derived(source) is not None or any(isinstance(n, (exp.Exists, exp.Subquery)) for test in rest for n in test.walk())
+        # Taken only where it opens a membership test to the other rules: one in ``rest``, or one in the WHERE of a
+        # derived source. A plain correlated EXISTS (and one over a derived table that only filters) is the form
+        # semi-joins are compared in, so rewriting it on one side would hide that the two sides are the same.
+        inner_where = _derived(source).args.get("where") if _derived(source) is not None else None
+        opens = any(isinstance(n, (exp.Exists, exp.Subquery)) for test in rest for n in test.walk()) or (
+            inner_where is not None and any(isinstance(n, (exp.Exists, exp.Subquery)) for n in inner_where.walk())
+        )
         if not closed or not opens:
             continue
         new_body = exp.Select(expressions=[link[0].copy()])
