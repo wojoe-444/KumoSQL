@@ -250,7 +250,7 @@ def query_constants(*sqls: str) -> dict[str, tuple[Any, ...]]:
     for sql in sqls:
         try:
             statements = [s for s in sqlglot.parse(sql, read="bigquery") if s is not None]
-        except sqlglot.errors.SqlglotError:
+        except (sqlglot.errors.SqlglotError, RecursionError):
             continue
         for statement in statements:
             for node in statement.walk():
@@ -469,11 +469,16 @@ def prepare_statements(
     """
 
     if looks_like_sqlx(sql):
-        sql = sqlx_to_sql(sql)
+        try:
+            sql = sqlx_to_sql(sql)
+        except ValueError as exc:  # an unterminated config or js block
+            raise ExecutionError(f"SQLX could not be read: {exc}") from exc
     try:
         statements = [s for s in sqlglot.parse(sql, read=dialect) if s is not None]
-    except sqlglot.errors.ParseError as exc:
+    except sqlglot.errors.SqlglotError as exc:  # a ParseError, or a TokenError for an unclosed quote
         raise ExecutionError(f"{dialect} parse failed: {exc}") from exc
+    except RecursionError as exc:
+        raise ExecutionError(f"{dialect} parse failed: the query is nested too deeply to read") from exc
     if not statements:
         raise ExecutionError("no SQL statements to execute")
 
@@ -552,6 +557,8 @@ def prepare_statements(
             duckdb_sql.append(spell_for_duckdb(statement).sql(dialect="duckdb"))
         except sqlglot.errors.SqlglotError as exc:
             raise ExecutionError(f"cannot translate statement {index + 1} to DuckDB: {exc}") from exc
+        except RecursionError as exc:  # a chain of some 140 set operations is as deep as fifty nested parentheses
+            raise ExecutionError(f"cannot translate statement {index + 1} to DuckDB: it is nested too deeply") from exc
     return duckdb_sql, last_target
 
 
@@ -618,7 +625,10 @@ def execute_on_dataset(
     statements, last_target = prepare_statements(sql, schema, run_tag=run_tag)
     connection = _connect()
     try:
-        _load_dataset(connection, dataset)
+        try:
+            _load_dataset(connection, dataset)
+        except Exception as exc:  # e.g. two tables whose names differ only by case: distinct in BigQuery, one name in DuckDB
+            raise ExecutionError(f"DuckDB could not load the test database: {exc}") from exc
         cursor = None
         for statement in statements:
             try:
@@ -659,7 +669,11 @@ class DatasetRunner:
         columns_by_table = {key: tuple((n, _normalize_type(t)) for n, t in cols.items()) for key, cols in schema.items()}
         for key, columns in columns_by_table.items():
             column_sql = ", ".join(f'"{name}" {_DUCKDB_TYPES[t]}' for name, t in columns)
-            self._connection.execute(f'CREATE TABLE "{_local_name(key)}" ({column_sql})')
+            try:
+                self._connection.execute(f'CREATE TABLE "{_local_name(key)}" ({column_sql})')
+            except Exception as exc:  # a table with no columns, or two names that differ only by case
+                self._connection.close()
+                raise ExecutionError(f"DuckDB could not create table {key!r}: {exc}") from exc
         self._contents = {_local_name(key): "" for key in columns_by_table}  # each table's rows as literal text
         self._prepared: dict[str, str] = {}
 
@@ -866,7 +880,14 @@ def check_result_equivalence(
                 yield labeled.dataset.seed, labeled.dataset
 
     skipped = 0
-    for seed, dataset in _datasets():
+    datasets = _datasets()
+    while True:
+        try:
+            seed, dataset = next(datasets)
+        except StopIteration:
+            break
+        except ValueError as exc:  # a schema no database can be generated for, such as a table with no columns
+            return ResultEquivalence(ResultEquivalenceStatus.ERROR, f"no test database: {exc}", tuple(checked), None, float_digits=float_digits)
         try:
             left_output, left_sql_out = execute_on_dataset(
                 left_sql, schema, dataset, run_tag=f"left_{seed}"
