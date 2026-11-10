@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 SPEC = importlib.util.spec_from_file_location(
     "googlesql_conformance_floor", Path(__file__).parent.parent / "tools" / "googlesql_conformance.py"
 )

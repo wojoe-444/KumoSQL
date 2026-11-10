@@ -19,6 +19,8 @@ from kumosql.incremental import (  # noqa: E402
     search_divergence,
 )
 
+pytestmark = pytest.mark.eval
+
 _path = Path(__file__).resolve().parent.parent / "tools" / "incremental_bench.py"
 _spec = importlib.util.spec_from_file_location("incremental_bench", _path)
 bench = importlib.util.module_from_spec(_spec)

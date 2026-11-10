@@ -79,7 +79,7 @@ Status: **covered** (an existing eval already scores it), **new** (being added, 
 
 ## Batches
 
-Every source marked new is one pull request with its own harness, test in `EVAL_FILES`, results file and docs page or section. Each pins its source commit, keeps original and adapted cases apart, records a baseline before any fix, keeps failures as regressions and holds out a fifth of the cases by hash. A false proof found by a new eval is kept as a regression and reported to the prover's owner rather than fixed in the eval's pull request.
+Every source marked new is one pull request with its own harness, test marked `eval`, results file and docs page or section. Each pins its source commit, keeps original and adapted cases apart, records a baseline before any fix, keeps failures as regressions and holds out a fifth of the cases by hash. A false proof found by a new eval is kept as a regression and reported to the prover's owner rather than fixed in the eval's pull request.
 
 - **Batch 1:** Chinook and Northwind; Jaffle Shop; the four BigQuery and Dataform projects; BigQuery Utils UDF tests; Logos TPC-H, DSB and TPC-DS pairs; QUITE; QueryBooster; Spider gold queries and the TestSuiteEval false negatives.
 - **Batch 2:** Pagila, Sakila, AdventureWorks, Employees, Oracle HR/CO/SH and FIBEN in the sample-database eval; Cosette `SelfJoin0`; the feedback-driven optimization artifact; Arcwise corrections; SQLFluff refusal cases; Trino, Spark and engine-regression pairs; Mozilla `bigquery-etl` tests; GoogleSQL compliance expected rows; the demo pipeline, mimic-code and patents SQL in the real-projects corpus.

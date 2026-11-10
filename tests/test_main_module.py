@@ -8,11 +8,13 @@ from kumosql.__main__ import COMMANDS, resolve
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_commands_match_console_scripts():
+def test_commands_are_the_console_scripts_of_pyproject():
+    """There is no second list: the commands are read from ``[project.scripts]``."""
+
     text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     block = text.split("[project.scripts]")[1].split("[build-system]")[0]
     declared = dict(re.findall(r'^([\w-]+) = "([^"]+)"', block, re.M))
-    assert COMMANDS == declared
+    assert COMMANDS == declared and len(COMMANDS) > 20
 
 
 def test_short_names_resolve():

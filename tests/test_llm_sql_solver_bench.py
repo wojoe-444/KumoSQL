@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 pytest.importorskip("z3")
 
 _path = Path(__file__).resolve().parent.parent / "tools" / "llm_sql_solver_bench.py"

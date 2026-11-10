@@ -152,6 +152,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import uexpr_bench  # noqa: E402
 import sqlsolver_bench as bench  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 TPCH_PROVED = [3, 4, 14, 16, 17, 1, 15]  # INTERVAL, SEMI/ANTI, OR-factoring, key-elimination order and widening casts
 
 

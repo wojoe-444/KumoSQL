@@ -10,6 +10,8 @@ pytest.importorskip("z3")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import numeric_traps_bench as bench  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 
 @pytest.fixture(scope="module")
 def results():

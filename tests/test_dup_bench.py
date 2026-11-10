@@ -14,6 +14,8 @@ sys.path.insert(0, str(TOOLS))
 import dup_bench as gen  # noqa: E402
 import dup_bench_run as run  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 
 @pytest.fixture(scope="module")
 def result():

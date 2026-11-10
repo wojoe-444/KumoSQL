@@ -12,6 +12,8 @@ import pytest
 from kumosql.gsql_eval import AnalysisError, Database, Table, Unsupported, evaluate
 from kumosql.gsql_eval import types as T
 
+pytestmark = pytest.mark.eval
+
 DATA = "WITH T AS (SELECT 1 AS x, 'p' AS s UNION ALL SELECT 2, 'q' UNION ALL SELECT 2, 'q' UNION ALL SELECT NULL, 'p') "
 
 

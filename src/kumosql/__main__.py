@@ -11,34 +11,31 @@ from __future__ import annotations
 import importlib
 import sys
 
-# Keep in step with [project.scripts] in pyproject.toml (tests/test_main_module.py checks).
-COMMANDS = {
-    "lift-subqueries": "kumosql.cli:main",
-    "prove-sql-equivalent": "kumosql.cli:prove_main",
-    "rewrite-sql": "kumosql.cli:rewrite_main",
-    "kumosql-pipeline-report": "kumosql.cli:pipeline_main",
-    "kumosql-dry-run": "kumosql.cli:dry_run_main",
-    "prove-sql-smt": "kumosql.smt_equivalence:main",
-    "prove-sql-sqlsolver": "kumosql.sqlsolver_backend:main",
-    "prove-tables": "kumosql.pipeline_equivalence:main",
-    "consolidate-tables": "kumosql.consolidate:main",
-    "kumosql-equivalence": "kumosql.pipeline_equivalence:equivalence_main",
-    "kumosql-refactor": "kumosql.refactor:main",
-    "minimize-tables": "kumosql.table_minimizer:main",
-    "reduce-project": "kumosql.project_reduction:main",
-    "kumosql-shared-model": "kumosql.shared_models:main",
-    "kumosql-profile-table": "kumosql.data_profile_cli:main",
-    "kumosql-profile-mcp": "kumosql.profile_mcp:main",
-    "kumosql-compare-outputs": "kumosql.cli:compare_outputs_main",
-    "kumosql-ui": "kumosql.ui:main",
-    "kumosql-scopes": "kumosql.cli:scopes_main",
-    "kumosql-change-report": "kumosql.change_report:change_report_main",
-    "kumosql-ci-check": "kumosql.ci_check:main",
-    "kumosql-evidence-summary": "kumosql.cli:evidence_summary_main",
-    "kumosql-workflow-configs": "kumosql.workflow_configs:main",
-    "kumosql-smoke": "kumosql.smoke:main",
-    "kumosql-incremental-report": "kumosql.incremental_scan:main",
-}
+def _declared_commands() -> dict[str, str]:
+    """The console commands, read from the one place they are declared: ``[project.scripts]`` in pyproject.toml.
+
+    A source checkout reads that file, so a command added to it works at once, even when an older editable install
+    left stale metadata. An installed package reads its own installed entry points. Nothing here is a second list."""
+
+    import tomllib
+    from importlib import metadata
+    from pathlib import Path
+
+    toml = Path(__file__).resolve().parents[2] / "pyproject.toml"
+    try:
+        project = tomllib.loads(toml.read_text(encoding="utf-8")).get("project", {})
+        if project.get("name") == "kumosql" and project.get("scripts"):
+            return dict(project["scripts"])
+    except (OSError, ValueError):
+        pass
+    return {
+        entry.name: entry.value
+        for entry in metadata.entry_points(group="console_scripts")
+        if entry.dist is not None and entry.dist.name.lower() == "kumosql"
+    }
+
+
+COMMANDS = _declared_commands()
 
 
 def resolve(name: str) -> str | None:

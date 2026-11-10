@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 _PATH = Path(__file__).resolve().parent.parent / "tools" / "googlesql_conformance.py"
 _SPEC = importlib.util.spec_from_file_location("googlesql_conformance", _PATH)
 G = importlib.util.module_from_spec(_SPEC)

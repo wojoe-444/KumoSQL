@@ -6,6 +6,8 @@ import pytest
 
 from tools import llmr2_bench as bench
 
+pytestmark = pytest.mark.eval
+
 
 def test_transformations_leave_the_formatter_out():
     rules = bench.transformations()

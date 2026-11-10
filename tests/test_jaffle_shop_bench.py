@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 pytest.importorskip("duckdb")
 
 ROOT = Path(__file__).resolve().parent.parent

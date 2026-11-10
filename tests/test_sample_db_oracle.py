@@ -14,6 +14,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 pytest.importorskip("z3")
 pytest.importorskip("duckdb")
 

@@ -27,6 +27,8 @@ from recheck import dialect_rewrites as dr  # noqa: E402
 from recheck import engine, ties  # noqa: E402
 from recheck.engine import Case, Column, Table  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 logging.getLogger("sqlglot").setLevel(logging.CRITICAL)
 
 EXTERNAL = ("KUMOSQL_BENCH_DIR", "KUMOSQL_RECHECK_REWRITEBENCH", "KUMOSQL_RECHECK_TPCDS_KIT", "KUMOSQL_RECHECK_WETUNE", "KUMOSQL_RECHECK_CLICKBENCH")

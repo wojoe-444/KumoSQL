@@ -13,6 +13,8 @@ TOOLS = Path(__file__).resolve().parent.parent / "tools"
 sys.path.insert(0, str(TOOLS))
 import soundness_fuzz as fuzz  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 SMOKE_SEED = 3
 SMOKE_COUNT = 120
 

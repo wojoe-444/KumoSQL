@@ -13,6 +13,8 @@ duckdb = pytest.importorskip("duckdb")
 
 from kumosql.bigquery_duckdb import UntranslatableError, capture_groups, to_duckdb  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 SPEC = importlib.util.spec_from_file_location(
     "bq_utils_udf_eval", Path(__file__).parent.parent / "tools" / "bq_utils_udf_eval.py"
 )

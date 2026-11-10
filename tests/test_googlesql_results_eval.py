@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 duckdb = pytest.importorskip("duckdb")
 
 SPEC = importlib.util.spec_from_file_location(

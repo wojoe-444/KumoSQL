@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 duckdb = pytest.importorskip("duckdb")
 pytest.importorskip("z3")
 

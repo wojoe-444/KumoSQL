@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 SPEC = importlib.util.spec_from_file_location(
     "googlesql_types_eval", Path(__file__).parent.parent / "tools" / "googlesql_types_eval.py"
 )

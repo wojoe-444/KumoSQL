@@ -6,6 +6,7 @@ file as an eval file (``tests/conftest.py``).
 
 from __future__ import annotations
 
+import pytest
 import importlib.util
 from pathlib import Path
 import sys
@@ -14,6 +15,8 @@ import sqlglot
 
 from kumosql.proof_format import FORMAT_ASSUMPTIONS, FORMAT_FAMILY, check_format_transition
 from kumosql.proof_steps import RewriteStep
+
+pytestmark = pytest.mark.eval
 
 TREE = sqlglot.parse_one("SELECT 1", read="bigquery")
 

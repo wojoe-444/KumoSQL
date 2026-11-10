@@ -1,9 +1,12 @@
+import pytest
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import cost_validity_bench as cvb  # noqa: E402
+
+pytestmark = pytest.mark.eval
 
 
 def test_rule_recommendation_compares_against_the_round_tripped_original():

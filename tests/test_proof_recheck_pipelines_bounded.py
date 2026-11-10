@@ -28,6 +28,8 @@ from recheck import engine  # noqa: E402
 from recheck import pipelines_refactors as pr  # noqa: E402
 from recheck.engine import Case, Column, Table  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 PIPELINE_EVALS = [
     "sqlfluff-semantic-fixes", "duplicate-exact", "shared-refactors-proof", "pipeline-equivalence", "incremental-proofs",
     "table-minimization", "output-properties", "output-properties-adapted",
