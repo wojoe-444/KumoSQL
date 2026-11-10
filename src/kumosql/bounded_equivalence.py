@@ -45,7 +45,7 @@ from sqlglot import exp
 from .ast_utils import MAX_EXPANDED_READS, UnmodeledConstruct, distinct_on, drop_case_conflicts, expand_group_by_all, expanded_reads, extended_grouping, is_call, spell_for_duckdb, star_modified
 from .duckdb_load import small_database
 from .set_operations import positional_sql_pair
-from .solver_lock import bounded_solver, serialized
+from .solver_lock import Z3_MISSING, bounded_solver, serialized
 from .type_names import invalid_type_name
 
 try:  # pragma: no cover - exercised through the tests
@@ -1335,7 +1335,10 @@ class Compiler:
             if len(text) > 400:
                 raise Unsupported("integer literal out of range")
             return const(int(text), "int")
-        value = Decimal(text)
+        try:
+            value = Decimal(text)
+        except ArithmeticError:  # sqlglot tokenizes ``1e`` as a number
+            raise Unsupported(f"numeric literal {text[:20]!r}") from None
         if value.is_finite() and value and not -400 <= value.adjusted() <= 400:
             # Out of FLOAT64's range; Fraction(Decimal('1e100000000')) would build a hundred-million-digit integer.
             raise Unsupported("numeric literal out of range")
@@ -2023,6 +2026,8 @@ class DuckDBReplay:
             configure(self.db)
         self.names = {}
         for name, table in schema.tables.items():
+            if not table.columns:
+                raise Unsupported(f"table {name!r} has no columns")
             columns = ", ".join(f'"{c.name}" {_duck_type(c, self.bigquery)}' for c in table.columns)
             self.db.execute(f'CREATE TABLE "{name}" ({columns})')
         self.left = translate(left) if translate is not None else self._translate(left, dialect)
@@ -2200,7 +2205,7 @@ def _check_bounded(
     """
 
     if z3 is None:
-        return BoundedResult(BoundedStatus.UNKNOWN, "z3-solver is not installed")
+        return BoundedResult(BoundedStatus.UNKNOWN, Z3_MISSING)
     began = time.time()
     if prepare is not None:
         left_sql, right_sql = prepare(left_sql), prepare(right_sql)
@@ -2218,8 +2223,10 @@ def _check_bounded(
 
             try:
                 replay = DuckDBReplay(schema, left_sql, right_sql, dialect, translate=translate)
-            except Unfaithful:
-                replay = _no_replay  # DuckDB cannot run these as BigQuery does: no counterexample is confirmed
+            except (Unfaithful, ImportError):
+                # DuckDB cannot run these as BigQuery does, or is not installed (the ``execution`` extra): no
+                # counterexample is confirmed, and a bound with no difference is still reported.
+                replay = _no_replay
         for bound in range(start, rows + 1):
             outcome = None
             for attempt in range(3):

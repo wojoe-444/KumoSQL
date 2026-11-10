@@ -52,7 +52,8 @@ the two queries return different rows; if it finds one the result is
 reported when every function in both queries is modeled exactly, so it never
 rests on an uninterpreted function.
 
-``z3-solver`` is an optional dependency: install ``kumosql[smt]``.
+``z3-solver`` is an optional dependency (the ``smt`` extra): without it this module still imports and every proof
+is ``NOT_PROVEN`` with ``solver_lock.Z3_MISSING`` as the reason.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ from .parse_check import refuse_misread_proofs
 from . import proof_columns
 from .set_operations import positional_sql_pair
 from .smt_args import check_args
-from .solver_lock import bound, bounded_solver, serialized
+from .solver_lock import Z3_MISSING, bound, bounded_solver, serialized
 from .string_literals import canonical_literals
 from .type_names import invalid_type_name
 from .sqlx_fragments import masked_template_problem
@@ -347,7 +348,8 @@ def _is_ground(term) -> bool:
     return True
 
 
-_ARITHMETIC = (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_MUL, z3.Z3_OP_UMINUS, z3.Z3_OP_ANUM, z3.Z3_OP_AGNUM)
+# Empty without z3-solver (an optional extra): importing this module must not need it.
+_ARITHMETIC = () if z3 is None else (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_MUL, z3.Z3_OP_UMINUS, z3.Z3_OP_ANUM, z3.Z3_OP_AGNUM)
 
 
 def _uninterpreted_leaves(term) -> list | None:
@@ -994,7 +996,7 @@ class _Compiler:
         self.collector: list = []
         self.ctes: dict = {}
         # Canonical SQL of each opaque derived relation, by identity key.
-        self.opaque_bodies: dict[str, tuple[str, int]] = {}
+        self.opaque_bodies: dict[str, tuple[str, int, str]] = {}  # key -> (BigQuery text, arity, text in self.dialect)
         # Opaque derived relations that are sets (DISTINCT, or grouped on exactly their outputs).
         self.opaque_sets: set[str] = set()
         # Read DISTINCT derived tables as sets (existence tests) instead of opaque relations.
@@ -1660,10 +1662,38 @@ class _Compiler:
         if not read and (dropped or any(body.find_all(exp.Sum))):
             smt_group_sums.opaque_site(self, occ, any(body.find_all(exp.Sum)))  # what the compiler did not read can still fail
         if not lost:  # a body whose text lost a NULLS placement is matched by its key alone, never re-proved
-            self.opaque_bodies[key] = (key[1:-1], len(names))
+            own = self._own_dialect_text(canonical, text)
+            if own is not None:
+                self.opaque_bodies[key] = (key[1:-1], len(names), own)
         if isinstance(inner, exp.Select) and _selects_a_set(inner):
             self.opaque_sets.add(key)
         return _Source(cols={name: occ.col(f"c{position[i]}") for i, name in enumerate(names)}, order=list(names))
+
+    def _own_dialect_text(self, canonical: exp.Expression, text: str) -> str | None:
+        """An opaque body as text the dialect of this proof reads back as the same body (``text`` is its BigQuery
+        spelling, which names it), or ``None`` when no spelling does.
+
+        ``_unify_opaque`` proves two bodies equal with the prover itself, and that proof has to read them as the caller's
+        dialect does: ``1.00`` is an exact decimal in MySQL and a FLOAT64 in BigQuery. ``ast_utils.faithful_sql`` prints
+        the body, parses it back and compares the trees, so a writer that changes the meaning (MySQL's spells
+        ``FULL JOIN`` as a union and ``a DIV b`` as a rounding cast) is passed over for one that does not. The compiler's
+        own tree can differ in form from anything a parser builds (an alias kept on a subquery node), so when it has no
+        faithful spelling the tree BigQuery reads from ``text`` is tried. Either way the result counts only when the
+        dialect reads it back to a tree whose BigQuery spelling is ``text`` again: the same body by the name the
+        compiler already goes by. A body with no such spelling is matched by its name alone and never re-proved.
+        """
+
+        if self.dialect == "bigquery":
+            return text
+        for reparsed in (False, True):
+            try:
+                tree = sqlglot.parse_one(text, read="bigquery") if reparsed else canonical
+                own = faithful_sql(tree, self.dialect)
+                if sqlglot.parse_one(own, read=self.dialect).sql(dialect="bigquery", normalize_functions="upper") == text:
+                    return own
+            except (UnmodeledConstruct, sqlglot.errors.SqlglotError, RecursionError):
+                continue
+        return None
 
     def _expand_ctes(self, body, ctes):
         local = dict(ctes)
@@ -4420,16 +4450,17 @@ def _unify_opaque(compiler: "_Compiler", unions, **settings) -> None:
     representatives: list[str] = []
     mapping: dict[str, str] = {}
     budget = _OPAQUE_PROOFS
-    for key, (sql, arity) in bodies.items():
+    for key, (sql, arity, own) in bodies.items():
         for rep in representatives:
-            rep_sql, rep_arity = bodies[rep]
+            rep_sql, rep_arity, rep_own = bodies[rep]
             if rep_arity != arity or budget <= 0 or tables(rep_sql) != tables(sql):
                 continue
             budget -= 1
             _nesting[0] += 1
             try:
-                # The LIMIT-aware entry point: a body may end in ORDER BY .. LIMIT on both sides.
-                result = prove_equivalent_smt(rep_sql, sql, compare_names=False, dialect="bigquery", **settings)
+                # The LIMIT-aware entry point: a body may end in ORDER BY .. LIMIT on both sides. The bodies are read
+                # in the dialect of the proof they belong to (``_own_dialect_text``), never as BigQuery by default.
+                result = prove_equivalent_smt(rep_own, own, compare_names=False, dialect=compiler.dialect, **settings)
             finally:
                 _nesting[0] -= 1
             if result.status is SmtStatus.PROVEN_EQUIVALENT:
@@ -4473,9 +4504,7 @@ def _prove_core(
     if compared:
         return SmtEquivalenceResult(SmtStatus.NOT_PROVEN, f"unsupported: {compared}", assumptions=assumptions)
     if z3 is None:
-        return SmtEquivalenceResult(
-            SmtStatus.NOT_PROVEN, "z3-solver is not installed (pip install kumosql[smt])"
-        )
+        return SmtEquivalenceResult(SmtStatus.NOT_PROVEN, Z3_MISSING)
     used = [False]
 
     def attempt(semijoin: bool, blind: bool = False) -> SmtEquivalenceResult:

@@ -1,9 +1,9 @@
 {
   "suite": "Agent-facing server: analyst questions",
   "order": 900,
-  "size": 20,
-  "score": "20/20 within bounds, largest answer 1,971 B",
-  "metric": "Standard analyst questions asked of the agent-facing server on the security-analytics project (106 models), each inside 2,000 bytes per answer, 3 calls per task and 1000 ms per call after the load. Median task 1,036 B in total, against 141,354 B for every .sqlx file and 894,869 B for the pipeline-report JSON.",
+  "size": 26,
+  "score": "26/26 within bounds, largest answer 1,965 B",
+  "metric": "Standard analyst questions asked of the agent-facing server on the security-analytics project (106 models), each inside 2,000 bytes per answer, 3 calls per task and 1000 ms per call after the load. Median task 1,004 B in total, against 141,354 B for every .sqlx file and 894,869 B for the pipeline-report JSON.",
   "evidence": "executed",
   "correctness": "Measures size, calls and latency, not whether an answer is right; the correctness tests are in tests/test_mcp_server.py. An answer that cannot decide says so (unknown with a reason) and still counts as inside its bound.",
   "coverage": {},
@@ -11,7 +11,7 @@
   "docs": "docs/evals/agent-floor.md",
   "command": "python tools/agent_floor.py --write-results",
   "date": "2026-11-10",
-  "caveats": "One public project with no source schemas and no job history. In-process calls (no stdio transfer time). No language model is involved, so the turn and token counts of a real agent are not measured here (roadmap step 7). Questions for tools that do not exist yet are listed as waiting, not scored.",
+  "caveats": "One public project with no source schemas and no job history. In-process calls (no stdio transfer time). No language model is involved, so the turn and token counts of a real agent are not measured here (see docs/field-trial.md). The BigQuery dry-run and run paths of check_query and profile_table are not part of this floor. Questions for a tool the server does not have are listed as waiting, not scored.",
   "environment": {
     "python": "3.13.18",
     "sqlglot": "30.21.0",
@@ -19,6 +19,6 @@
     "duckdb": "1.5.6",
     "z3-solver": "5.4.0.0",
     "sqlfluff": "4.5.0",
-    "commit": "440b3850"
+    "commit": "14cba3aa+changes"
   }
 }

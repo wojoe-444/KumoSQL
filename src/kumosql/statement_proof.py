@@ -33,7 +33,7 @@ def split_create(sql: str) -> tuple[str, str, str] | None:
 
     try:
         parsed = [p for p in sqlglot.parse(sql, read="bigquery") if p is not None]
-    except sqlglot.errors.SqlglotError:
+    except (sqlglot.errors.SqlglotError, RecursionError):
         return None
     if len(parsed) != 1 or not isinstance(parsed[0], exp.Create):
         return None

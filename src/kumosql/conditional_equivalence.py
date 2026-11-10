@@ -239,7 +239,7 @@ def candidate_conditions(
     for sql in (left_sql, right_sql):
         try:
             tree = sqlglot.parse_one(sql, read=dialect)
-        except sqlglot.errors.SqlglotError:
+        except (sqlglot.errors.SqlglotError, RecursionError):
             continue
         reader = _Reader(tree, schema)
         pairs: dict[tuple, tuple[_Occurrence, _Occurrence, list[tuple[str, str]]]] = {}

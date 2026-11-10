@@ -662,6 +662,10 @@ def _resolve_with_expressions(tree: exp.Expression) -> exp.Expression:
     return tree
 
 
+class TooDeeplyNested(ParseError):
+    """The query nests further than the parser can follow on the interpreter's stack."""
+
+
 class UnclosedLiteral(ParseError):
     """A string, bytes literal or quoted name that is not triple-quoted runs onto another line, which BigQuery rejects."""
 
@@ -705,6 +709,10 @@ def install() -> None:
             return self.parser(**opts).parse(tokens, sql)  # what the dialect's own parse does
         except UnclosedLiteral:
             raise
+        except RecursionError:
+            # sqlglot's parser recurses about twenty frames per nesting level, so some fifty nested parentheses end
+            # the interpreter's stack. Callers handle text that cannot be read (ParseError); few expect this.
+            raise TooDeeplyNested("the query is nested too deeply to read") from None
         except ParseError as error:
             rewritten = sql
             for rewrite in (
@@ -715,7 +723,7 @@ def install() -> None:
             if rewritten != sql:
                 try:
                     return list(_resolve_markers(parse_with_table_arguments(self, rewritten, **opts)))
-                except UnclosedLiteral:
+                except (UnclosedLiteral, TooDeeplyNested):
                     raise
                 except ParseError:
                     raise error from None

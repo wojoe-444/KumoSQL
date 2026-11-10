@@ -6,8 +6,8 @@
   "metric": "Equivalent query pairs proved; same checking as Calcite.",
   "docs": "docs/evals/sqlsolver.md#benchmark-coverage",
   "command": "python tools/sqlsolver_bench.py tpch",
-  "date": "2026-10-01",
-  "caveats": "Tuned on test.",
+  "date": "2026-11-10",
+  "caveats": "Tuned on test. Was 21/22 from 2026-10-04 to 2026-11-10 while this row said 22/22 (pair 20; the floor is in the slow tier).",
   "evidence": "proof",
   "correctness": "0 false proofs",
   "coverage": {

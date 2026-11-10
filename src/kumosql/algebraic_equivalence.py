@@ -38,7 +38,8 @@ from .ast_utils import FROM_KEY, UnmodeledConstruct, canonical_negation, check_m
 from .set_operations import positional_sql_pair
 from .literal_fold_rules import distribute_over_constant_union, fold_string_literals
 from .parse_check import refuse_misread_proofs
-from .solver_lock import serialized
+from .solver_lock import Z3_MISSING, serialized
+from . import solver_lock
 from .string_literals import canonical_literals, invalid_literal
 from .type_names import invalid_type_name
 from .sqlx_fragments import masked_template_problem
@@ -4990,6 +4991,8 @@ def _prove_equivalent_algebraic_checked(left_sql: str, right_sql: str, **kwargs)
     Text that cannot be tokenized or nests too deeply is ``NOT_PROVEN``, never an exception.
     """
 
+    if solver_lock.z3 is None:
+        return SmtEquivalenceResult(SmtStatus.NOT_PROVEN, Z3_MISSING)
     dialect = kwargs.get("dialect", "bigquery")
     try:
         left_sql, right_sql = (string_number_literals.normalize(sql, dialect, kwargs.get("types")) for sql in (left_sql, right_sql))

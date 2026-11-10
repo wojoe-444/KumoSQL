@@ -32,6 +32,8 @@ One mined pair, `testSortJoinTranspose1`, is deliberately left unproven: it move
 
 ## Read the caveats
 
+A recorded score is only as fresh as the last run that checked it. The TPC-H row said every pair was proved for five weeks in late 2026 while one pair had quietly stopped proving, because its check sat in a slow group of tests that the everyday runs skip. For example, the pair compared `SUM(price * (1 - discount))` with `SUM(price * (1.00 - discount))`. The pair is proved again and now has a fast test of its own; other slow checks may still hide a similar drift. The [full guide](../../docs/evals/sqlsolver.md) has the dates.
+
 Some rules were built while inspecting failing corpus cases, so those scores are “tuned on test.” A case once held out ceases to be an untouched test if it is later used in development. The full guide tracks that exposure.
 
 Other suites overlap. Adding their case counts does not produce a count of unique independent tests.

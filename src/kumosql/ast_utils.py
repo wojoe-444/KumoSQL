@@ -474,6 +474,9 @@ def check_modeled(tree: exp.Expression) -> exp.Expression:
             raise UnmodeledConstruct(f"{type(node).__name__}.sample is not modeled")
         if isinstance(node, exp.Lateral) and node.args.get("cross_apply") is False:
             raise UnmodeledConstruct("OUTER APPLY is not modeled")
+        if isinstance(node, exp.Table) and any(isinstance(node.args.get(part), str) for part in ("db", "catalog")):
+            # sqlglot reads ``t..u`` with an empty string where an identifier belongs; code that asks a part its name fails
+            raise UnmodeledConstruct("a table name with an empty part (t..u) is not modeled")
         if isinstance(node, exp.Fetch) and (node.args.get("percent") or node.args.get("with_ties")):
             raise UnmodeledConstruct("PERCENT and WITH TIES limits are not modeled")
         if type(node).__name__ == "LimitOptions" and (node.args.get("percent") or node.args.get("with_ties")):

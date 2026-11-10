@@ -20,6 +20,10 @@ except ImportError:  # pragma: no cover - z3-solver is optional
 
 SOLVER_LOCK = threading.RLock()
 
+# What every entry point answers without the optional solver (the extra is ``smt``; the package name differs between
+# the product and the split-out prover, so the hint names the dependency itself).
+Z3_MISSING = "z3-solver is not installed (pip install z3-solver)"
+
 
 def serialized(function):
     """Run ``function`` while holding :data:`SOLVER_LOCK`."""

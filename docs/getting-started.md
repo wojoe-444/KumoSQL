@@ -38,6 +38,8 @@ Optional extras add capabilities; install them the same way, for example `python
 | --- | --- | --- |
 | `smt` | The Z3 prover for filter, join and `DISTINCT` rewrites the structural prover cannot canonicalize | Those rewrites stay `unproven` |
 | `execution` | Local DuckDB for comparing results on synthetic data | The synthetic check reports `not_run` |
+
+The package imports and every command starts without either extra (`tests/test_optional_dependencies.py` runs each check in an interpreter where the extra cannot be imported). A proof that needs the solver comes back `not_proven` with the reason `z3-solver is not installed (pip install z3-solver)`, the bounded check answers `unknown` with the same reason, and without DuckDB the bounded check still reports a bound with no difference but confirms no counterexample.
 | `bigquery` | Google auth for dry runs and the BigQuery catalog page | Those features report that credentials are unavailable |
 | `dev` | pytest (with xdist), DuckDB and Z3, for working on KumoSQL itself | |
 

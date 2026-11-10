@@ -1,6 +1,9 @@
 """Eliminate redundant count guards after membership has become EXISTS."""
 
-import z3
+try:
+    import z3
+except ImportError:  # z3-solver is an optional extra; the rules below are reached only from a prover that has it
+    z3 = None
 from sqlglot import exp
 
 
@@ -494,6 +497,8 @@ def rewrite_counted_membership(
     not_null: dict | None,
     assumptions: set[str] | None = None,
 ) -> exp.Expression:
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
     tree = nonnull_not_in(tree, not_null)
     for select in list(tree.find_all(exp.Select))[::-1]:
         replacement = drop_equal_count_guard(
