@@ -67,6 +67,7 @@ from fractions import Fraction
 import argparse
 import hashlib
 import contextlib
+import datetime
 import itertools
 import json
 import re
@@ -399,6 +400,7 @@ class _Unknown(Exception):
 
 _VALUE_SORT = None
 _STRING_RANK = None
+_ORDER_ROUNDS = 2  # times a counterexample search is told the real order of the strings it chose
 
 
 def _string_rank():
@@ -2797,15 +2799,80 @@ class _CaseSearch:
 
 
 class _Prover:
-    def __init__(self, timeout_ms: int, constraints: dict[str, TableConstraints] | None = None):
+    def __init__(self, timeout_ms: int, constraints: dict[str, TableConstraints] | None = None, types: dict | None = None):
         self.timeout_ms = timeout_ms
         self.constraints = {k.lower(): v for k, v in (constraints or {}).items()}
+        # Declared column types, lower-cased: a counterexample has to be a database those tables can hold.
+        self.types = {str(table).lower(): {str(c).lower(): t for c, t in columns.items()} for table, columns in (types or {}).items()}
+        # Whether the queries order values (<, MIN, ..), and their string literals: see ``real_string_order``.
+        self.ordered = False
+        self.string_literals: set[str] = set()
         # UNNEST is read as a table of (array, element, offset) rows with one row per array and offset.
         self.constraints[_UNNEST_TABLE] = TableConstraints(keys=(("arr", "offset"),))
         self.unknown = False
         self.wall_clock = False  # a check stopped on the wall clock, not the work cap: the verdict can vary by machine
         self.opaque_sets: set[str] = set()
-        self.candidates: list[tuple[object, object, list[_Occ], list[_Val]]] = []
+        self.candidates: list[tuple[object, object, list[_Occ], list[_Val], list[str | None]]] = []
+
+    def declared_kind(self, table: str, column: str) -> str | None:
+        """``"int"``, ``"number"`` or ``"string"`` for a column whose declared type fixes what a value in it is, else ``None``."""
+
+        cls = smt_values.type_class(self.types.get(str(table).lower(), {}).get(str(column).lower()))
+        if cls == smt_values.INT64:
+            return "int"
+        if cls in (smt_values.NUMERIC, smt_values.BIGNUMERIC, smt_values.FLOAT64):
+            return "number"
+        return "string" if cls == smt_values.STRING else None
+
+    def _order_chain(self, strings) -> list:
+        """The real order of ``strings`` as facts about ``string_rank``, one per neighbouring pair."""
+
+        rank = _string_rank()
+        ordered = sorted(set(strings) | self.string_literals)
+        return [rank(z3.StringVal(a)) < rank(z3.StringVal(b)) for a, b in zip(ordered, ordered[1:])]
+
+    def real_string_order(self, model, strings) -> bool:
+        """Whether ``model`` orders ``strings``, the queries' literals and every string it ranks itself as strings
+        are really ordered (by code point, as BigQuery and DuckDB compare them).
+
+        The proof orders strings by an uninterpreted rank (``_string_rank``), and a model may rank them any way the
+        queries' facts allow: ``'A'`` below ``''``, say. A difference found on such a model is no difference between
+        the queries: evaluated on it, ``WHERE s < ''`` keeps a row that no engine returns."""
+
+        if not self.ordered:
+            return True
+        chain = self._order_chain(list(strings) + _ranked_strings(model))
+        return all(z3.is_true(model.eval(fact, model_completion=True)) for fact in chain)
+
+    def _ordered_domain(self, values, kinds) -> list:
+        """Facts that keep every string cell among strings whose order is stated: the queries' literals and a few
+        strings from each gap between them. The last resort of ``_counterexample``: a solver left to choose strings
+        rarely chooses one between ``'a'`` and ``'b'``."""
+
+        V, rank = _value_sort(), _string_rank()
+        domain = sorted(self.string_literals | set(_strings_between(sorted(self.string_literals))))
+        facts = [rank(z3.StringVal(a)) < rank(z3.StringVal(b)) for a, b in zip(domain, domain[1:])]
+        for v, kind in zip(values, list(kinds) + [None] * len(values)):
+            if kind in ("string", None):
+                facts.append(z3.Or(v.null, z3.Not(V.is_Str(v.val)), *[V.str(v.val) == z3.StringVal(text) for text in domain]))
+        return facts
+
+    def well_typed(self, db: dict[str, list[dict]]) -> bool:
+        """Whether every value sits in a column that can hold it: no string in a number column, no number in a
+        STRING column, no fraction in an INT64 column. The value sort has no column types, so a model can break all three."""
+
+        for table, rows in db.items():
+            for row in rows:
+                for column, value in row.items():
+                    kind = self.declared_kind(table, column) if value is not None else None
+                    if kind is None:
+                        continue
+                    number = isinstance(value, (Fraction, int, float)) and not isinstance(value, bool)
+                    if (kind == "string") != isinstance(value, str) or (kind != "string" and not number):
+                        return False
+                    if kind == "int" and Fraction(value).denominator != 1:
+                        return False
+        return True
 
     @staticmethod
     def _typing(occs: list[_Occ]):
@@ -2925,9 +2992,10 @@ class _Prover:
         # and a prover that collects many candidates would hold all of it until the search ends.
         # Snapshot the values now: occurrences can acquire more columns later.
         values = [v for occ in occs for v in occ.cols.values()]
-        self.candidates.append((solver.assertions(), solver.model(), list(occs), values))
+        kinds = [self.declared_kind(occ.table, name) for occ in occs for name in occ.cols]
+        self.candidates.append((solver.assertions(), solver.model(), list(occs), values, kinds))
 
-    def _counterexample(self, assertions, base, values):
+    def _counterexample(self, assertions, base, values, kinds=()):
         """A model of a satisfiable check, preferring an integral one.
 
         Extract candidates in a fresh context: the shared context's term ids can
@@ -2941,23 +3009,54 @@ class _Prover:
         isolated.add(*[assertion.translate(context) for assertion in assertions])
         if isolated.check() != z3.sat:
             return base  # A timeout in the extra search must not lose a satisfiable model.
-        model = self._nice_model(isolated, values) or isolated.model()
-        return model.translate(base.ctx)
+        model = (self._nice_model(isolated, values, kinds) or isolated.model()).translate(base.ctx)
+        for attempt in range(_ORDER_ROUNDS + 1 if self.ordered else 0):
+            # ``_find_counterexample`` drops a candidate whose strings the model ranks out of their real order. Tell
+            # the solver the real order of the strings it chose and ask again; it may then choose others, so after a
+            # few rounds give it a small set of strings to choose from whose order is stated in full.
+            strings = [cell for cell in (_cell(model, v) for v in values) if isinstance(cell, str)] + _ranked_strings(model)
+            if self.real_string_order(model, strings):
+                break
+            facts = self._order_chain(strings) if attempt < _ORDER_ROUNDS else self._ordered_domain(values, kinds)
+            # A fresh solver each round, for the reason ``_nice_model`` gives.
+            retry = bound(z3.Solver(ctx=context), self.timeout_ms)
+            retry.add(*isolated.assertions())
+            retry.add(*[fact.translate(context) for fact in facts])
+            if retry.check() != z3.sat:
+                continue  # a round the solver could not finish, or a set of strings too small: the next may do
+            isolated = retry if attempt < _ORDER_ROUNDS else isolated
+            model = (self._nice_model(retry, values, kinds) or retry.model()).translate(base.ctx)
+        return model
 
-    def _nice_model(self, solver, values):
-        """Prefer integer-valued numeric counterexamples (they fit INT64 and FLOAT64), then any numbers, so a
-        column the queries only compare with numbers is not given a string."""
+    def _nice_model(self, solver, values, kinds=()):
+        """A model whose values fit their columns. A column with a declared type gets a value of that type (the
+        value sort itself has none, so the solver would as soon put a number in a STRING column). For the others,
+        prefer integer-valued numeric counterexamples (they fit INT64 and FLOAT64), then any numbers, so a column
+        the queries only compare with numbers is not given a string."""
 
         V = _value_sort()
+        kinds = list(kinds) + [None] * (len(values) - len(kinds))
+        declared = []
+        for v, kind in zip(values, kinds):
+            if kind == "string":
+                declared.append(z3.Implies(z3.Not(v.null), V.is_Str(v.val)))
+            elif kind is not None:
+                fits = z3.And(V.is_Num(v.val), z3.IsInt(V.num(v.val))) if kind == "int" else V.is_Num(v.val)
+                declared.append(z3.Implies(z3.Not(v.null), fits))
+        free = [v for v, kind in zip(values, kinds) if kind is None]
         integral = [z3.Implies(V.is_Num(v.val), z3.IsInt(V.num(v.val))) for v in values]
-        numeric = [z3.Implies(z3.Not(v.null), V.is_Num(v.val)) for v in values]
-        for extra in (integral + numeric, numeric, integral):
-            solver.push()
-            solver.add(*[fact.translate(solver.ctx) for fact in extra])
-            model = solver.model() if solver.check() == z3.sat else None
-            solver.pop()
-            if model is not None:
-                return model
+        numeric = [z3.Implies(z3.Not(v.null), V.is_Num(v.val)) for v in free]
+        assertions = solver.assertions()
+        preferences = [integral + numeric, numeric, integral] + ([[]] if declared else [])
+        for extra in [declared + preference for preference in preferences]:
+            # A fresh solver per preference, never push/pop on the one already checked: ``push`` moves Z3 to its
+            # incremental core, which no time limit or work cap covers, and with some ninety string constants in the
+            # assertions it does not return (z3 4.16 and 5.4). A fresh ``check`` is bounded like every other.
+            trial = bound(z3.Solver(ctx=solver.ctx), self.timeout_ms)
+            trial.add(*assertions)
+            trial.add(*[fact.translate(solver.ctx) for fact in extra])
+            if trial.check() == z3.sat:
+                return trial.model()
         return None
 
     def witness(self, pred, occs: list[_Occ], facts=()) -> None:
@@ -4163,13 +4262,60 @@ def _z3_value(value):
     return V.Str(z3.StringVal(value))
 
 
-def _cell(model, v: _Val):
+def _ranked_strings(model) -> list[str]:
+    """The strings ``model`` gives a rank of their own; every other string has its default rank."""
+
+    found, pending = [], []
+    with contextlib.suppress(z3.Z3Exception):  # a model that never ranked a string has no interpretation to read
+        interpretation = model.get_interp(_string_rank())
+        if interpretation is not None:
+            pending = [interpretation.entry(i).arg_value(0) for i in range(interpretation.num_entries())]
+            pending.append(interpretation.else_value())
+    while pending:
+        term = pending.pop()
+        if z3.is_string_value(term):
+            found.append(term.as_string())
+        elif z3.is_app(term):
+            pending.extend(term.children())
+    return found
+
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+
+
+def _strings_between(literals: list[str], per_gap: int = 2) -> list[str]:
+    """Up to ``per_gap`` strings from each gap of the sorted ``literals``, and from below the first and above the
+    last. Between two dates, dates: the column may be a DATE."""
+
+    found: list[str] = []
+    bounds = [None, *literals, None]
+    for low, high in zip(bounds, bounds[1:]):
+        candidates = ["a", "b", "A", "0", " ", ""] if low is None else [low + suffix for suffix in ("a", "0", "A", " ")]
+        dates = [datetime.date.fromisoformat(text) for text in (low, high) if text is not None and _ISO_DATE.match(text) and _is_date(text)]
+        if dates and len(dates) == sum(text is not None for text in (low, high)):
+            day = datetime.timedelta(days=1)
+            near = [dates[0] + day, dates[0] + 2 * day] if low is not None else [dates[0] - day, dates[0] - 2 * day]
+            candidates = [date.isoformat() for date in near if datetime.date.min + 3 * day < date < datetime.date.max - 3 * day] + candidates
+        fits = [text for text in candidates if (low is None or low < text) and (high is None or text < high)]
+        found.extend(fits[:per_gap])
+    return found
+
+
+def _is_date(text: str) -> bool:
+    try:
+        datetime.date.fromisoformat(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _cell(model, v: _Val, kind: str | None = None):
     if z3.is_true(model.eval(v.null, model_completion=True)):
         return None
     if not _decided(model, v.val):
         # The model never constrained this value, so z3 would complete it with
-        # an arbitrary constructor, often a string; a number loads into any column.
-        return Fraction(0)
+        # an arbitrary constructor, often a string; a number loads into any column but a declared STRING one.
+        return "" if kind == "string" else Fraction(0)
     return _py(model, v.val)
 
 
@@ -4316,11 +4462,11 @@ def _find_counterexample(prover: _Prover, left: _Union, right: _Union) -> Counte
         prover.witness(block.cond.t, block.occs, block.facts)
     empty = z3.Solver()
     empty.check()
-    for assertions, base, occs, values in [(None, empty.model(), [], [])] + prover.candidates:
-        model = prover._counterexample(assertions, base, values) if occs else base
+    for assertions, base, occs, values, kinds in [(None, empty.model(), [], [], [])] + prover.candidates:
+        model = prover._counterexample(assertions, base, values, kinds) if occs else base
         db: dict[str, list[dict]] = {occ.table: [] for occ in all_occs}
         for occ in occs:
-            db.setdefault(occ.table, []).append({name: _cell(model, v) for name, v in occ.cols.items()})
+            db.setdefault(occ.table, []).append({name: _cell(model, v, prover.declared_kind(occ.table, name)) for name, v in occ.cols.items()})
         # A column only the other query reads is still a column of the row: give it the model's
         # value (never NULL by default) rather than leaving it to read as NULL.
         other_columns: dict[str, dict] = {}
@@ -4331,10 +4477,12 @@ def _find_counterexample(prover: _Prover, left: _Union, right: _Union) -> Counte
             for row in rows:
                 for name, v in other_columns.get(table, {}).items():
                     if name not in row:
-                        row[name] = _cell(model, v)
+                        row[name] = _cell(model, v, prover.declared_kind(table, name))
         db = prover.legal_database(db)
-        if db is None:
-            continue
+        if db is None or not prover.well_typed(db):
+            continue  # not a database these tables can hold
+        if not prover.real_string_order(model, [cell for rows in db.values() for row in rows for cell in row.values() if isinstance(cell, str)]):
+            continue  # the model ranks these strings in an order they do not have
         try:
             left_rows = _eval_union(left, db, model)
             right_rows = _eval_union(right, db, model)
@@ -4572,7 +4720,8 @@ def _prove_core(
                     assumptions=assumed,
                 )
 
-        prover = _Prover(timeout_ms, constraints)
+        prover = _Prover(timeout_ms, constraints, compiler.types)
+        prover.ordered, prover.string_literals = compiler.ordered, compiler.string_literals
         prover.opaque_sets = compiler.opaque_sets
         used[0] = compiler.used_setsrc
         try:
