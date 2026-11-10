@@ -26,3 +26,5 @@ It prints how many modules the prover is made of and exits with an error if the 
 
 - Some benchmark code the prover's evals share with KumoSQL's proof re-check is still copied in both repositories, and the evals that drive KumoSQL's own rewrites stayed. The [full page](../docs/prover-split.md#not-moved-yet) lists them.
 - "No score moved" was checked by running the moved evals in both places and comparing answers; the full page says which ones.
+
+After this change, run `pip install -e .` once in an existing checkout so the prover is installed next to KumoSQL.

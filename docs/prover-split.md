@@ -51,6 +51,8 @@ The hook has a price: `python -m kumosql.<moved name>` does not work (use `pytho
 
 `pyproject.toml` pins a release. To take a prover change: release it in the prover repository (a `vX.Y.Z` tag, with release notes saying which evals moved and the commit tested), change the pin here, and run the routine tier plus the canary. A KumoSQL pull request therefore cannot change a prover benchmark: none of the prover's evals, floors or results files live here.
 
+After the switch, an existing checkout needs `pip install -e .` once more: it installs the pinned prover next to KumoSQL. To work on both at once, clone the prover and `pip install -e path/to/Kumo_SQL_Prover` after that; the import aliases follow whatever is installed, and `tests/test_prover_aliases.py` fails when the list of moved modules no longer matches it.
+
 ## Canaries
 
 `tests/test_prover_canary.py` keeps real pairs from the SQLSolver suites that the algebraic prover proves (14 each from Calcite, TPC-C and Spark SQL, 8 from TPC-H, which has 22 pairs in all) and four pairs the suites must never prove, from `tests/fixtures/prover_canary.json`. They run in seconds through the entry points KumoSQL imports. `tests/test_canaries.py` (the gate's canaries, ten cases each of the SQLSolver suites, QED and the mined Calcite set) stays here too and calls the runners through their copies in `tools/` (`sqlsolver_bench`, `qed_bench`, `calcite_mined_bench`); the prover repository carries the same file. A failure here means the wiring broke (the pin, the import paths, the parser extension); a score that drops is for the prover repository's scheduled run to report.
