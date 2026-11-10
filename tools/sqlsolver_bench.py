@@ -451,7 +451,8 @@ def default_prove(left: str, right: str, tables: dict[str, Table], constants: bo
 
     if verdict_cache.folder() is None:
         return prove_result(left, right, tables, constants).proven
-    payload = {"left": left, "right": right, "tables": [asdict(t) for t in sorted(tables.values(), key=lambda t: t.name)], "constants": constants}
+    # This file is part of the question: ``prove_result`` picks the dialect, the constraints and the options of the proof.
+    payload = {"left": left, "right": right, "tables": [asdict(t) for t in sorted(tables.values(), key=lambda t: t.name)], "constants": constants, "runner": verdict_cache.source_digest(__file__)}
     return verdict_cache.cached_verdict("sqlsolver_bench.default_prove", payload, lambda: prove_result(left, right, tables, constants).proven)
 
 

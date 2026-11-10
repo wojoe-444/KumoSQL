@@ -8,7 +8,7 @@ Step 8 of the [roadmap](roadmap.md): the equivalence prover lives in its own rep
 
 The prover is the import closure of these modules: `equivalence`, `smt_equivalence`, `algebraic_equivalence`, `bounded_equivalence`, `result_equivalence`, `sqlsolver_backend`, `tie_determinism`, `tie_witness`, `uexpr`, `proof_registry` and `proof_format` (the roadmap's list), plus four small modules: `canonical_rules` and `query_mutants`, leaves that the prover's own benchmark runners and fuzzers import, `verdict_cache`, the cache of proof verdicts for the benchmark runs (it hashes the prover's own source, and no prover module imports it, so it is a root), and `bigquery_syntax`, which teaches sqlglot's BigQuery parser the syntax it lacks (`TABLE` arguments, `LIKE ALL UNNEST`, the `WITH(a AS 1, a + 1)` expression) the moment it is imported. That last one is not reached by any import from the roots, but every parse the prover made relied on it because `import kumosql` loads it first; a prover installed alone would have read the same query differently, so it is a root and the package imports it first. Imports inside functions count; the walk is over the syntax tree, so nothing is executed.
 
-That is 125 modules and 56,388 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
+That is 125 modules and 56,479 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
 
 ```sh
 python tools/prover_split.py            # the closure of the installed prover, with line counts
@@ -22,8 +22,8 @@ python tools/prover_split.py --check    # exit 1 when the closure reaches a prod
 
 | What | Moved | Now |
 | --- | --- | --- |
-| Source modules | 125 modules, 56,388 lines | `src/kumo_sql_prover/` in the prover repository |
-| Test files | 145 of 368 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
+| Source modules | 125 modules, 56,479 lines | `src/kumo_sql_prover/` in the prover repository |
+| Test files | 146 of 375 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
 | Benchmark runners (`tools/`) | 40 runners; the 8 only the prover uses are gone from here | `tools/` there. The other 32 are imported by KumoSQL's proof re-check (and a few by staying evals), so a copy stays here; see below |
 | Results files | 50 of 126 | `benchmarks/results/` there; the scoreboard of those evals is generated there |
 | Docs | 10 feature pages and 15 eval pages, each with its plain-language companion | `docs/` and `docs_simple/` there |
