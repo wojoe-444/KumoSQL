@@ -61,7 +61,7 @@ Agreement fell from 1,692 to 1,612 because the fixes are refusals: constructs Du
 
 ## What this found
 
-Fixed in the layer, each with a regression test in `tests/test_bigquery_on_duckdb.py`:
+Fixed in the layer, each with a regression test in [`tests/test_bigquery_on_duckdb.py`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/tests/test_bigquery_on_duckdb.py) in the prover repository:
 
 - `EXTRACT(MILLISECOND/MICROSECOND)` counted the whole seconds; a backslash in a `LIKE` pattern, `LIKE ANY/ALL`; `SPLIT(s, NULL)`; a set operation operand that is a set operation lost its grouping; `ASC NULLS LAST` and `COUNTIF` over no rows (found first here, fixed on master meanwhile).
 - Guards for `AVG`, `STDDEV` and `VARIANCE` of `NUMERIC` and for fractional seconds in `CAST(TIMESTAMP AS STRING)`.
