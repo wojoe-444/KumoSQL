@@ -122,7 +122,7 @@ The historical replay passed all 533 structural cases, so this audit does not es
 
 ### Default and CI runs omit the public fixture
 
-**P2.** [pyproject.toml](../pyproject.toml) deselects slow tests by default. [tests.yml](../.github/workflows/tests.yml) explicitly excludes the fixture, with an outdated comment claiming it needs a private CSV. The current fixture is checked in and public. The ordinary shape test only checks fixture structure and uniqueness.
+**P2.** [pyproject.toml](../pyproject.toml) deselects slow tests by default. `tests.yml` (since removed) explicitly excludes the fixture, with an outdated comment claiming it needs a private CSV. The current fixture is checked in and public. The ordinary shape test only checks fixture structure and uniqueness.
 
 Run the authored fixture in required CI and put any genuinely large external corpus in a separate mandatory evaluation job when making benchmark claims. Record selections and deselections alongside the number of cases.
 
