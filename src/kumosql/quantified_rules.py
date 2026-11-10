@@ -22,7 +22,10 @@ from __future__ import annotations
 
 import itertools
 
-import z3
+try:
+    import z3
+except ImportError:  # z3-solver is an optional extra; the rules below are reached only from a prover that has it
+    z3 = None
 from sqlglot import exp
 
 from .domain_join_rules import lateral_aggregates
@@ -38,6 +41,8 @@ _VALUE_NAME = "kumosql_v"
 @serialized
 def rewrite_quantified(tree: exp.Expression, schema: dict | None = None, not_null: dict | None = None, keys: dict | None = None) -> exp.Expression:
     """Fold Calcite's expansions back to quantified tests, then write every quantified test with EXISTS."""
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
 
     tree = fold_expansions(tree, schema, not_null, keys)
     return lower_quantified(tree)
@@ -116,6 +121,8 @@ def _plain_group(group: exp.Expression | None) -> bool:
 @serialized
 def lower_quantified(tree: exp.Expression) -> exp.Expression:
     """Write each ``x op ANY/ALL (SELECT y ...)`` with EXISTS (see the module docstring)."""
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
 
     # Every identifier is reserved (aliases, table and CTE names, columns), so a generated alias can
     # never shadow a relation the comparison reads.
@@ -1197,6 +1204,8 @@ def _witnessed(goal, witnesses: list) -> bool:
 @serialized
 def fold_expansions(tree: exp.Expression, schema: dict | None = None, not_null: dict | None = None, keys: dict | None = None) -> exp.Expression:
     """Read Calcite's aggregate/indicator expansions as ``x op ANY/ALL (q)`` or ``x IN (q)`` (see the module docstring)."""
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
 
     not_null = {k.lower(): {c.lower() for c in v} for k, v in (not_null or {}).items()}
     # Decorrelated aggregates joined on their correlation key become one-row LATERAL aggregates;

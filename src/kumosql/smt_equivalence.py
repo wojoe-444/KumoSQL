@@ -52,7 +52,8 @@ the two queries return different rows; if it finds one the result is
 reported when every function in both queries is modeled exactly, so it never
 rests on an uninterpreted function.
 
-``z3-solver`` is an optional dependency: install ``kumosql[smt]``.
+``z3-solver`` is an optional dependency (the ``smt`` extra): without it this module still imports and every proof
+is ``NOT_PROVEN`` with ``solver_lock.Z3_MISSING`` as the reason.
 """
 
 from __future__ import annotations
@@ -78,7 +79,7 @@ from .parse_check import refuse_misread_proofs
 from . import proof_columns
 from .set_operations import positional_sql_pair
 from .smt_args import check_args
-from .solver_lock import bound, bounded_solver, serialized
+from .solver_lock import Z3_MISSING, bound, bounded_solver, serialized
 from .string_literals import canonical_literals
 from .type_names import invalid_type_name
 from .sqlx_fragments import masked_template_problem
@@ -347,7 +348,8 @@ def _is_ground(term) -> bool:
     return True
 
 
-_ARITHMETIC = (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_MUL, z3.Z3_OP_UMINUS, z3.Z3_OP_ANUM, z3.Z3_OP_AGNUM)
+# Empty without z3-solver (an optional extra): importing this module must not need it.
+_ARITHMETIC = () if z3 is None else (z3.Z3_OP_ADD, z3.Z3_OP_SUB, z3.Z3_OP_MUL, z3.Z3_OP_UMINUS, z3.Z3_OP_ANUM, z3.Z3_OP_AGNUM)
 
 
 def _uninterpreted_leaves(term) -> list | None:
@@ -4502,9 +4504,7 @@ def _prove_core(
     if compared:
         return SmtEquivalenceResult(SmtStatus.NOT_PROVEN, f"unsupported: {compared}", assumptions=assumptions)
     if z3 is None:
-        return SmtEquivalenceResult(
-            SmtStatus.NOT_PROVEN, "z3-solver is not installed (pip install kumosql[smt])"
-        )
+        return SmtEquivalenceResult(SmtStatus.NOT_PROVEN, Z3_MISSING)
     used = [False]
 
     def attempt(semijoin: bool, blind: bool = False) -> SmtEquivalenceResult:
