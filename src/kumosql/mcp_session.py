@@ -12,7 +12,7 @@ import difflib
 import sys
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping, Sequence
 
 from . import data_profile_store as store
 from .pipeline import Pipeline
@@ -31,6 +31,19 @@ def load_project(root: Path, source_schema: Path | None = None) -> Pipeline:
     return load_sqlx_project(root, source_schema=schema)
 
 
+def parse_assumed_grain(values: Sequence[str] | None) -> dict[str, tuple[str, ...]]:
+    """``["dataset.table=id,day"]`` as ``{"dataset.table": ("id", "day")}``; raises ``ValueError`` on a malformed entry."""
+
+    found: dict[str, tuple[str, ...]] = {}
+    for value in values or ():
+        table, sep, columns = str(value).rpartition("=")
+        names = tuple(dict.fromkeys(c.strip() for c in columns.split(",") if c.strip()))
+        if not sep or not table.strip() or not names:
+            raise ValueError(f"expected TABLE=column[,column...], got {value!r}")
+        found[table.strip()] = names
+    return found
+
+
 class Session:
     """One project, kept in memory. Pass ``pipeline`` (tests) or ``loader`` (called once, on first use)."""
 
@@ -40,8 +53,10 @@ class Session:
         *,
         loader: Callable[[], Pipeline] | None = None,
         profiles: Path | None = None,
+        assume_grain: Mapping[str, Sequence[str]] | None = None,
         root: Path | None = None,
     ) -> None:
+        self._assume_grain = dict(assume_grain or {})
         self._pipeline = pipeline
         #: the project folder; local files a tool is asked to read must sit inside it (the working folder when unknown)
         self.root = root
@@ -107,7 +122,35 @@ class Session:
         from .table_profile import profile_pipeline
 
         pipeline = self.pipeline()
-        return self._once("profiles", lambda: profile_pipeline(pipeline))
+        return self._once("profiles", lambda: profile_pipeline(pipeline, declared_grain=self.declared_grain()))
+
+    def declared_grain(self) -> dict[str, tuple[str, ...]] | None:
+        """The grains the person starting the server declared (``--assume-grain``), by table key; ``None`` when there are none.
+
+        A table the project does not have, or a column a model does not output, is dropped with a line on stderr:
+        a declaration that cannot apply must not pass for knowledge.
+        """
+
+        if not self._assume_grain:
+            return None
+        return self._once("declared_grain", self._resolve_assumptions)
+
+    def _resolve_assumptions(self) -> dict[str, tuple[str, ...]] | None:
+        pipeline = self.pipeline()
+        found: dict[str, tuple[str, ...]] = {}
+        for text, columns in self._assume_grain.items():
+            key, _close = self.resolve(text)
+            if key is None:
+                print(f"kumosql mcp: --assume-grain names no table of the project: {text}", file=sys.stderr)
+                continue
+            if key in pipeline.models:
+                have = {c.lower() for c in pipeline.output_columns(key)}
+                missing = [c for c in columns if c.lower() not in have]
+                if missing:
+                    print(f"kumosql mcp: --assume-grain {text}: not output columns of the model: {', '.join(missing)}", file=sys.stderr)
+                    continue
+            found[key] = tuple(columns)
+        return found or None
 
     def roles(self) -> dict:
         from .table_roles import infer_roles

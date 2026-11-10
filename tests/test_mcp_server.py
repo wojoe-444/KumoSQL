@@ -5,6 +5,7 @@ import json
 import socket
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 from kumosql import data_profile_store as store, mcp_answers, mcp_server, profile_mcp
 from kumosql.data_profile import DataProfile
 from kumosql.mcp_answers import Answer, render, size
-from kumosql.mcp_session import Session, load_project
+from kumosql.mcp_session import Session, load_project, parse_assumed_grain
 from kumosql.pipeline_loading import load_sqlx_project
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -203,12 +204,17 @@ def test_describe_table_points_at_a_saved_data_profile(tmp_path):
 
 
 def check_describe_table_states_unknown_column_meanings_with_their_reason(big):
-    body, _, used = ask(big, "describe_table", table="csa_3_11_intermediary_stats")
-    assert used <= BOUND and body["grain"] == ["day"]
+    body, _, used = ask(big, "describe_table", table="csa_2_40_alert")
+    assert used <= BOUND
     unknown = {item["what"]: item["reason"] for item in body["unknown"]}
-    assert any(what.startswith("2 column meanings") and reason.startswith("nested_field") for what, reason in unknown.items())
+    assert any(what.startswith("2 column meanings") and reason.startswith("ambiguous_column") for what, reason in unknown.items())
     assert body["counts"]["meaning_unknown"] == 2
-    assert any("actions = ? (nested_field)" in column for column in body["columns"])
+    assert any("role = ? (ambiguous_column)" in column for column in body["columns"])
+    assert any(reason.startswith("source_without_grain") for reason in unknown.values())
+    # a field inside a nested column is a known meaning: the path is part of it
+    body, _, used = ask(big, "describe_table", table="csa_3_11_intermediary_stats")
+    assert used <= BOUND and body["grain"] == ["day"] and body["counts"]["meaning_unknown"] == 0
+    assert any("actions = " in column and "field(col:" in column for column in body["columns"])
 
 
 # -------------------------------------------------------------- trace_column
@@ -304,6 +310,38 @@ def test_find_existing_checks_a_proposed_query_and_says_when_it_cannot_read_it(s
     assert body["verdict"] == "cannot_tell" and body["unknown"]
 
 
+GRAIN = {
+    "events.sqlx": 'config { type: "declaration", schema: "src", name: "events" }\n',
+    "keeps.sqlx": 'config { type: "view" }\nSELECT id, kind FROM ${ref("events")} WHERE kind = "a"\n',
+    "keeps_copy.sqlx": 'config { type: "view" }\nSELECT id AS event, kind FROM ${ref("events")} WHERE kind = "a"\n',
+    "drops.sqlx": 'config { type: "view" }\nSELECT kind FROM ${ref("events")}\n',
+}
+
+
+def test_assumed_grain_lets_find_existing_compare_tables_over_an_undefined_source(tmp_path):
+    root = write_project(tmp_path / "proj", GRAIN)
+    plain = mcp_server.AgentServer(Session(load_sqlx_project(root)))
+    body, _, _ = ask(plain, "find_existing", table="keeps")
+    assert body["verdict"] == "cannot_tell" and "source_without_grain" in json.dumps(body)
+    assumed = Session(load_sqlx_project(root), assume_grain=parse_assumed_grain(["src.events=ID", "nothing=x"]))
+    server = mcp_server.AgentServer(assumed)
+    body, _, _ = ask(server, "find_existing", table="keeps")
+    assert body["verdict"] == "found" and body["matches"][0]["table"].endswith("keeps_copy") and body["matches"][0]["kind"] == "same_meaning"
+    assert ask(server, "describe_table", table="keeps")[0]["grain_status"] == "derived"  # derived from a declared source key
+    assert not ask(server, "describe_table", table="drops")[0]["grain"]  # the key is not kept: still unknown
+    assert list(assumed.declared_grain()) == [k for k in assumed.pipeline().sources if k.endswith("events")]  # the unknown table is dropped
+
+
+def test_assume_grain_values_are_checked(capsys):
+    assert parse_assumed_grain(["a.b=x, y", "c=z"]) == {"a.b": ("x", "y"), "c": ("z",)}
+    for bad in ("no_equals", "=x", "t="):
+        with pytest.raises(ValueError):
+            parse_assumed_grain([bad])
+    with pytest.raises(SystemExit):
+        mcp_server.main(["--assume-grain", "broken"])
+    assert "--assume-grain" in capsys.readouterr().err
+
+
 def test_find_existing_needs_exactly_one_of_table_and_sql(small):
     assert ask(small, "find_existing")[1] and ask(small, "find_existing", table="raw", sql="SELECT 1")[1]
 
@@ -311,11 +349,23 @@ def test_find_existing_needs_exactly_one_of_table_and_sql(small):
 def check_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big):
     """The overlap search used to return about 50 KB to say it compared 0 of 105 tables."""
 
-    body, failed, used = ask(big, "find_existing", table="csa_3_11_intermediary_stats")
+    body, failed, used = ask(big, "find_existing", table="csa_2_40_alert")
     assert not failed and used < 1000
     assert body["verdict"] == "cannot_tell" and body["counts"]["compared"] == 0 and body["counts"]["tables_considered"] == 105
     assert "compared 0 of 105" in body["answer"] and body["unknown"] and body["next"]
     assert all(item["reason"] for item in body["unknown"])
+
+
+def check_the_analysis_gaps_behind_find_existing_stay_closed(big):
+    """Nested fields have meanings and find_existing compares real tables (it compared 0 of 105 before)."""
+
+    profiles = big.session.profiles()
+    reasons = Counter(a.reason for p in profiles.values() for a in p.attributes if a.status != "known")
+    assert reasons["nested_field"] == 0 and sum(reasons.values()) <= 60, reasons
+    assert sum(1 for p in profiles.values() if p.grain.known and all(a.status == "known" for a in p.attributes)) >= 50
+    body, failed, used = ask(big, "find_existing", table="csa_3_11_intermediary_stats")
+    assert not failed and used <= BOUND and body["verdict"] == "found" and body["counts"]["compared"] >= 60
+    assert {m["kind"] for m in body["matches"]} <= {"same_meaning", "contains", "partial"}
 
 
 # --------------------------------------------------------------- find_tables
@@ -686,6 +736,7 @@ def test_the_big_project_answers_are_bounded_and_explicit(monkeypatch):
     check_describe_table_states_unknown_column_meanings_with_their_reason(big)
     check_trace_column_reports_the_sources_of_a_real_source_and_what_it_could_not_follow(big)
     check_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big)
+    check_the_analysis_gaps_behind_find_existing_stay_closed(big)
     check_every_default_answer_on_the_big_project_fits_the_bound(big)
     check_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big)
     check_offset_pages_the_main_list_without_repeating_it(big)

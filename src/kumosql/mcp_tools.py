@@ -19,7 +19,9 @@ PAGE = 200  # most items one call hands to the size bound
 
 #: plain-language phrases for the reason codes that table profiles, lineage and impact use
 REASONS = {
-    "nested_field": "reads a field inside a STRUCT or JSON column, whose meaning is not tracked yet",
+    "nested_field": "reads a field of a computed value or through a path that is not a plain list of field names",
+    "unnest_element": "reads an element of an array that the query unnests, which is not a column of any table",
+    "ambiguous_column": "the column name could come from more than one table",
     "source_without_grain": "reads a table that is not defined in the project, so which columns identify a row is unknown",
     "unexpanded_star": "SELECT * over a table whose columns are not known",
     "unknown_column": "the column is not among the columns the project knows for that table",
@@ -488,12 +490,14 @@ def find_existing(session: Session, args: dict) -> Answer:
         key = need_table(session, table)
         if key not in pipeline.models:
             raise ToolError(f"{key} is a source the project does not build", ["Pass a model of the project, or a proposed query with sql."])
-        overlaps = find_overlaps(pipeline, model=key, roles=roles)
-        rollups = find_rollups(pipeline, model=key, roles=roles)
+        declared = session.declared_grain()
+        overlaps = find_overlaps(pipeline, model=key, roles=roles, declared_grain=declared)
+        rollups = find_rollups(pipeline, model=key, roles=roles, declared_grain=declared)
         subject = key.split(".")[-1]
     else:
-        overlaps = find_overlaps(pipeline, sql, roles=roles)
-        rollups = find_rollups(pipeline, sql, roles=roles)
+        declared = session.declared_grain()
+        overlaps = find_overlaps(pipeline, sql, roles=roles, declared_grain=declared)
+        rollups = find_rollups(pipeline, sql, roles=roles, declared_grain=declared)
         subject = "the proposed query"
     offset = offset_wanted(args)
 

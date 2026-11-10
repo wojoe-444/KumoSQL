@@ -10,7 +10,7 @@ An AI agent that helps with your Dataform project has a problem: the project is 
 python -m kumosql mcp path/to/your/dataform/project
 ```
 
-Add that command to your agent's list of MCP servers. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
+Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id`; KumoSQL then treats that as a stated fact, not something it worked out. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
 
 ## What an agent can ask
 
@@ -47,7 +47,7 @@ It also serves the saved data profiles from [Data profiling](data-profiling.md),
 - A word search such as `find_tables` cannot know that "revenue" and "sales" mean the same thing. If it finds nothing, try other words or a column name.
 - `check_query` saying "no problems found" means the checks that ran found none; it is not a promise that the query is right. A dry run needs working Google credentials; without them the answer says "not checked" and still gives the offline checks.
 - "The same" from `compare_queries` is about the rows only: check column types separately. The example table it shows for "different" is made up, not your data.
-- On the large public example project, many column meanings are unknown (columns that read fields inside nested records) and many tables have no known grain. There `find_existing` honestly answers "cannot tell" in a few lines, rather than guessing. Answers get better as those gaps close.
+- On the large public example project, KumoSQL now understands columns that read a field inside a nested record (it treats "the `email` field of the `principal` record of this log column" as one value that two tables can share), and `find_existing` can compare 54 of its 106 tables, where before it could compare 3. For the other 52 it still says "cannot tell" in a few lines instead of guessing: for most of them nothing says which columns identify a row, because the tables read a raw log table with no declared key. If you know such a key you can tell the server with `--assume-grain table=column`, but a table only gains a known row identity if it also keeps that column in its output, and on this example none does. That declaration is your claim, and nothing checks it.
 - "What breaks" only covers what is inside the project. It cannot see dashboards or other people's queries, so it never says a deletion is safe.
 - The sizes were measured on one public project with no live data behind it. No agent was in the loop, so how many fewer questions an agent needs is not measured yet.
 

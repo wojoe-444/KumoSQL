@@ -27,7 +27,7 @@ import threading
 from pathlib import Path
 
 from . import mcp_answers, profile_mcp
-from .mcp_session import Session, load_project
+from .mcp_session import Session, load_project, parse_assumed_grain
 
 #: modules that register tools; each workstream adds its own here
 TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile")
@@ -102,6 +102,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", help="With --git: branch to load")
     parser.add_argument("--refresh", action="store_true", help="With --git: fetch the latest commit instead of reusing the cached clone")
     parser.add_argument("--source-schema", type=Path, help='JSON mapping of source tables to columns, e.g. {"p.d.t": {"id": "INT64"}}')
+    parser.add_argument(
+        "--assume-grain",
+        action="append",
+        metavar="TABLE=COLUMN[,COLUMN]",
+        help="Declare which columns identify a row of a table the project does not define (or cannot derive), "
+        "e.g. logs.events=insert_id. Repeatable. Answers show such a grain as declared, never as derived.",
+    )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
     args = parser.parse_args(argv)
     if args.root and args.git:
@@ -116,8 +123,17 @@ def main(argv: list[str] | None = None) -> int:
             root = sync(parse_remote(args.git), parse_branch(args.branch), args.refresh)
         except GitRepoError as exc:
             parser.error(str(exc))
+    try:
+        assumed = parse_assumed_grain(args.assume_grain)
+    except ValueError as exc:
+        parser.error(f"--assume-grain: {exc}")
     loader = (lambda: load_project(root, args.source_schema)) if root else None
-    session = Session(loader=loader, profiles=args.profiles, root=(root.parent if root.is_file() else root) if root else None)
+    session = Session(
+        loader=loader,
+        profiles=args.profiles,
+        root=(root.parent if root.is_file() else root) if root else None,
+        assume_grain=assumed,
+    )
     server = AgentServer(session)
     if loader is not None:
         # Parse and analyse in the background so `initialize` answers at once; the first question waits for it.

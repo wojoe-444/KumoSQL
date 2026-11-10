@@ -43,11 +43,11 @@ The result file is `agent-floor`. The test is `tests/test_agent_floor.py` (an ev
 
 ## Results
 
-With all eight tools: 26 of 26 questions inside their bounds, largest answer 1,971 bytes, median task 991 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
+With all eight tools: 26 of 26 questions inside their bounds, largest answer 1,965 bytes, median task 1,004 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
 
 ## Limits of the evidence
 
 - One public project with no source schemas and no job history, so `impact` cannot read readers seen only in query history and `safe_to_delete` stays unknown.
-- Many answers say `unknown` with a reason (351 of 626 column meanings read nested fields on this project; `find_existing` cannot decide anything there yet). An honest unknown fits its bound, so this floor does not measure how useful an answer is, only how big and how fast. Correctness is tested in `tests/test_mcp_server.py`.
+- Many answers say `unknown` with a reason (45 of 626 column meanings are unknown on this project, and `find_existing` can compare 54 of its 106 models; see [the agent server's limits](../mcp-server.md#limits)). An honest unknown fits its bound, so this floor does not measure how useful an answer is, only how big and how fast. Correctness is tested in `tests/test_mcp_server.py`.
 - Calls are made in process, so transfer over stdio is not included.
 - No language model is involved. How many turns and tokens a real agent spends with and without the server is the [field trial](../roadmap.md#7-field-trial), a periodic report and never a gate.
