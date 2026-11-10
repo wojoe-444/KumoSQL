@@ -6,13 +6,22 @@ An eval's results file (`benchmarks/results/<eval>.json`) holds a count of prove
 
 It has three parts: a ledger of admitted proofs per eval, a tool that admits new proofs, and the near-miss probe that the tool runs on each of them.
 
+## Where the parts live
+
+Since the prover moved to [its own repository](https://github.com/wojoe-444/Kumo_SQL_Prover) on 2026-11-10, the results files of the ledger evals live there, and so do the ledgers (`benchmarks/admitted/` in that repository): a count and the list it is compared with change in the same pull request. That repository's gate runs the comparison (`tests/test_proof_ledger.py`, with the read-only `tools/proof_ledger.py`; see [its page](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/proof-admission.md)).
+
+The tool that admits a proof stays here, because it needs the executed-search engine and the eval adapters in `tools/recheck/`. It works on a checkout of the prover repository, named with `--prover` or the environment variable `KUMO_SQL_PROVER_CHECKOUT`:
+
 ```sh
-python tools/proof_admission.py status                        # ledger size against each results file
-python tools/proof_admission.py check                         # fast: every results file counts what its ledger admits
-python tools/proof_admission.py admit qed-calcite             # prove every pair, check the new proofs, update the ledger
-python tools/proof_admission.py admit qed-calcite --dry-run   # report unadmitted and lost proofs, write nothing
-python tools/proof_admission.py admit singh --baseline        # start a ledger from today's proofs, unchecked
+pip install -e ../Kumo_SQL_Prover        # the prover under test is the one in the checkout
+python tools/proof_admission.py status --prover ../Kumo_SQL_Prover                        # ledger size against each results file
+python tools/proof_admission.py check --prover ../Kumo_SQL_Prover                         # fast: every results file counts what its ledger admits
+python tools/proof_admission.py admit qed-calcite --prover ../Kumo_SQL_Prover             # prove every pair, check the new proofs, update the ledger
+python tools/proof_admission.py admit qed-calcite --prover ../Kumo_SQL_Prover --dry-run   # report unadmitted and lost proofs, write nothing
+python tools/proof_admission.py admit singh --prover ../Kumo_SQL_Prover --baseline        # start a ledger from today's proofs, unchecked
 ```
+
+Nothing is guessed. Without a checkout every command stops with exit code 2, and so does one given a folder that is not a prover checkout. `admit` proves with the prover installed in the environment, so it also stops when that is not the checkout it would write to (`--any-prover` overrides this for a deliberate comparison). For the hours between the split and this change the count check ran here against results files that had moved away and passed without comparing anything; a ledger with no results file, or with a results file that gives no count, is now a failure in both repositories.
 
 ## The ledger
 
@@ -25,7 +34,7 @@ python tools/proof_admission.py admit singh --baseline        # start a ledger f
 | `searched` | Only the executed search ran: a held-out pair (never mutated), or an eval whose pairs cannot be mutated. |
 | `unrunnable` | DuckDB cannot run the pair, so no executed check exists; the proof stands on the prover alone. |
 
-The tool writes the file sorted by pair; it is not edited by hand (`tests/test_proof_admission.py` rewrites every ledger and compares).
+The tool writes the file sorted by pair; it is not edited by hand (the prover repository's `tests/test_proof_ledger.py` checks every ledger's header, line format and order).
 
 ## Admitting a proof
 
@@ -41,7 +50,7 @@ The tool writes the file sorted by pair; it is not edited by hand (`tests/test_p
 
 ## The gate
 
-`python tools/proof_admission.py check` reads two small files per eval: the ledger and the results file's `coverage.proven` (or the number that opens `score`). They must be equal. A higher count means a proof was counted without the checks. A lower count means the ledger still lists a proof the eval lost, which would let a new, unchecked proof take its place without the count moving. `tests/test_proof_admission.py` runs this check in the pull-request gate, so a pull request that changes a covered eval's score has to run `admit` for it and commit the ledger with the results file.
+The check reads two small files per eval: the ledger and the results file's `coverage.proven` (or the number that opens `score`). They must be equal. A higher count means a proof was counted without the checks. A lower count means the ledger still lists a proof the eval lost, which would let a new, unchecked proof take its place without the count moving. A ledger whose results file is missing or gives no count fails too. The prover repository's pull-request gate runs this check (`tests/test_proof_ledger.py` there), so a pull request that changes a covered eval's score has to run `admit <eval> --prover <that checkout>` from a KumoSQL checkout and commit the ledger with the results file. `python tools/proof_admission.py check --prover <checkout>` is the same comparison from this side.
 
 The count is a tripwire, not the whole check: a prover change that loses one proof and gains another leaves it unchanged. `admit --dry-run` is the precise comparison and belongs with the scheduled eval runs.
 
@@ -96,8 +105,9 @@ Of the 3,814 mutated QED pairs the prover accepted 1,367 (36%), and every accept
 - `baseline` lines carry no evidence from this tool.
 - Only eleven evals have a ledger. The count comparison cannot see a lost proof replaced by a new one; `admit --dry-run` can.
 - The gate compares two files. A prover change that loses a proof does not fail it until someone re-measures the eval; the scheduled `admit --dry-run` is what notices, and it is not scheduled yet.
+- Admitting a proof takes two checkouts, this one for the tool and the prover's for the files. The prover repository's gate only compares; it cannot run the checks itself.
 - The probe mutates one site at a time and only the constructs `kumosql.query_mutants` knows.
 
 ## Tests
 
-`tests/test_proof_admission.py`: the gate check on the repository's ledgers, the ledger format, `admit` with stand-in checks (kept, admitted, lost, false, unsettled, a changed pair, `--dry-run`, `--baseline`), the order of the two checks and the held-out rule, an eval that says which proven pairs it counts, the probe's mutant labels and cap, and a probe run against a deliberately careless prover, which it must catch.
+`tests/test_proof_admission.py`: the tool refuses to run without a prover checkout or with a prover other than the checkout, a ledger with no results file or no count fails the check, no ledger is kept in this repository, the ledger format, `admit` with stand-in checks (kept, admitted, lost, false, unsettled, a changed pair, `--dry-run`, `--baseline`), the order of the two checks and the held-out rule, an eval that says which proven pairs it counts, the probe's mutant labels and cap, and a probe run against a deliberately careless prover, which it must catch.
