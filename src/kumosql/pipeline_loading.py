@@ -1239,10 +1239,26 @@ def load_sqlx_project(
                 "logical": renamed, "variables": naming.variables, "placeholders": placeholders}
 
     js_files: dict[str, str] = {}
+    nested_roots: dict[tuple[str, ...], bool] = {}
+
+    def inside_other_project(directory_parts: tuple[str, ...]) -> bool:
+        """Whether a directory below the root is itself a Dataform project or a git checkout (a worktree, a backup)."""
+
+        if not directory_parts:
+            return False
+        if directory_parts not in nested_roots:
+            here = root.joinpath(*directory_parts)
+            nested_roots[directory_parts] = (
+                any((here / marker).exists() for marker in (".git", "workflow_settings.yaml", "dataform.json"))
+                or inside_other_project(directory_parts[:-1]))
+        return nested_roots[directory_parts]
+
     for path in find_assets(root, (".js",), unlistable):
         relative_parts = path.relative_to(root).parts
         if "node_modules" in relative_parts or ".git" in relative_parts:
             continue
+        if inside_other_project(relative_parts[:-1]):
+            continue  # a second copy of the project is not part of this one: its declarations would look declared twice
         text, _reason = read_text_or_reason(path)
         if text is not None:
             js_files["/".join(relative_parts)] = text
@@ -1253,10 +1269,13 @@ def load_sqlx_project(
         path = root / relative_js
         if not _JS_CALL_RE.search(text):
             continue
+        if use_definitions and relative_js.split("/", 1)[0] not in ("definitions", "includes"):
+            continue  # Dataform runs definitions/ and what it requires; other folders are not part of the project's actions
         declared, actions, complete = js_declared_targets(
             text, Target(database, dataset, ""), modules=modules, path=relative_js, placeholders=placeholders)
         for target in declared:
-            known.setdefault(target.name, []).append(target)
+            if target not in known.setdefault(target.name, []):  # an identical declaration repeated is one table
+                known[target.name].append(target)
             sources[target.key] = target
         for target in actions:
             final = naming.apply(target)
@@ -1308,6 +1327,8 @@ def load_sqlx_project(
     reads_output: list[tuple[str, Target]] = []  # (reading action, table it ref()s): checked against operations once all load
     pending = []
     for path in find_assets(search_root, (".sqlx", ".sql"), unlistable):
+        if inside_other_project(path.relative_to(root).parts[:-1]):
+            continue
         try:
             asset = read_asset(path)
         except Exception as exc:  # noqa: BLE001 - one odd file must not fail the whole project

@@ -258,3 +258,47 @@ def test_a_two_part_ref_stays_unresolved_when_a_computed_declaration_may_set_the
         "definitions/m.sqlx": 'config { type: "table" }\nSELECT 1 FROM ${ref("raw", "orders")}',
     })
     assert pl.models["proj.analytics.m"].declared_dependencies == ()
+
+
+def test_a_second_copy_of_the_declarations_does_not_make_refs_ambiguous(tmp_path):
+    decl = 'declare({ schema: "raw", name: "orders" });\n'
+    model = 'config { type: "table" }\nSELECT id FROM ${ref("orders")}'
+    for copy in ("definitions", "backup/definitions", "wt/definitions"):
+        (tmp_path / copy).mkdir(parents=True)
+        (tmp_path / copy / "src.js").write_text(decl)
+    (tmp_path / "wt" / ".git").write_text("gitdir: elsewhere\n")  # a git worktree
+    (tmp_path / "backup" / "workflow_settings.yaml").write_text("defaultDataset: other\n")  # a second project root
+    pl = project(tmp_path, {"definitions/m.sqlx": model})
+    assert reads(pl) == {"proj.raw.orders"}
+    assert not [d for d in pl.diagnostics if d.code == "unsupported_ref"]
+
+
+def test_copies_outside_definitions_are_not_scanned_for_declarations(tmp_path):
+    pl = project(tmp_path, {
+        "definitions/src.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "vendored/definitions/src.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "vendored/other.js": 'declare({ schema: "stale", name: "orders" });\n',
+        "definitions/m.sqlx": 'config { type: "table" }\nSELECT id FROM ${ref("orders")}',
+    })
+    assert reads(pl) == {"proj.raw.orders"}
+
+
+def test_identical_declarations_repeated_in_one_project_are_one_table(tmp_path):
+    pl = project(tmp_path, {
+        "definitions/a.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "definitions/b.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "definitions/m.sqlx": 'config { type: "table" }\nSELECT id FROM ${ref("orders")}',
+    })
+    assert reads(pl) == {"proj.raw.orders"}
+
+
+def test_a_nested_copy_without_a_definitions_folder_is_not_read(tmp_path):
+    pl = project(tmp_path, {
+        "src.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "m.sqlx": 'config { type: "table" }\nSELECT id FROM ${ref("orders")}',
+        "wt/src.js": 'declare({ schema: "raw", name: "orders" });\n',
+        "wt/.git": "gitdir: elsewhere\n",
+        "wt/m.sqlx": 'config { type: "table" }\nSELECT id FROM ${ref("orders")}',
+    })
+    assert reads(pl) == {"proj.raw.orders"}
+    assert set(pl.models) == {"proj.analytics.m"}

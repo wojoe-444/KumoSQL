@@ -27,6 +27,10 @@ The local data folder holds settings, cached repository data, saved analyses, an
 
 Choosing a home folder is especially helpful with Microsoft Store Python: Python and git can otherwise disagree about where AppData files live.
 
+## Copies of the project inside the folder
+
+If you point KumoSQL at a folder that also holds another copy of the project (a git worktree, a backup, a vendored copy), the copy is ignored. Before this, each source table looked declared twice and every `ref()` to it showed up as ambiguous. Only the project's own `definitions/` and `includes/` folders are read for declarations. This covers folders loaded from disk, not the evidence of any score.
+
 ## Why a dependency might look surprising
 
 Dataform's `${ref("name")}` resolves to the action or declaration with that name. Its own `schema` and `database` settings matter. KumoSQL reads declarations and project defaults rather than assuming every reference belongs to the default dataset.
