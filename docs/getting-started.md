@@ -41,6 +41,8 @@ Optional extras add capabilities; install them the same way, for example `python
 | `bigquery` | Google auth for dry runs and the BigQuery catalog page | Those features report that credentials are unavailable |
 | `dev` | pytest (with xdist), DuckDB and Z3, for working on KumoSQL itself | |
 
+DuckDB is pinned below 2 (`duckdb>=1.0,<2`). DuckDB 2.0 rejects the deprecated lambda arrow (`x -> ...`) in the macros `bigquery_on_duckdb.configure()` defines, so every executed check fails on it; the suite was developed on 1.5.6. Z3 is capped below 6 and sqlfluff below 5 so a major release cannot arrive unnoticed. Moving to DuckDB 2.0 means porting those macros to its lambda syntax, then re-checking the optimizer-bug guard (`kumosql.duckdb_load.run_unoptimized`), then raising the pin in `pyproject.toml`, CI and these docs together.
+
 ## 2. Rewrite one query and see the evidence
 
 Save this as `query.sql`:
