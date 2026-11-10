@@ -29,7 +29,7 @@ def test_every_test_file_that_loads_an_eval_script_is_marked_eval():
     for test in sorted((ROOT / "tests").glob("test_*.py")):
         text = test.read_text(encoding="utf-8")
         loads = [s for s in scripts if re.search(rf"(import {s}\b|from tools(\.{s})? import|[\"']{s}(\.py)?[\"'])", text) and re.search(rf"\b{s}\b", text)]
-        if loads and test.name not in declared:
+        if loads and test.name not in declared and "pytest.mark.canary" not in text:  # a canary loads a few cases, not the family's floors
             missing.append(f"{test.name} (loads {', '.join(sorted(loads))})")
     assert not missing, "add `pytestmark = pytest.mark.eval` to: " + "; ".join(missing)
 
