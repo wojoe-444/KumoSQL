@@ -77,7 +77,9 @@ def need_table(session: Session, text: object) -> str:
     if close:
         raise ToolError(
             f"no single table matches {clip(text, 80)!r}",
-            [f"Use one of these table names: {', '.join(close)}."],
+            [f"Did you mean {close[0]}? {len(close) - 1} other close name{'s' if len(close) != 2 else ''} in candidates; any table is accepted as a table name, dataset.table or the full key."]
+            if len(close) > 1
+            else [f"Use {close[0]}."],
             candidates=close,
         )
     raise ToolError(

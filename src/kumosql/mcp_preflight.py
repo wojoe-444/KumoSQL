@@ -421,8 +421,6 @@ def check_query(session: Session, args: dict) -> Answer:
                 columns = dry["columns"]
                 gaps = [g for g in gaps if not g[0].endswith("output column types")]
                 answer.fields["column_types_from"] = "BigQuery dry run"
-    else:
-        gaps.insert(0, ("BigQuery dry run", "not checked: not requested. dry_run=true with project=... asks BigQuery to plan the query (free, reads no data, under the byte cap)"))
 
     outside = sorted(spelled for spelled, key in draft.tables.items() if key is None)
     if outside:

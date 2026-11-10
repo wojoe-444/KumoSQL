@@ -214,14 +214,19 @@ class Session:
 
     @staticmethod
     def _close(folded: str, tables: dict[str, str]) -> list[str]:
+        """Up to five table keys near ``folded``, the closest first (a misspelling should name its likely target first)."""
+
         last = folded.split(".")[-1]
         by_tail: dict[str, list[str]] = {}
         for key in tables:
             by_tail.setdefault(key.casefold().split(".")[-1], []).append(key)
-        found = [key for tail, keys in by_tail.items() if last in tail for key in keys]
-        for tail in difflib.get_close_matches(last, list(by_tail), n=5, cutoff=0.6):
-            found.extend(key for key in by_tail[tail] if key not in found)
-        return sorted(found)[:5]
+        near = set(difflib.get_close_matches(last, list(by_tail), n=5, cutoff=0.6))
+        near.update(tail for tail in by_tail if last in tail)
+        ranked = sorted(near, key=lambda tail: (-difflib.SequenceMatcher(None, last, tail).ratio(), tail))
+        found: list[str] = []
+        for tail in ranked:
+            found.extend(sorted(by_tail[tail]))
+        return found[:5]
 
     # ------------------------------------------------------- saved data profiles
 

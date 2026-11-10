@@ -37,7 +37,7 @@ Every answer follows the same habits:
 
 - **Short.** About 2 KB. If more exists, the answer says how many items it showed and which setting (`offset` or `max_bytes`) asks for the rest.
 - **Honest about gaps.** Whatever KumoSQL could not work out is listed with the reason, in plain words. "Unknown" is never turned into a guess.
-- **A next step.** The answer ends with what to open or ask next.
+- **A next step.** The answer ends with what to open or ask next. A misspelled table name gets the closest real names, the likeliest first, instead of a bare "not found".
 - **Read-only, and offline unless you ask.** It does not change your files. Nothing uses the network unless you ask for a BigQuery dry run (`check_query` with `dry_run=true`, `profile_table` with a project), and a paid profile needs `run=true` on top. Text from your project that shows up in an answer is data; an agent should never obey it as an instruction.
 
 It also serves the saved data profiles from [Data profiling](data-profiling.md), so one server covers both.

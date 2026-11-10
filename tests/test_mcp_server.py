@@ -193,6 +193,13 @@ def test_describe_table_names_close_tables_for_a_wrong_or_ambiguous_name(small):
     assert failed and "no table named" in body["error"]
 
 
+def test_a_misspelled_table_name_names_the_likely_table_first_and_says_it_once(small):
+    for wrong, right in (("p.ds.totls", "p.ds.totals"), ("totals_cpy", "p.ds.totals_copy"), ("reprot", "p.ds.report")):
+        body, failed, _ = ask(small, "describe_table", table=wrong)
+        assert failed and body["candidates"][0] == right and body["next"][0].startswith((f"Did you mean {right}?", f"Use {right}."))
+        assert body["next"][0].count("p.ds.") == 1  # the list is in candidates, not repeated in the next step
+
+
 def test_describe_table_points_at_a_saved_data_profile(tmp_path):
     store.save(DataProfile("p.ds.totals", "duckdb", "2026-10-07T12:00:00Z", 42, []), directory=tmp_path / "profiles")
     pipeline = load_sqlx_project(write_project(tmp_path / "proj", SMALL))
@@ -521,11 +528,11 @@ def test_check_query_finds_ties_unknown_columns_and_says_what_it_did_not_check(s
     body, _, _ = ask(small, "check_query", sql="SELECT id, nope FROM p.ds.totals")
     [bad] = findings_of(body, "types")
     assert "nope" in bad["what"] and bad["fix"]
-    # a clean query is "no problems found", never "correct", and the dry run is listed as not checked
+    # a clean query is "no problems found", never "correct", and the dry run, which nobody asked for, is a next step and not a gap
     body, failed, used = ask(small, "check_query", sql="SELECT id, total FROM p.ds.totals WHERE total > 1")
     assert not failed and used <= BOUND and body["verdict"] == "no_problems_found" and "not a guarantee" in body["answer"]
     assert body["checked"] == ["types", "ties", "fan_out"]
-    assert any(item["what"] == "BigQuery dry run" and item["reason"].startswith("not checked") for item in body["unknown"])
+    assert not any(item["what"] == "BigQuery dry run" for item in body.get("unknown", [])) and "dry_run=true" in body["next"][0]
     # a table the project does not define is a named gap, not a silent pass
     body, _, _ = ask(small, "check_query", sql="SELECT 1 FROM p.other.elsewhere e JOIN p.ds.raw r ON r.id = e.id")
     assert any("not in the project" in item["what"] for item in body["unknown"]) and any("elsewhere" in item["what"] for item in body["unknown"])
