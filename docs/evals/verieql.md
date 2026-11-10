@@ -77,10 +77,10 @@ The suites carry no labels, but four pairs are known to differ and `tests/test_v
 | Suite | Pairs | Proven equivalent | Refuted (executed) | Agree on random databases | Not run | Wrong |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Literature | 64 | 28 | 25 | 9 | 2 | 0 |
-| Calcite-397 | 397 | 333 | 29 | 26 | 9 | 0 |
+| Calcite-397 | 397 | 334 | 29 | 25 | 9 | 0 |
 | LeetCode (all pairs) | 23,994 | 4,787 | 5,676 | 12,460 | 1,071 | 0 |
 
-Calcite-397 was 335 proved and 24 agreeing when measured on 2026-10-04. Re-measured on 2026-11-10 it is 333 and 26: pairs 147 and 204 are now declined by soundness guards (a string compared with a column whose type the prover does not carry through a derived table, and a string compared with a number), and no database separates either pair, so both moved to the agreeing column. The row went uncorrected for a month; both Calcite-397 and Literature now have an [admission ledger](../proof-admission.md), so the gate fails when a count and its list of proved pairs disagree. Literature re-measured the same day is unchanged.
+Calcite-397 was 335 proved and 24 agreeing when measured on 2026-10-04. Re-measured on 2026-11-10 it is 334 and 25: pairs 147 and 204 are now declined by soundness guards (a string compared with a column whose type the prover does not carry through a derived table, and a string compared with a number), and no database separates either pair, so both moved to the agreeing column, while pair 280 is proved since the rules merged that day (#861) and was admitted through the executed search. The row went uncorrected for a month; both Calcite-397 and Literature now have an [admission ledger](../proof-admission.md), so the gate fails when a count and its list of proved pairs disagree. Literature re-measured the same day is unchanged.
 
 LeetCode lost 6 proofs (4,793 to 4,787) to the parser check: 6 of the 17 pairs it refuses had been proved, because they use `||` as OR (MySQL's default) where sqlglot reads concatenation. That was measured by re-running those 17 pairs, not the whole suite.
 
