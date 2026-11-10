@@ -63,7 +63,7 @@ def load_server():
     from kumosql.pipeline_loading import load_sqlx_project
 
     started = time.perf_counter()
-    session = Session(load_sqlx_project(PROJECT))
+    session = Session(load_sqlx_project(PROJECT), root=PROJECT)
     session.records()
     return mcp_server.AgentServer(session), time.perf_counter() - started
 
@@ -136,6 +136,9 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
         ("Is my rewrite of a draft query equivalent to the original?", ("compare_queries",),
          lambda ask: ask("compare_queries", left=c["draft"], right=f"SELECT * FROM (SELECT {c['draft'][len('SELECT '):]}) AS t")),
+        ("Can my messy draft be tidied, and what exactly changes?", ("clean_query",),
+         lambda ask: ask("clean_query", sql="WITH a AS (SELECT * FROM t WHERE 1=1 AND x > 0), unused AS (SELECT 1) SELECT (a.x), a.y FROM a WHERE (TRUE)")),
+        ("Can the most-read table's own file be tidied?", ("clean_query",), lambda ask: ask("clean_query", table=c["most_read"])),
         ("Can I delete a table nothing reads? (describe it, then ask what breaks)", ("describe_table", "impact"),
          lambda ask: (ask("describe_table", table=c["leaf"]), ask("impact", table=c["leaf"], change="drop_table"))),
         ("Orient me in an unfamiliar table: what is it, where does a column come from, what reads it?", ("describe_table", "trace_column", "impact"),

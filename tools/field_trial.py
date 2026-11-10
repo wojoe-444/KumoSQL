@@ -123,7 +123,7 @@ def fill_column_answers(tasks: list[dict]) -> None:
     from kumosql.mcp_session import Session
     from kumosql.pipeline_loading import load_sqlx_project
 
-    session = Session(load_sqlx_project(PROJECT))
+    session = Session(load_sqlx_project(PROJECT), root=PROJECT)
     session.records()
     server = mcp_server.AgentServer(session)
 
@@ -175,7 +175,7 @@ def serve(path: str, project: Path) -> None:
     from kumosql.mcp_session import Session
     from kumosql.pipeline_loading import load_sqlx_project
 
-    session = Session(load_sqlx_project(project))
+    session = Session(load_sqlx_project(project), root=project)
     session.records()
     server = mcp_server.AgentServer(session)
 

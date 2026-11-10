@@ -82,7 +82,7 @@ def test_the_server_lists_its_read_only_tools_and_keeps_the_profile_resources(tm
 
     tools = rpc(server, "tools/list")["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
-        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables"]
+        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables", "clean_query"]
     for tool in tools:
         assert tool["annotations"]["readOnlyHint"]
         # only the two tools that can ask BigQuery (a dry run, on request) say so
@@ -463,6 +463,66 @@ def test_list_tables_refuses_an_unknown_kind_and_pages_with_offset(small):
     first, _, _ = ask(small, "list_tables", max_bytes=1000)
     rest, _, _ = ask(small, "list_tables", offset=2)
     assert rest["tables"] == first["tables"][2:] and rest["tables_shown"].startswith("3-")
+
+
+# ------------------------------------------------------------- clean_query
+
+MESSY = "WITH a AS (SELECT * FROM t WHERE 1=1 AND x > 0), unused AS (SELECT 1) SELECT (a.x), a.y FROM a WHERE (TRUE)"
+
+
+def test_clean_query_returns_a_small_proven_diff_and_the_cleaned_draft(small):
+    body, failed, used = ask(small, "clean_query", sql=MESSY)
+    assert not failed and used <= BOUND and body["verdict"] == "cleaned" and "proven" in body["answer"]
+    assert body["changes"] == ["remove_trivial_predicates x4", "remove_unused_ctes x1"]
+    assert any(line.startswith("-WITH a AS") for line in body["diff"]) and "unused" not in body["cleaned_sql"] and "1=1" not in body["cleaned_sql"]
+    # single-use CTE inlining reprints the query, so it only happens when asked for
+    body, _, _ = ask(small, "clean_query", sql="WITH a AS (SELECT * FROM t WHERE x > 0) SELECT a.x FROM a")
+    assert body["verdict"] == "already_clean"
+    body, _, _ = ask(small, "clean_query", sql="WITH a AS (SELECT * FROM t WHERE x > 0) SELECT a.x FROM a", inline_ctes=True)
+    assert body["verdict"] == "cleaned" and body["changes"] == ["inline_single_use_ctes x1"]
+
+
+def test_clean_query_says_when_nothing_changed_or_the_rules_could_not_read_the_text(small):
+    body, _, _ = ask(small, "clean_query", sql="SELECT 1 AS x")
+    assert body["verdict"] == "already_clean" and "unknown" not in body
+    body, _, _ = ask(small, "clean_query", sql="SELECT x FROM ${ref('raw')} WHERE 1=1 AND ${when(incremental(), 'x>1')}")
+    assert body["verdict"] == "already_clean" and "sqlx_expression_kept" in body["unknown"][0]["reason"]  # not claimed clean
+    body, _, _ = ask(small, "clean_query", sql="SELEC 1")
+    assert body["verdict"] == "cannot_clean" and body["unknown"]
+
+
+def test_clean_query_offers_no_diff_for_a_change_it_could_not_prove(small, monkeypatch):
+    from kumosql import mcp_clean
+
+    def unproven(text, rules):
+        return {"sql": text.replace("(", ""), "success": False, "status": "unproven", "changes": {"remove_redundant_parentheses": 2}, "reasons": ["equivalence could not be proven for every changed statement"], "left_as_written": []}
+
+    monkeypatch.setattr(mcp_clean, "clean_text", unproven)
+    body, failed, _ = ask(small, "clean_query", sql="SELECT (a) FROM t")
+    assert not failed and body["verdict"] == "unproven" and "diff" not in body and "cleaned_sql" not in body
+    assert "could not be proven" in body["unknown"][0]["reason"] and "none is offered" in body["answer"]
+
+
+def test_clean_query_reads_a_models_file_and_never_writes_it(tmp_path):
+    files = {"raw.sqlx": 'config { type: "table" }\nSELECT 1 AS id\n',
+             "messy.sqlx": 'config { type: "view" }\nSELECT id FROM ${ref("raw")} WHERE 1 = 1 AND id > 0\n'}
+    folder = write_project(tmp_path / "proj", files)
+    server = mcp_server.AgentServer(Session(load_sqlx_project(folder), root=folder))
+    before = (folder / "definitions" / "messy.sqlx").read_text()
+    body, failed, used = ask(server, "clean_query", table="messy")
+    assert not failed and used <= BOUND and body["verdict"] == "cleaned" and body["diff"][0] == "--- a/definitions/messy.sqlx"
+    assert "cleaned_sql" not in body  # a model's file is the agent's to patch with the diff
+    assert (folder / "definitions" / "messy.sqlx").read_text() == before
+    body, failed, _ = ask(server, "clean_query", table="raw")
+    assert not failed and body["verdict"] == "already_clean"
+
+
+def test_clean_query_refuses_ambiguous_arguments_and_a_missing_table(small):
+    for arguments in ({}, {"sql": "SELECT 1", "table": "raw"}):
+        body, failed, _ = ask(small, "clean_query", **arguments)
+        assert failed and "exactly one" in body["error"] and body["next"]
+    assert ask(small, "clean_query", table="zzz")[1]
+    assert ask(small, "clean_query", sql="SELECT 1", time_limit=0)[1]
 
 
 # ----------------------------------------------------------- compare_queries
