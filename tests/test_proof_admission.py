@@ -1,6 +1,8 @@
 """The admission ledger (tools/proof_admission.py) and the near-miss probe (tools/proof_mutants.py).
 
-The first test is the gate: a results file counts exactly the proofs its ledger admits.
+The ledgers and the results files they are compared with live in the prover repository, whose gate runs the
+comparison (its ``tests/test_proof_ledger.py``). The tests here hold this tool to never comparing against
+nothing: it needs a prover checkout, and a ledger without a results file is a failure, not a skip.
 """
 
 from __future__ import annotations
@@ -17,16 +19,57 @@ import proof_admission as A  # noqa: E402
 import proof_mutants as M  # noqa: E402
 
 
-def test_every_results_file_counts_exactly_the_proofs_its_ledger_admits():
-    assert A.check() == []
+def _checkout(root: Path) -> Path:
+    (root / "benchmarks" / "results").mkdir(parents=True)
+    (root / "benchmarks" / "admitted").mkdir()
+    (root / "src" / "kumo_sql_prover").mkdir(parents=True)
+    return root
 
 
-def test_every_ledger_parses_and_is_written_as_the_tool_writes_it(tmp_path):
-    assert A.ledgers(), "benchmarks/admitted holds no ledger"
-    for name in A.ledgers():
-        entries = A.read_ledger(name)
-        A.write_ledger(name, entries, tmp_path)
-        assert (tmp_path / f"{name}.txt").read_text(encoding="utf-8") == (A.LEDGERS / f"{name}.txt").read_text(encoding="utf-8"), name
+def test_the_prover_checkout_is_named_never_guessed(tmp_path):
+    root = _checkout(tmp_path / "prover")
+    assert A.prover_checkout(root, environ={}) == root.resolve()
+    assert A.prover_checkout(None, environ={A.PROVER_ENV: str(root)}) == root.resolve()
+    assert A.prover_checkout(root, environ={A.PROVER_ENV: str(tmp_path / "other")}) == root.resolve()  # the option wins
+    with pytest.raises(A.NoProverCheckout, match="--prover"):
+        A.prover_checkout(None, environ={})
+    with pytest.raises(A.NoProverCheckout, match="not a checkout"):
+        A.prover_checkout(tmp_path, environ={})  # a folder without the results files
+    with pytest.raises(A.NoProverCheckout, match="not a checkout"):
+        A.prover_checkout(Path(__file__).resolve().parent.parent, environ={})  # this repository no longer holds them
+
+
+@pytest.mark.parametrize("command", ["status", "check", "admit"])
+def test_no_command_runs_without_a_prover_checkout(command, monkeypatch, capsys):
+    monkeypatch.delenv(A.PROVER_ENV, raising=False)
+    assert A.main([command] + (["demo"] if command == "admit" else [])) == 2
+    assert "--prover" in capsys.readouterr().err
+
+
+def test_the_command_line_check_reads_the_named_checkout(tmp_path, monkeypatch, capsys):
+    root = _checkout(tmp_path / "prover")
+    A.write_ledger("demo", {"p1": ("0" * 12, "checked")}, root / "benchmarks" / "admitted")
+    monkeypatch.setenv(A.PROVER_ENV, str(root))
+    assert A.main(["check"]) == 1  # the ledger has no results file
+    assert "has no results file" in capsys.readouterr().out
+    _results(root / "benchmarks" / "results", "demo", coverage={"proven": 1})
+    assert A.main(["check"]) == 0 and "1 ledgers match" in capsys.readouterr().out
+    assert A.main(["status", "--prover", str(root)]) == 0 and "results file counts 1" in capsys.readouterr().out
+    _results(root / "benchmarks" / "results", "demo", coverage={"proven": 2})
+    assert A.main(["check", "--prover", str(root)]) == 1
+
+
+def test_admit_refuses_a_prover_other_than_the_checkout(tmp_path, capsys):
+    root = _checkout(tmp_path / "prover")  # holds no prover code, so the installed prover cannot be this one
+    assert A.installed_prover_is(root)[0] is False
+    assert A.main(["admit", "sqlsolver-tpcc", "--prover", str(root), "--dry-run"]) == 2
+    assert "is not the checkout" in capsys.readouterr().err
+    assert not list((root / "benchmarks" / "admitted").iterdir())
+
+
+def test_the_ledgers_are_not_kept_in_this_repository():
+    here = Path(__file__).resolve().parent.parent / "benchmarks"
+    assert not (here / "admitted").exists(), "the ledgers live in the prover repository, next to the results files they are compared with"
 
 
 def _results(folder: Path, name: str, **fields) -> None:
@@ -46,7 +89,19 @@ def test_check_compares_the_count_with_the_ledger(tmp_path):
     assert len(A.check(ledgers, results)) == 1
     _results(results, "demo", score="1,003/1,100 proved, 0 wrong")  # no coverage block: the number that opens the score
     assert A.counted("demo", results) == 1003 and len(A.check(ledgers, results)) == 1
-    assert A.counted("absent", results) is None  # an eval with a ledger and no results file is not compared
+
+
+def test_a_ledger_with_nothing_to_be_compared_with_fails_the_check(tmp_path):
+    ledgers, results = tmp_path / "admitted", tmp_path / "results"
+    A.write_ledger("demo", {"p1": ("0" * 12, "checked")}, ledgers)
+    results.mkdir()
+    (problem,) = A.check(ledgers, results)  # no results file: reported, where it used to be skipped
+    assert "has no results file" in problem
+    _results(results, "demo", score="not measured")
+    (problem,) = A.check(ledgers, results)
+    assert "gives no proven count" in problem
+    _results(results, "demo", coverage={"proven": True})  # a flag is not a count
+    assert len(A.check(ledgers, results)) == 1
 
 
 def test_a_damaged_ledger_is_an_error(tmp_path):
@@ -210,7 +265,7 @@ def test_the_verieql_suites_are_listed_under_their_results_files():
     for suite in ("calcite", "literature"):
         adapter = verieql.ADAPTERS[f"verieql-{suite}-proof"]
         assert adapter.suites == (suite,) and not M.supported(adapter)
-        assert adapter.name in A.ledgers()  # the results file itself lives in the prover repository since the split
+        assert adapter.name == f"verieql-{suite}-proof"  # the name of its results file and ledger in the prover repository
 
 
 # --- the near-miss probe -------------------------------------------------------------------------
