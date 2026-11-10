@@ -12,7 +12,7 @@ The question: does the [agent server](mcp-server.md) actually help an AI agent a
 
 - Every answer was right both ways, except one column-tracing question where neither answer matched exactly. The server's answer named the right column but dropped a placeholder prefix, and the other stopped one level short.
 - With the server the agent usually needed fewer steps, but the difference is small and this is one run of each question.
-- On three questions the agent ignored the server and read files, because the server had no way to list models or count them. That is a gap to fill.
+- On three questions the agent ignored the server and read files, because the server had no way to list models or count them. That was a gap, and it has since been filled with a tool that lists and counts tables. Asking it the three questions directly gives the right answer in one short call each; whether an agent now chooses to use it needs another run with an agent.
 
 ## Limits
 

@@ -104,6 +104,7 @@ def _is_not_a_table(session: Session, row: Row) -> bool:
         "min_readers": {"type": "integer", "description": "Only tables that at least this many models read."},
         "max_readers": {"type": "integer", "description": "Only tables that at most this many models read; 0 lists the tables nothing reads."},
         "min_depth": {"type": "integer", "description": "Only tables at least this many models above a source (0: reads no other model)."},
+        "count_only": {"type": "boolean", "description": "Answer with the counts only, no lines (a few hundred bytes): for 'how many' questions. Default false."},
         "sort": {"type": "string", "enum": list(SORTS), "description": "name (default), or readers, reads, depth: largest first, ties by name."},
     },
 )
@@ -158,7 +159,8 @@ def list_tables(session: Session, args: dict) -> Answer:
         tag_counts = Counter(t for row in matched for t in row.tags)
         if tag_counts:
             answer.fields["tags"] = [f"{name} {count}" for name, count in sorted(tag_counts.items(), key=lambda pair: (-pair[1], pair[0]))[:TAGS_SHOWN]]
-    answer.add_list("tables", [row.line() for row in matched[offset:]][:200], total=len(matched), offset=offset, primary=True)
+    if not args.get("count_only"):
+        answer.add_list("tables", [row.line() for row in matched[offset:]][:200], total=len(matched), offset=offset, primary=True)
     sort_note = "" if sort == "name" else f", largest {sort} first"
     if filtered:
         answer.summary = f"{len(matched)} of {models + kinds.get('source', 0)} tables match{sort_note}."
@@ -166,6 +168,9 @@ def list_tables(session: Session, args: dict) -> Answer:
         answer.summary = f"{models} models and {kinds.get('source', 0)} source{'s' if kinds.get('source', 0) != 1 else ''}; {answer.counts['unread_models']} models nothing reads{sort_note}."
     if not matched:
         answer.next("Loosen a filter; with none, list_tables is the whole overview.")
+        return answer
+    if args.get("count_only"):
+        answer.next("Leave count_only out to see the lines.")
         return answer
     answer.next(f"describe_table table={matched[0].name} says what a table is; impact table=... says what breaks if it changes.")
     if not filtered:

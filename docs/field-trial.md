@@ -41,6 +41,18 @@ Token counts are what the harness reports for the whole subagent, so each includ
 - **Gaps in the server.** On three tasks (T04, T05, T08) the agent with the server ignored it and read files, because none of the four tools lists models or answers a count over the whole graph. In T04 and T05 those runs cost as many or more calls than the file route. The remaining tools of roadmap step 6 and a `list_models` style question are where to look next.
 - **Honest caveats.** One run per cell, one model, no BigQuery dataset behind the project (the trial has no cloud credentials), tasks written by the same team that wrote the server. Ten tasks cannot tell a 10% effect from noise.
 
+## After the gap was filled (2026-11-10, deterministic part only)
+
+The gap above is closed by `list_tables` and the `${ref()}` support in drafts ([analyst-agent trial](https://github.com/wojoe-444/KumoSQL/issues/872)). No agent was run again: this part asks the server the question an agent would ask and scores the answer with the same `score` function, so it shows the answer is one call, right, and small, not how an agent behaves.
+
+| Task | The one call | Bytes | Score against the `.sqlx`-text reference |
+| --- | --- | ---: | --- |
+| T04 | `list_tables min_reads=2` | 480 | exact |
+| T05 | `list_tables max_readers=0 count_only=true` | 154 | exact |
+| T08 | `list_tables name_contains=_alert min_reads=1` | 491 | exact |
+
+Before, the agent used 5, 8 and 3 calls on these three (and did not use the server at all). `tests/test_mcp_server.py` repeats the three comparisons on every gate run. Whether an agent now picks the server for them is the part that needs an agent run.
+
 ## Re-running
 
 ```
