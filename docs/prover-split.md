@@ -8,7 +8,7 @@ Step 8 of the [roadmap](roadmap.md): the equivalence prover lives in its own rep
 
 The prover is the import closure of these modules: `equivalence`, `smt_equivalence`, `algebraic_equivalence`, `bounded_equivalence`, `result_equivalence`, `sqlsolver_backend`, `tie_determinism`, `tie_witness`, `uexpr`, `proof_registry` and `proof_format` (the roadmap's list), plus four small modules: `canonical_rules` and `query_mutants`, leaves that the prover's own benchmark runners and fuzzers import, `verdict_cache`, the cache of proof verdicts for the benchmark runs (it hashes the prover's own source, and no prover module imports it, so it is a root), and `bigquery_syntax`, which teaches sqlglot's BigQuery parser the syntax it lacks (`TABLE` arguments, `LIKE ALL UNNEST`, the `WITH(a AS 1, a + 1)` expression) the moment it is imported. That last one is not reached by any import from the roots, but every parse the prover made relied on it because `import kumosql` loads it first; a prover installed alone would have read the same query differently, so it is a root and the package imports it first. Imports inside functions count; the walk is over the syntax tree, so nothing is executed.
 
-That is 125 modules and 56,675 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 30 of them were also imported by 50 product modules, `ast_utils` most of all.
+That is 137 modules and 59,490 lines (the roadmap counted 122 and 57,800 before the scripting edge was cut). 31 of them were also imported by 52 product modules, `ast_utils` most of all.
 
 ```sh
 python tools/prover_split.py            # the closure of the installed prover, with line counts
@@ -22,7 +22,7 @@ python tools/prover_split.py --check    # exit 1 when the closure reaches a prod
 
 | What | Moved | Now |
 | --- | --- | --- |
-| Source modules | 125 modules, 56,675 lines | `src/kumo_sql_prover/` in the prover repository |
+| Source modules | 137 modules, 59,490 lines | `src/kumo_sql_prover/` in the prover repository |
 | Test files | 150 of 379 | `tests/` there (plus the docs, scoreboard, eval-diff and canary tests, copied) |
 | Benchmark runners (`tools/`) | 40 runners; the 8 only the prover uses are gone from here | `tools/` there. The other 32 are imported by KumoSQL's proof re-check (and a few by staying evals), so a copy stays here; see below |
 | Results files | 50 of 126 | `benchmarks/results/` there; the scoreboard of those evals is generated there |
@@ -39,10 +39,10 @@ Inside the prover package. A helper both sides use (`ast_utils`, `canonical`, `s
 
 The distribution is `kumo-sql-prover` and the import name `kumo_sql_prover`. KumoSQL's own modules import it by that name (122 import statements were rewritten mechanically).
 
-Everything that used to be `kumosql.<name>` for a moved module still works, and is the same module object: `import kumosql.equivalence` returns `kumo_sql_prover.equivalence`. A small import hook (`kumosql/_prover_aliases.py`, installed first thing in `kumosql/__init__.py`) answers for the 120 top-level modules and packages that moved, and for nothing else. Why this rather than moving the import path or keeping a re-export file per module:
+Everything that used to be `kumosql.<name>` for a moved module still works, and is the same module object: `import kumosql.equivalence` returns `kumo_sql_prover.equivalence`. A small import hook (`kumosql/_prover_aliases.py`, installed first thing in `kumosql/__init__.py`) answers for the 132 top-level modules and packages that moved, and for nothing else. Why this rather than moving the import path or keeping a re-export file per module:
 
 - About 50 product modules, 227 test files and any outside code import the old paths, and the tests monkeypatch module attributes by dotted name (`monkeypatch.setattr("kumosql.smt_equivalence.f", ...)`). One module object means a patch through either spelling is seen by both.
-- A re-export file per module would copy names, leave the private ones behind (the product's own tests reach into them), and be 125 files to keep in step.
+- A re-export file per module would copy names, leave the private ones behind (the product's own tests reach into them), and be 137 files to keep in step.
 - A namespace package shared by two distributions does not work with `kumosql/__init__.py`, which is a regular package, and breaks editable installs.
 
 The hook has a price: `python -m kumosql.<moved name>` does not work (use `python -m kumo_sql_prover.<name>`, or `python -m kumosql <command>` for the console commands), and `tests/test_prover_aliases.py` pins the list to what the installed package contains, so a module added to the prover must be added to `MOVED` in the same bump. `kumosql.lift_subqueries` stays the function it always was (the package attribute is not rebound to the module).
