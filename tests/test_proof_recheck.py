@@ -107,3 +107,46 @@ def test_integer_difference_beside_no_float_still_differs():
     tables = {"t": Table("t", [Column("k", "int", not_null=True), Column("x", "int", sql_type="BIGINT")], keys=[("k",)])}
     case = Case("test", "plus", "SELECT k, x FROM t", "SELECT k, x + 1 FROM t", tables)
     assert engine.recheck(case, budget=300)["verdict"] == "differs"
+
+
+def test_a_difference_the_optimizer_hides_is_reported_as_masked(monkeypatch):
+    """Optimized results agree; with the optimizer off the right query returns other rows on every database."""
+
+    tables = {"t": Table("t", [Column("x", "int")])}
+    case = Case("test", "masked", "SELECT COUNT(*) FROM t", "SELECT COUNT(*) FROM t", tables)
+    monkeypatch.setattr(engine.Runner, "unoptimized", lambda self: (self.run(self.case.left), [(-1,)]))
+    record = engine.recheck(case, budget=50)
+    assert record["verdict"] == "masked"
+    assert record["witness"]["right"] == [[-1]] or record["witness"]["right"] == [(-1,)]
+
+
+def test_an_unoptimized_run_that_agrees_changes_nothing(monkeypatch):
+    calls = []
+    original = engine.Runner.unoptimized
+
+    def counting(self):
+        calls.append(1)
+        return original(self)
+
+    monkeypatch.setattr(engine.Runner, "unoptimized", counting)
+    case = Case("test", "same", "SELECT name FROM dept WHERE deptno > 1", "SELECT name FROM dept WHERE NOT deptno <= 1", _emp_dept())
+    record = engine.recheck(case, budget=200)
+    assert record["verdict"] == "survived"
+    assert 200 // engine.UNOPTIMIZED_EVERY <= len(calls) < 200  # every edge database and a fifth of the rest
+
+
+def test_masked_ignores_float_noise_and_row_order():
+    import random as _random
+
+    tables = {"t": Table("t", [Column("x", "int")])}
+    case = Case("test", "noise", "SELECT 1", "SELECT 1", tables)
+    runner = engine.Runner(case)
+    try:
+        runner.load({"t": [(1,), (2,)]})
+        runner.unoptimized = lambda: ([(0.1 + 0.2,)], [(0.3,)])
+        assert engine.masked(runner, {"t": [(1,), (2,)]}, _random.Random(0)) is None
+        answers = iter([([(1,)], [(2,)]), ([(2,)], [(1,)])])
+        runner.unoptimized = lambda: next(answers)  # a different answer once the rows are stored in another order
+        assert engine.masked(runner, {"t": [(1,), (2,)]}, _random.Random(0)) is None
+    finally:
+        runner.close()

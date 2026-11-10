@@ -13,8 +13,9 @@ unoptimized plan agrees and neither query depends on row order.
     python tools/proof_recheck.py qed-calcite --since old-run --out new-run    # only what the old run did not settle
 
 Each eval writes ``<out>/<eval>.jsonl``, one record per pair (``verdict`` is ``survived``, ``differs``,
-``not-proven``, ``unrunnable``, ``timeout`` or ``search-error``); a rerun skips the pairs already
-written unless ``--fresh``. Adapters live in ``tools/recheck/*.py`` (an ``ADAPTERS`` dict per module).
+``masked``, ``not-proven``, ``unrunnable``, ``timeout`` or ``search-error``); a rerun skips the pairs already
+written unless ``--fresh``. ``masked`` is a pair whose results agree with DuckDB's optimizer on and
+differ with it off: one plan is wrong, so the pair needs a reading. Adapters live in ``tools/recheck/*.py`` (an ``ADAPTERS`` dict per module).
 """
 
 from __future__ import annotations
@@ -157,9 +158,9 @@ def main(argv: list[str] | None = None) -> int:
                 sink.write(json.dumps(record, default=str) + "\n")
                 sink.flush()
                 counts[record["verdict"]] += 1
-                if record["verdict"] == "differs":
+                if record["verdict"] in ("differs", "masked"):
                     status = 1
-                    print(f"  DIFFERS {record['pair']}", flush=True)
+                    print(f"  {record['verdict'].upper()} {record['pair']}", flush=True)
                 if number % 25 == 0:
                     print(f"  {number}/{len(todo)} {dict(counts)} {time.time() - start:.0f}s", flush=True)
         print(f"{name}: {dict(counts)} in {time.time() - start:.0f}s", flush=True)

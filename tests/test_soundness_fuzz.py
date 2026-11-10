@@ -223,6 +223,20 @@ def test_a_difference_counts_only_when_the_unoptimized_run_agrees(monkeypatch):
     assert observed["optimizer_only_differences"] == 1
 
 
+def test_a_difference_the_optimizer_hides_counts(monkeypatch):
+    import kumosql.duckdb_load as duckdb_load
+
+    case = basic_case("SELECT x FROM t", "SELECT x FROM t", None)
+    observed = fuzz.execute(case, fuzz.default_options())
+    assert observed["equal_bags"] is True and observed["optimizer_masked_differences"] == 0
+    # the optimized runs agree; with the optimizer off the two queries return different rows
+    monkeypatch.setattr(duckdb_load, "run_unoptimized", lambda db, *queries: [[(1,)], [(2,)]])
+    observed = fuzz.execute(case, fuzz.default_options())
+    assert observed["equal_bags"] is False
+    assert observed["optimizer_masked_differences"] >= 1
+    assert (observed["left_rows"], observed["right_rows"]) == ([(1,)], [(2,)])
+
+
 def test_worker_timeout_restarts_the_child():
     worker = fuzz.Worker()
     try:
