@@ -52,8 +52,10 @@ def _never_null(node: exp.Expression) -> bool:
         return True
     if isinstance(node, exp.Is):
         return isinstance(node.expression, (exp.Null, exp.Boolean))
-    if isinstance(node, (exp.NullSafeEQ, exp.NullSafeNEQ, exp.Exists)):
+    if isinstance(node, (exp.NullSafeEQ, exp.NullSafeNEQ)):
         return True
+    if isinstance(node, exp.Exists):
+        return not node.args.get("expression")  # EXISTS(array, lambda) is NULL over a NULL array
     if isinstance(node, exp.Not):
         return _never_null(node.this)
     if isinstance(node, (exp.And, exp.Or)):

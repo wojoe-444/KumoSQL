@@ -56,6 +56,7 @@ def test_double_negation_and_never_null_tests_fold():
     ("SELECT a FROM t WHERE (a IN (SELECT b FROM u)) IS NULL", "bigquery"),
     ("SELECT (a > 1 OR NULL) AS p FROM t", "bigquery"),  # NULL is no identity of OR
     ("SELECT NOT NOT a, a OR FALSE, a AND TRUE FROM t", "mysql"),  # NOT NOT 5 is 1 there, not 5
+    ("SELECT a FROM t WHERE (EXISTS(arr, x -> x > 1)) IS NULL", "spark"),  # the array form is NULL over a NULL array
 ])
 def test_nullable_or_non_boolean_operands_stay(sql, dialect):
     assert folded(sql, dialect) is None
