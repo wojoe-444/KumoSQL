@@ -140,8 +140,8 @@ def _type_findings(session: Session, draft: Draft) -> tuple[list[dict], list[str
 
 
 def _tie_findings(session: Session, draft: Draft) -> tuple[list[dict], list[tuple[str, str]], list[str]]:
-    from .smt_equivalence import TableConstraints
-    from .tie_determinism import analyze
+    from kumo_sql_prover.smt_equivalence import TableConstraints
+    from kumo_sql_prover.tie_determinism import analyze
 
     pipeline = session.pipeline()
     constraints: dict[str, TableConstraints] = {}

@@ -315,7 +315,7 @@ def build_change_report(
         if delta:
             change["contract"] = delta
         if explain_differences and kind == "modified" and verification["label"] == "unproven" and old.is_query and new.is_query and before != after:
-            from .difference_surface import except_when
+            from kumo_sql_prover.difference_surface import except_when
 
             found = except_when(before, after)
             if found is not None:

@@ -4,7 +4,7 @@ import re
 
 from sqlglot import exp
 
-from .ast_utils import parse_statements
+from kumo_sql_prover.ast_utils import parse_statements
 
 
 def validate_readonly_query(sql: str) -> None:

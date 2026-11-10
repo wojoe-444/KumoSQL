@@ -50,9 +50,9 @@ from .lineage_soundness import (
     star_branch_view,
 )
 from .scripts import KEPT, ScriptAnalysis, analyse_script, collect_procedures, collect_table_functions, column_words
-from .set_operations import is_by_name, positionalize
+from kumo_sql_prover.set_operations import is_by_name, positionalize
 from .timing import Progress, stage
-from .ast_utils import binding_cte, field_path, is_function_table, quiet_parser as _quiet_parser, set_with_clause, star_modifier, top_level_query, with_clause
+from kumo_sql_prover.ast_utils import binding_cte, field_path, is_function_table, quiet_parser as _quiet_parser, set_with_clause, star_modifier, top_level_query, with_clause
 from .resilience import (
     PipelineLoadError,  # noqa: F401
     build_completeness,

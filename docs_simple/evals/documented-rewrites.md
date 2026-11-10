@@ -8,7 +8,7 @@ Most recommendations are safe (19 cases). Six change the results: for example, a
 
 ## How it decides
 
-It works the same way as the [DB-GPT examples](dbgpt-rules.md): the prover tries first, and then random DuckDB databases look for a difference, which counts only when a run with the optimizer off confirms it.
+It works the same way as the [DB-GPT examples](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/evals/dbgpt-rules.md): the prover tries first, and then random DuckDB databases look for a difference, which counts only when a run with the optimizer off confirms it.
 
 ```sh
 python tools/documented_rewrites_bench.py

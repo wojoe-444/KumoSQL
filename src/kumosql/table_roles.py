@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Mapping
 
 from sqlglot import exp
 
-from .ast_utils import binding_cte
+from kumo_sql_prover.ast_utils import binding_cte
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline

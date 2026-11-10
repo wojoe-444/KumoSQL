@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Iterable, Literal, Mapping
 
 from sqlglot import exp
 
-from .ast_utils import binding_cte, is_function_table
+from kumo_sql_prover.ast_utils import binding_cte, is_function_table
 from .identity import IdentityResolution, NodeIdentity, normalize_table_reference
 from .scopes import job_record
 

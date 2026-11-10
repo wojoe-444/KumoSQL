@@ -45,7 +45,7 @@ import re
 
 from sqlglot import exp
 
-from .canonical import canonical_copy, rename_sources, scope_key, source_names
+from kumo_sql_prover.canonical import canonical_copy, rename_sources, scope_key, source_names
 from .pipeline import _fingerprint, _select_location
 from .pipeline_duplicates import _fingerprint_hash, _plain_sql
 

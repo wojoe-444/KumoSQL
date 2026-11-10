@@ -7,7 +7,7 @@ python tools/documented_rewrites_bench.py
 python tools/documented_rewrites_bench.py --write-results
 ```
 
-Labels are checked on DuckDB and cases are decided exactly as for [DB-GPT's examples](dbgpt-rules.md) (same code): the prover in the cases' dialect, then random DuckDB databases confirmed with the optimizer off.
+Labels are checked on DuckDB and cases are decided exactly as for [DB-GPT's examples](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/evals/dbgpt-rules.md) (same code): the prover in the cases' dialect, then random DuckDB databases confirmed with the optimizer off.
 
 ## Scores
 

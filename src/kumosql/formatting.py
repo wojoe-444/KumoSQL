@@ -15,8 +15,8 @@ import threading
 from typing import Mapping
 
 from .engine import RewriteRule, RuleDiagnostic, RuleOutput, register_rule
-from .layout_equivalence import layout_only_change, restore_function_case, tokenize_exactly
-from .sqlx import looks_like_sqlx
+from kumo_sql_prover.layout_equivalence import layout_only_change, restore_function_case, tokenize_exactly
+from kumo_sql_prover.sqlx import looks_like_sqlx
 
 DIALECT = "bigquery"
 RULE_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.]{1,40}$")

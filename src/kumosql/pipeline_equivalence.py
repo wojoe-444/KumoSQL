@@ -31,12 +31,12 @@ import sqlglot
 from sqlglot import exp
 
 from . import equivalences as saved
-from .ast_utils import binding_cte, captured_names
-from .algebraic_equivalence import prove_equivalent_algebraic
-from .conditional_equivalence import conditions_json
-from .equivalence import _has_row_selection_nondeterminism, _nondeterminism_reasons, _value_nondeterminism_sites
+from kumo_sql_prover.ast_utils import binding_cte, captured_names
+from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
+from kumo_sql_prover.conditional_equivalence import conditions_json
+from kumo_sql_prover.equivalence import _has_row_selection_nondeterminism, _nondeterminism_reasons, _value_nondeterminism_sites
 from .prover_schema import DECLARED_FACTS_NOTE, ProverSchema, _select_names
-from .smt_equivalence import SmtStatus
+from kumo_sql_prover.smt_equivalence import SmtStatus
 
 MAX_INLINE_CHARS = 400_000
 MAX_SOLVER_CALLS = 300
@@ -375,8 +375,8 @@ def prove_queries(left: object, right: object, explain: bool = False) -> dict:
     """
 
     from . import prover_context
-    from .result_equivalence import DataRules
-    from .smt_equivalence import SmtStatus
+    from kumo_sql_prover.result_equivalence import DataRules
+    from kumo_sql_prover.smt_equivalence import SmtStatus
 
     if not isinstance(left, str) or not isinstance(right, str) or not left.strip() or not right.strip():
         raise ValueError("paste both queries")
@@ -399,7 +399,7 @@ def prove_queries(left: object, right: object, explain: bool = False) -> dict:
             "right_rows": [list(row) for row in example.right_rows],
         }
     if result.status not in (SmtStatus.PROVEN_EQUIVALENT, SmtStatus.PROVEN_CONDITIONALLY):
-        from .refute import counterexample_from_search
+        from kumo_sql_prover.refute import counterexample_from_search
 
         facts = prover_context.current_schema()
         # a declared key's columns are NOT NULL (TableConstraints), and every foreign key holds
@@ -419,7 +419,7 @@ def prove_queries(left: object, right: object, explain: bool = False) -> dict:
             data["reason"] = "the queries return different rows on a small database"
             data["counterexample"] = found
     if explain and data["status"] == SmtStatus.NOT_EQUIVALENT.value:
-        from .difference_surface import except_when
+        from kumo_sql_prover.difference_surface import except_when
 
         found_when = except_when(left, right, timeout_ms=config["timeout_ms"])
         if found_when is not None:

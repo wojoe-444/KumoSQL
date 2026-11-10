@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Iterable
 
 from sqlglot import exp
 
-from .ast_utils import binding_cte
+from kumo_sql_prover.ast_utils import binding_cte
 from .pipeline import _fingerprint, _select_location
 
 if TYPE_CHECKING:

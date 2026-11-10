@@ -196,7 +196,7 @@ def assess_change(
 
     # Tables named in a query also count, so a SELECT * over a table is found
     # even though it consumes no named column.
-    from .ast_utils import binding_cte, is_function_table
+    from kumo_sql_prover.ast_utils import binding_cte, is_function_table
     from .pipeline import ColumnRef, _table_name_for_schema, reverse_hops, reverse_index
     from .pipeline_types import path_overlap
     from sqlglot import exp

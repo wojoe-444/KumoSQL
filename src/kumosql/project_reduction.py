@@ -52,7 +52,7 @@ from sqlglot import exp
 
 from .pipeline import Pipeline, load_sqlx_project
 from .pipeline_loading import _REF_RE, _config_dependencies, _config_value, _parse_ref_args, _top_level
-from .sqlx import split_sqlx_sections
+from kumo_sql_prover.sqlx import split_sqlx_sections
 from .table_minimizer import MinimizationError, _structural, minimize_tables, verify_tables
 
 _QUERY_KINDS = {"table", "view", "sql"}

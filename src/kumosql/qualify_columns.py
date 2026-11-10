@@ -45,7 +45,7 @@ from __future__ import annotations
 
 from sqlglot import exp
 
-from .ast_utils import top_level_query
+from kumo_sql_prover.ast_utils import top_level_query
 from .engine import RewriteRule, RuleDiagnostic, register_rule
 
 _ALIAS_CLAUSES = ("group", "having", "qualify", "order", "windows")

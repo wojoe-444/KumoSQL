@@ -13,7 +13,7 @@ point that is a surrogate or beyond U+10FFFF.
 
 from __future__ import annotations
 
-from ..string_literals import _bytes_literal, _decode_bytes, _invalid, _string_end
+from kumo_sql_prover.string_literals import _bytes_literal, _decode_bytes, _invalid, _string_end
 from .errors import AnalysisError, Unsupported
 
 _SIMPLE = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\", "?": "?", '"': '"',

@@ -21,7 +21,7 @@ from .resilience import (
     parse_json_or_raise,
     read_text_or_reason,
 )
-from .sqlx import (
+from kumo_sql_prover.sqlx import (
     _SQLX_BLOCK_RE as _SQLX_CONFIG_RE,
     mask_sqlx_interpolations as _mask_sqlx_interpolations,
     outside_sql_comments as _outside_sql_comments,

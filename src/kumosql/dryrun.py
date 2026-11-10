@@ -31,7 +31,7 @@ import urllib.request
 
 from sqlglot import exp
 
-from .ast_utils import parse_statements
+from kumo_sql_prover.ast_utils import parse_statements
 from .sql_validation import quote_table_path
 
 Transport = Callable[[str, dict[str, str], bytes], tuple[int, dict]]

@@ -16,7 +16,7 @@ import threading
 
 from . import state
 from .prover_schema import ProverSchema, from_pipeline
-from .smt_equivalence import SmtEquivalenceResult, SmtStatus, z3
+from kumo_sql_prover.smt_equivalence import SmtEquivalenceResult, SmtStatus, z3
 
 DEFAULT_TIMEOUT_MS = 5000
 MIN_TIMEOUT_MS = 500
@@ -135,7 +135,7 @@ def prove(old_sql: str, new_sql: str, *, timeout_ms: int | None = None, schema: 
     """
 
     from . import equivalences
-    from .algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
 
     facts = schema if schema is not None else current_schema()
     declared = equivalences.load() if equivalences_enabled else []
@@ -177,7 +177,7 @@ def bounded_schema():
     """The saved BigQuery catalog as a schema for the bounded check (column types, REQUIRED, keys)."""
 
     from . import bigquery_catalog
-    from .bounded_equivalence import schema_from_bigquery
+    from kumo_sql_prover.bounded_equivalence import schema_from_bigquery
 
     tables = list(bigquery_catalog.saved_tables())
     signature = (len(tables), tuple(sorted(f"{p}.{d}.{t}" for p, d, t, _ in tables)))
@@ -197,7 +197,7 @@ def bounded(old_sql: str, new_sql: str, *, schema=None, timeout_ms: int | None =
     ``different`` (a counterexample, replayed on DuckDB before it is reported) or ``unknown``.
     """
 
-    from . import bounded_equivalence as be
+    from kumo_sql_prover import bounded_equivalence as be
 
     rows = settings()["bounded_rows"]
     if rows <= 0 or z3 is None:

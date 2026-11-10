@@ -33,8 +33,8 @@ from sqlglot import exp
 from sqlglot.optimizer.merge_subqueries import merge_subqueries
 from sqlglot.optimizer.qualify import qualify
 
-from .ast_utils import captured_names, grouping_elements, inside as _inside
-from .smt_equivalence import SmtStatus, TableConstraints
+from kumo_sql_prover.ast_utils import captured_names, grouping_elements, inside as _inside
+from kumo_sql_prover.smt_equivalence import SmtStatus, TableConstraints
 
 
 @dataclass(frozen=True)
@@ -924,7 +924,7 @@ def rewrite_over_model(
 ) -> ModelReuse:
     """Return a verified replacement for ``query_sql`` that reads ``model_name``, or say why not."""
 
-    from .algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
 
     try:
         clash = _name_clash((query_sql, model_sql), schema, dialect, model_name)
@@ -1143,7 +1143,7 @@ def check_replacement(
     fails to prove is searched for a counterexample database and is ``refuted`` when one exists.
     """
 
-    from .algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
 
     try:
         model_tree = _prepare(model_sql, schema, dialect)

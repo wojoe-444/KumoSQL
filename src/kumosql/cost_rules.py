@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 from sqlglot import exp
 
-from .distinct_safety import distinct_is_redundant
+from kumo_sql_prover.distinct_safety import distinct_is_redundant
 from .engine import RewriteRule, RuleDiagnostic, register_rule
 
 SHIPPED = "shipped"

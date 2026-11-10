@@ -113,7 +113,7 @@ def _tagged_union_unique(tree: exp.Expression, key: list[str], constraints, sche
     """A ``UNION [ALL]`` whose branches each select a different constant in one key column, and are
     each unique and non-NULL on the key: the tag tells branches apart, so the union is unique too."""
 
-    from .output_properties import infer_properties
+    from kumo_sql_prover.output_properties import infer_properties
 
     with_ = tree.args.get("with_") or tree.args.get("with")
     branches: list[exp.Expression] = []
@@ -307,7 +307,7 @@ def key_unique_and_non_null(
 ) -> bool:
     """Condition (1): ``key`` is unique and non-NULL in the query's output in every reachable state."""
 
-    from .output_properties import infer_properties
+    from kumo_sql_prover.output_properties import infer_properties
 
     key = [k.lower() for k in key]
     constraints = contract_constraints(sources, kinds, tables)

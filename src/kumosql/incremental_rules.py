@@ -30,7 +30,7 @@ from dataclasses import replace
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import extended_grouping
+from kumo_sql_prover.ast_utils import extended_grouping
 from .incremental import (
     IncrementalModel,
     SourceTable,

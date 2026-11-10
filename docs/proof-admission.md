@@ -68,10 +68,10 @@ Hunting by hand on 2026-11-10, with BigQuery as the reference, found three famil
 
 | Family | Example the prover called equivalent | Fix |
 | --- | --- | --- |
-| A decimal literal next to a NUMERIC or BIGNUMERIC operand read as a double | `WHERE n = 0.1` and `WHERE 1 = 0`; `b = 0.1` and `b = 0.10000000000000001` | [`smt_literal_coercion.py`](provers.md#numbers-and-runtime-errors) |
-| An `ORDER BY` expression reading a select alias as the source column | `SELECT b AS a FROM t ORDER BY a + 1 LIMIT 1` and the same with `ORDER BY t.a + 1` | [`_split_limit`](provers.md#a-name-that-is-both-a-select-alias-and-a-column) |
-| A `QUALIFY` window reading a select alias as the source column | `SELECT b AS a FROM t QUALIFY RANK() OVER (ORDER BY a) = 1` and the same with `ORDER BY t.a` | [`clause_alias_reads.py`](provers.md#a-name-that-is-both-a-select-alias-and-a-column) |
-| An `ORDER BY` column read as an unaliased `CAST` of it in the select list | `SELECT id, CAST(b AS STRING) FROM t ORDER BY b LIMIT 1` and the same with `ORDER BY 2` (BigQuery sorts 9 before 10 on the left and `'10'` before `'9'` on the right) | [`_split_limit`](provers.md#a-name-that-is-both-a-select-alias-and-a-column) names a select-list entry only by its alias or by the bare column it is |
+| A decimal literal next to a NUMERIC or BIGNUMERIC operand read as a double | `WHERE n = 0.1` and `WHERE 1 = 0`; `b = 0.1` and `b = 0.10000000000000001` | [`smt_literal_coercion.py`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md#numbers-and-runtime-errors) |
+| An `ORDER BY` expression reading a select alias as the source column | `SELECT b AS a FROM t ORDER BY a + 1 LIMIT 1` and the same with `ORDER BY t.a + 1` | [`_split_limit`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md#a-name-that-is-both-a-select-alias-and-a-column) |
+| A `QUALIFY` window reading a select alias as the source column | `SELECT b AS a FROM t QUALIFY RANK() OVER (ORDER BY a) = 1` and the same with `ORDER BY t.a` | [`clause_alias_reads.py`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md#a-name-that-is-both-a-select-alias-and-a-column) |
+| An `ORDER BY` column read as an unaliased `CAST` of it in the select list | `SELECT id, CAST(b AS STRING) FROM t ORDER BY b LIMIT 1` and the same with `ORDER BY 2` (BigQuery sorts 9 before 10 on the left and `'10'` before `'9'` on the right) | [`_split_limit`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/provers.md#a-name-that-is-both-a-select-alias-and-a-column) names a select-list entry only by its alias or by the bare column it is |
 
 The first family's NUMERIC half was reported by the bug hunt in the split prover repository. None of the nine ledger evals of that day changed its count with the three fixes.
 

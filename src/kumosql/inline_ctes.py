@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from sqlglot import exp
 
-from .ast_utils import (
+from kumo_sql_prover.ast_utils import (
     ambiguous_unnest_names,
     cte_dependency_errors,
     cte_alias_name,

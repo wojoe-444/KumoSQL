@@ -18,11 +18,11 @@ from typing import TYPE_CHECKING, Iterable, Mapping
 
 from sqlglot import exp
 
-from .ast_utils import binding_cte, conjuncts as _flatten, star_modified
-from .equivalence import _normalize_predicate
+from kumo_sql_prover.ast_utils import binding_cte, conjuncts as _flatten, star_modified
+from kumo_sql_prover.equivalence import _normalize_predicate
 from .graph import ObservedRead, build_query_graph
 from .near_duplicates import _filters_safe_downstream
-from .smt_equivalence import SmtStatus, prove_equivalent_smt
+from kumo_sql_prover.smt_equivalence import SmtStatus, prove_equivalent_smt
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline

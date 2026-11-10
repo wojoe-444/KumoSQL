@@ -109,12 +109,12 @@ def test_conftest_times_shared_fixture_files_whole_and_new_eval_files_as_slow():
     spec = importlib.util.spec_from_file_location("timing_conftest", Path(__file__).resolve().parent / "conftest.py")
     conftest = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(conftest)
-    order = {"slow": {"tests/test_a.py::big": 9.0}, "together": {"tests/test_b.py": 40.0}, "files": ["tests/test_a.py", "tests/test_b.py", "tests/test_qed_benchmarks.py"]}
+    order = {"slow": {"tests/test_a.py::big": 9.0}, "together": {"tests/test_b.py": 40.0}, "files": ["tests/test_a.py", "tests/test_b.py", "tests/test_spider2_bench.py"]}
     seconds, together = conftest._timing(order)
     assert together == {"tests/test_b.py": 40.0}
     assert seconds("tests/test_a.py::big") == 9.0 and seconds("tests/test_a.py::small") is None
     assert seconds("tests/test_b.py::anything") == 40.0
-    assert seconds("tests/test_qed_benchmarks.py::new_case") is None  # a known eval file: its fast tests stay fast
-    assert seconds("tests/test_verieql_benchmarks.py::t") == conftest.NEW_EVAL_SECONDS  # an eval file never timed
+    assert seconds("tests/test_spider2_bench.py::new_case") is None  # a known eval file: its fast tests stay fast
+    assert seconds("tests/test_sqlfluff_fixtures_bench.py::t") == conftest.NEW_EVAL_SECONDS  # an eval file never timed
     assert seconds("tests/test_brand_new.py::t") is None  # not an eval file
-    assert conftest._timing({"slow": {}})[0]("tests/test_verieql_benchmarks.py::t") is None  # no history, no guess
+    assert conftest._timing({"slow": {}})[0]("tests/test_sqlfluff_fixtures_bench.py::t") is None  # no history, no guess

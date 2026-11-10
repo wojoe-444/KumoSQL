@@ -2,7 +2,7 @@
 
 [Plain-language version](../../docs_simple/evals/googlesql-expected-results.md)
 
-KumoSQL's counterexample searches, bounded replay, random-database checks and synthetic comparisons run BigQuery SQL on DuckDB after sqlglot translates it, through one layer ([`bigquery_on_duckdb.py`](../bigquery-on-duckdb.md)). A difference that layer reports must be a difference BigQuery would show, or the refutation is wrong. The [BigQuery behaviour eval](bigquery-behavior-eval.md) uses the SQL of the same compliance tests and never their results. This eval uses the results: for each query, the typed rows Google's reference implementation returns, as an independent oracle for the layer.
+KumoSQL's counterexample searches, bounded replay, random-database checks and synthetic comparisons run BigQuery SQL on DuckDB after sqlglot translates it, through one layer ([`bigquery_on_duckdb.py`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/bigquery-on-duckdb.md)). A difference that layer reports must be a difference BigQuery would show, or the refutation is wrong. The [BigQuery behaviour eval](bigquery-behavior-eval.md) uses the SQL of the same compliance tests and never their results. This eval uses the results: for each query, the typed rows Google's reference implementation returns, as an independent oracle for the layer.
 
 ```
 python tools/googlesql_results_eval.py                  # fetches google/googlesql at the pin (sparse, GitHub only), runs all
@@ -37,7 +37,7 @@ python -m pytest tests/test_googlesql_results_eval.py   # the floor: a pinned sa
 | **wrong** (`DISAGREE` that is a bug) | the translation ran and returned other rows. This must stay 0 |
 | oracle-side difference | `DISAGREE` that disappears when DuckDB reads times in `America/Los_Angeles`: the compliance driver's default zone is Los Angeles and BigQuery's is UTC |
 
-A disagreement counts only when DuckDB with its optimizer off ([`run_unoptimized`](../../src/kumosql/duckdb_load.py)) returns the same rows, since DuckDB 1.5's optimizer has wrong-result bugs. Cases BigQuery fails at run time (`out_of_range`) are tracked separately: whether the translation also fails, is declined, or returns rows.
+A disagreement counts only when DuckDB with its optimizer off ([`run_unoptimized`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/src/kumo_sql_prover/duckdb_load.py)) returns the same rows, since DuckDB 1.5's optimizer has wrong-result bugs. Cases BigQuery fails at run time (`out_of_range`) are tracked separately: whether the translation also fails, is declined, or returns rows.
 
 ## Splits and exposure
 
@@ -61,11 +61,11 @@ Agreement fell from 1,692 to 1,612 because the fixes are refusals: constructs Du
 
 ## What this found
 
-Fixed in the layer, each with a regression test in `tests/test_bigquery_on_duckdb.py`:
+Fixed in the layer, each with a regression test in [`tests/test_bigquery_on_duckdb.py`](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/tests/test_bigquery_on_duckdb.py) in the prover repository:
 
 - `EXTRACT(MILLISECOND/MICROSECOND)` counted the whole seconds; a backslash in a `LIKE` pattern, `LIKE ANY/ALL`; `SPLIT(s, NULL)`; a set operation operand that is a set operation lost its grouping; `ASC NULLS LAST` and `COUNTIF` over no rows (found first here, fixed on master meanwhile).
 - Guards for `AVG`, `STDDEV` and `VARIANCE` of `NUMERIC` and for fractional seconds in `CAST(TIMESTAMP AS STRING)`.
-- Refusals where sqlglot's translation changes the meaning: `PARSE_*` and `CAST .. FORMAT`, time zones, `UNPIVOT`, grouping keys that are not columns, `SELECT AS STRUCT` as a table, `GROUP BY ALL` without keys, date text in a set operation, `ANY_VALUE .. HAVING`, `REGEXP_INSTR` occurrences, `IN` over a struct with a `NULL`, string escapes sqlglot leaves undecoded. The list is in [Running BigQuery SQL on DuckDB](../bigquery-on-duckdb.md).
+- Refusals where sqlglot's translation changes the meaning: `PARSE_*` and `CAST .. FORMAT`, time zones, `UNPIVOT`, grouping keys that are not columns, `SELECT AS STRUCT` as a table, `GROUP BY ALL` without keys, date text in a set operation, `ANY_VALUE .. HAVING`, `REGEXP_INSTR` occurrences, `IN` over a struct with a `NULL`, string escapes sqlglot leaves undecoded. The list is in [Running BigQuery SQL on DuckDB](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/bigquery-on-duckdb.md).
 
 ## Limits
 

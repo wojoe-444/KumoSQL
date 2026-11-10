@@ -44,9 +44,9 @@ import sqlglot
 from sqlglot import exp
 
 from . import model_reuse as mr
-from .ast_utils import distinct_on, extended_grouping
+from kumo_sql_prover.ast_utils import distinct_on, extended_grouping
 from .random_check import CheckError, Schema, Witness, find_difference
-from .smt_equivalence import SmtStatus, TableConstraints
+from kumo_sql_prover.smt_equivalence import SmtStatus, TableConstraints
 
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class Containment:
 
 
 def _prove(a: str, b: str, *, schema, constraints, types, timeout_ms, dialect, exact_arithmetic=False):
-    from .algebraic_equivalence import prove_equivalent_algebraic
+    from kumo_sql_prover.algebraic_equivalence import prove_equivalent_algebraic
 
     try:
         return prove_equivalent_algebraic(

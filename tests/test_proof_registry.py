@@ -11,7 +11,7 @@ from kumosql.proof_registry import FAMILIES, LEGACY_BASIS, RULE_FAMILIES, classi
 from kumosql.proof_steps import RewriteStep
 from kumosql.rewrite import INDEPENDENT_CHECK_FAMILIES, available_rules
 
-DOCS = Path(__file__).resolve().parent.parent / "docs" / "proof-safeguards.md"
+DOCS = Path(__file__).resolve().parent.parent / "docs" / "rewrite-rules.md"  # the families are documented with the prover (its tests/test_proof_families_documented.py)
 
 
 def test_every_registered_rule_is_classified_exactly_once():
@@ -58,9 +58,7 @@ def test_every_family_refuses_foreign_steps(name):
     assert not family.check(replace(base, family="unregistered"), tree.copy(), tree.copy()).accepted
 
 
-def test_the_docs_list_every_rule_and_family():
+def test_the_docs_list_every_rule():
     text = DOCS.read_text(encoding="utf-8")
     for rule in available_rules():
-        assert f"`{rule}`" in text, f"docs/proof-safeguards.md does not mention the rule {rule}"
-    for name in FAMILIES:
-        assert f"`{name}`" in text, f"docs/proof-safeguards.md does not mention the family {name}"
+        assert f"`{rule}`" in text, f"docs/rewrite-rules.md does not mention the rule {rule}"

@@ -92,7 +92,7 @@ def run_capped(function, seconds: float):
 def prove_pair(left: str, right: str, *, respect_row_order: bool, facts, timeout_ms: int) -> dict:
     """The verdict for two queries as plain data (runs in the child). Never raises for an unprovable pair."""
 
-    from .statement_proof import prove_statements
+    from kumo_sql_prover.statement_proof import prove_statements
 
     result = prove_statements(left, right, ignore_row_order=not respect_row_order)
     if result.proven:
@@ -103,13 +103,13 @@ def prove_pair(left: str, right: str, *, respect_row_order: bool, facts, timeout
         out["reason"] += "; the SMT prover does not check row order, so it was not tried"
         return out
     try:
-        from .smt_equivalence import SmtStatus, z3
+        from kumo_sql_prover.smt_equivalence import SmtStatus, z3
     except Exception:  # noqa: BLE001
         z3 = None
     if z3 is None:
         out["reason"] += "; the SMT prover is not installed"
         return out
-    from .statement_proof import prove_statements_smt
+    from kumo_sql_prover.statement_proof import prove_statements_smt
 
     smt = prove_statements_smt(
         left, right, schema=facts.columns or None, constraints=facts.constraints or None, types=facts.types or None,

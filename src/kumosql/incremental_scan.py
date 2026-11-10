@@ -29,7 +29,7 @@ import sys
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import binding_cte
+from kumo_sql_prover.ast_utils import binding_cte
 from .incremental import (
     IncrementalError,
     SourceTable,
@@ -37,7 +37,7 @@ from .incremental import (
     parse_incremental_sqlx,
 )
 from .resilience import extended_path
-from .sqlx import split_sqlx_sections
+from kumo_sql_prover.sqlx import split_sqlx_sections
 
 CONTRACTS: dict[str, tuple[str, ...]] = {
     "append_only": ("insert_new", "empty"),

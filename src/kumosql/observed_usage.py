@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Iterable, Mapping
 import sqlglot
 from sqlglot import exp
 
-from .ast_utils import binding_cte
+from kumo_sql_prover.ast_utils import binding_cte
 from .graph import ObservedRead
 from .scripts import split_statements
 
