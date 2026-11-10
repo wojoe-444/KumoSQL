@@ -7,7 +7,10 @@ or written unless ``KUMOSQL_VERDICT_CACHE`` names a folder (``python tools/run_t
 What makes a hit safe:
 
 * the key holds a hash of the source of every module the provers import (``prover_fingerprint``), so any edit to a
-  prover module, a helper it uses or this file is a miss for every pair;
+  prover module, a helper it uses or this file is a miss for every pair. ``bigquery_syntax`` is a root although only
+  the package's ``__init__`` imports it: it patches the parser every proof reads with;
+* a runner puts a hash of its own source in the payload (``source_digest``): how it builds the proof call (dialect,
+  constraints, rewriting of the text) decides the verdict as much as the prover does;
 * the key also holds the query texts, every option that changes a verdict, the SQLGlot, DuckDB, z3 and Python versions;
 * only a verdict summary is stored (``proven`` and the status name), as JSON, never a pickled result object, so a damaged
   or planted file can at worst fail to parse, which is a miss. A caller that needs a counterexample or the reasons does not
@@ -33,7 +36,9 @@ ENV = "KUMOSQL_VERDICT_CACHE"
 FORMAT = 1
 
 # The modules the provers start from; the fingerprint covers everything they import (docs/roadmap.md, step 8).
+# ``bigquery_syntax`` patches sqlglot's BigQuery parser when the package is imported, so no prover module names it.
 PROVER_ROOTS = (
+    "bigquery_syntax",
     "equivalence",
     "smt_equivalence",
     "algebraic_equivalence",
@@ -60,30 +65,43 @@ def folder() -> Path | None:
     return Path(value)
 
 
-def _imports(path: Path, known: set[str]) -> set[str]:
-    """Names of sibling modules that ``path`` imports, at any depth (function-level imports count)."""
+def _imports(path: Path, known: set[str], package: Path = _PACKAGE) -> set[str]:
+    """Names of the package's top-level modules that ``path`` imports, at any depth (function-level imports count).
+
+    ``path`` may sit in a subpackage: ``from ..ast_utils import x`` in ``uexpr/translate.py`` names ``ast_utils``, and
+    ``from .ir import y`` there names ``uexpr`` itself. Absolute imports count when they name this package, whatever
+    it is called (``kumosql`` in the product, another name where the prover is packaged on its own).
+    """
 
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError):
+        inside = path.resolve().parent.relative_to(package.resolve()).parts  # the subpackages ``path`` sits in
+    except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
         return set()
     found: set[str] = set()
+
+    def named(parts: list[str], names: list[str]) -> None:
+        """An import of ``parts`` (relative to the package root; empty for the package itself) binding ``names``."""
+
+        if parts:
+            found.add(parts[0])
+        else:
+            found.update(names)
+
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):
-            if node.level == 1 and node.module:
-                found.add(node.module.split(".")[0])
-            elif node.level == 1:
-                found.update(alias.name for alias in node.names)
-            elif node.level == 0 and node.module:
-                parts = node.module.split(".")
-                if parts[0] == "kumosql" and len(parts) > 1:
-                    found.add(parts[1])
-                elif parts[0] == "kumosql":
-                    found.update(alias.name for alias in node.names)
+            module = node.module.split(".") if node.module else []
+            names = [alias.name for alias in node.names]
+            if node.level:
+                up = node.level - 1
+                if up <= len(inside):
+                    named([*inside[: len(inside) - up], *module], names)
+            elif module and module[0] == package.name:
+                named(module[1:], names)
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 parts = alias.name.split(".")
-                if parts[0] == "kumosql" and len(parts) > 1:
+                if parts[0] == package.name and len(parts) > 1:
                     found.add(parts[1])
     return {name for name in found if name in known}
 
@@ -92,6 +110,7 @@ def prover_modules(roots: Iterable[str] = PROVER_ROOTS, package: Path = _PACKAGE
     """The roots and every module they import, directly or not, sorted."""
 
     known = {p.stem for p in package.glob("*.py")} | {p.name for p in package.iterdir() if (p / "__init__.py").is_file()}
+    known.discard("__init__")
     seen: set[str] = set()
     pending = [name for name in roots if name in known]
     while pending:
@@ -99,10 +118,8 @@ def prover_modules(roots: Iterable[str] = PROVER_ROOTS, package: Path = _PACKAGE
         if name in seen:
             continue
         seen.add(name)
-        path = package / f"{name}.py"
-        if not path.is_file():
-            path = package / name / "__init__.py"
-        pending.extend(_imports(path, known) - seen)
+        for path in _files(name, package):  # every file of a subpackage: each can import a module the others do not
+            pending.extend(_imports(path, known, package) - seen)
     return sorted(seen)
 
 
@@ -120,6 +137,18 @@ def prover_fingerprint() -> str:
         for path in _files(name, _PACKAGE):
             digest.update(str(path.relative_to(_PACKAGE)).encode())
             digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def source_digest(*paths: str | Path) -> str:
+    """A hash of the given source files, for a runner to put in its payload (an unreadable file hashes as missing)."""
+
+    digest = hashlib.sha256()
+    for path in paths:
+        try:
+            digest.update(hashlib.sha256(Path(path).read_bytes()).digest())
+        except OSError:
+            digest.update(b"missing")
     return digest.hexdigest()
 
 
