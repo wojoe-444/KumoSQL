@@ -87,12 +87,10 @@ PROVER_DOCS = (
     "conditional-equivalence.md",
     "constraint-rewrites.md",
     "difference-explanations.md",
-    "numeric-assumption-report.md",
     "output-properties.md",
     "parser-checks.md",
     "proof-safeguards.md",
     "provers.md",
-    "rule-fuzzing.md",
     "singleton-and-set-identity.md",
     "ties.md",
 )
@@ -332,6 +330,22 @@ def plan(source: Path, package: str, repo: Path) -> dict:
         for name, (refs, used) in test_refs.items()
         if refs <= prover and used <= moved_tools and (refs or used)
     }
+    # A moved runner that something staying still imports (a corpus fetcher, ``bench_common``) stays too; it is
+    # copied to the prover rather than moved.
+    shared_tools: set[str] = set()
+    wanted = {
+        used
+        for name in set(tools) - moved_tools
+        for used in tool_refs[name][1]
+    } | {used for name, (_, used) in test_refs.items() if name not in moved_tests for used in used}
+    stack = [name for name in wanted if name in moved_tools]
+    while stack:
+        name = stack.pop()
+        if name in shared_tools:
+            continue
+        shared_tools.add(name)
+        stack.extend(dep for dep in tool_refs[name][1] if dep in moved_tools)
+
     results = {}
     for path in sorted((repo / "benchmarks" / "results").glob("*.json")):
         command = json.loads(path.read_text(encoding="utf-8")).get("command", "")
@@ -377,6 +391,7 @@ def plan(source: Path, package: str, repo: Path) -> dict:
         "eval_pages_shared": eval_pages_shared,
         "assets": assets,
         "tools": sorted(moved_tools),
+        "tools_shared": sorted(shared_tools),
         "tests": sorted(moved_tests),
         "tests_staying": sorted(set(test_refs) - moved_tests),
         "tool_blockers": {
