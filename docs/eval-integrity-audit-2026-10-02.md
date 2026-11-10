@@ -86,7 +86,7 @@ DuckDB rejects both originals before comparing any rewrite. Both nevertheless ea
 
 The gate also counts `q16` as successful even though its MERGE USING subquery is unchanged: `_is_relation_subquery` only recognizes FROM/JOIN parents. `q17` and `q20` earn structural success but the verified API declines their rewrites.
 
-Recovery contributes additional false confidence. [engine.py](../src/kumosql/engine.py) uses parser recovery, and recovery diagnostics are not fatal. `SELECT 1 FROM t WHERE 1 =` is returned unchanged with `success=True`. An input ending in `AS q garbage extra` is transformed after discarding the extra text and also reports success. The historical fixture earns success for 58 input-recovery rows, including 45 output-recovery rows.
+Recovery contributes additional false confidence. [rule_driver.py](../src/kumosql/rule_driver.py) uses parser recovery, and recovery diagnostics are not fatal. `SELECT 1 FROM t WHERE 1 =` is returned unchanged with `success=True`. An input ending in `AS q garbage extra` is transformed after discarding the extra text and also reports success. The historical fixture earns success for 58 input-recovery rows, including 45 output-recovery rows.
 
 Validate and label fixture inputs, require a real change for transformation cases, and report strict parsing, recovery, syntactic removal, schema validity, and semantic verification separately. Keep unsupported cases in the denominator with their outcome recorded.
 

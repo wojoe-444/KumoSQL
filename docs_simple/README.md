@@ -49,6 +49,7 @@ This folder is the plain-language companion to [the full documentation](../docs/
 | Run tests and understand their history | [Test history](test-history.md) |
 | Continue a workstream someone else started | [Picking up a workstream](handoff.md) |
 | See what is planned next and why | [Roadmap](roadmap.md) |
+| See how the prover is being moved to its own repository | [Splitting the prover out](prover-split.md) |
 | See what an outside audit of the checks found | [Eval integrity audit status](eval-integrity-status.md), [the audit itself](eval-integrity-audit-2026-10-02.md) |
 | Understand the test suites and their scores | [Evals](evals/README.md) |
 | Record a benchmark result | [Benchmark results format](benchmarks/README.md) |

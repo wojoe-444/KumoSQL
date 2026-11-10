@@ -8,6 +8,8 @@ The rewrite rule registry and the subquery lifter.
 
 Each transformation is a rule in a registry. A rule only says how to rewrite one parsed statement; a shared driver handles SQLX blocks and `${...}` interpolations, strict parsing with a visible recovery fallback, formatting, byte-for-byte no-ops, and CTE dependency checks.
 
+The driver (`RewriteRule`, in `kumosql.rule_driver`) is separate from the registry and from BigQuery scripting (`kumosql.engine` keeps the registry and teaches the driver to run rules inside `BEGIN ... END` blocks). That split is what lets the equivalence prover normalize a query with `lift_subqueries` without depending on scripts or the registry; `python tools/prover_split.py --check` fails if the prover's import closure reaches either again (see [splitting the prover out](prover-split.md)). Rules still import `RewriteRule` and `register_rule` from `kumosql.engine`.
+
 | Rule | What it does |
 | --- | --- |
 | `lift_subqueries` | Lifts FROM/JOIN subqueries into named top-level CTEs (details below) |
