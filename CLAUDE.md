@@ -1,5 +1,7 @@
 # Repository instructions for Claude
 
+Direction: read [docs/roadmap.md](docs/roadmap.md) before starting work. It is the plan of record from the November 2026 review: a five-minute merge gate with benchmarks on a schedule, the prover split into its own package ([wojoe-444/Kumo_SQL_Prover](https://github.com/wojoe-444/Kumo_SQL_Prover), decided 2026-11-10), and one agent-facing server with small, bounded answers for analysts. Work on its steps in order, and do not extend the areas it lists as parked. The roadmap proposes changes to some rules below (the test policy, the README scoreboard, the twin docs); until a pull request with Walter's sign-off changes them here, the rules below still apply.
+
 SQLGlot standard: `sqlglot==30.21.0` is the only supported version. Walter fully approved this transition ([#716](https://github.com/walterogozaly/KumoSQL/issues/716)). Routine CI and Dell full-suite runs use the matching compiled `sqlglotc==30.21.0` build once per revision. Do not restore the 26.0.0 / 30.20.0 compatibility matrix or a second routine full-suite pure-Python run. Pure Python remains usable; use `--pure` for focused diagnostics when needed. Future version changes require explicit validation and an intentional update to the pin, CI and docs.
 
 Keep documentation and README files up to date when your changes affect setup, usage, behavior, or developer workflows. Include those updates in the same pull request.

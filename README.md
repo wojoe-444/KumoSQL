@@ -929,6 +929,8 @@ python -m kumosql lift-subqueries input.sql --output output.sql --report
 
 ## What's next
 
+The plan of record is the [roadmap](docs/roadmap.md): a short merge gate, the prover in its own package, and one agent-facing server that answers a single pipeline question at a time.
+
 KumoSQL is moving toward a query graph that combines declared and observed dependencies with measured cost, backed by the verification engine described above. The graph, cost and change report pages show your loaded project, job history and branch comparisons. Next up is finding proposed queries that duplicate existing tables and turning shared logic into verified refactors, with failed rewrites never mistaken for successful ones. The open work is tracked in the GitHub issues.
 
 ### Production schedules (Dataform workflow configurations)

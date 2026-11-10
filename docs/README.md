@@ -2,6 +2,8 @@
 
 [Plain-language version](../docs_simple/README.md)
 
+Working on KumoSQL itself? Read the [roadmap](roadmap.md) first: why work stalled in October 2026, what was decided, and what to build next, in order.
+
 Start with [Getting started](getting-started.md): install, a first verified rewrite, a pipeline impact report and the browser UI. The [README](../README.md) has the benchmark scoreboard, a summary of every feature and the CLI table.
 
 ## Using KumoSQL
