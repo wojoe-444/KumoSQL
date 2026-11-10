@@ -2,7 +2,7 @@
 
 The product's cleanup rules (``remove_trivial_predicates``, ``remove_redundant_parentheses``, ``deduplicate_ctes``,
 ``remove_unused_ctes``, ``remove_redundant_distinct``, and on request ``inline_single_use_ctes``) behind one call. Each change
-is checked by the equivalence prover and an independent checker, exactly as ``rewrite-sql`` does. The answer is a small
+is checked by the equivalence prover and an independent checker, exactly as `python -m kumosql rewrite-sql` does. The answer is a small
 unified diff (one line of context), not the whole query, so an agent that holds the original pays only for what changed; for a
 draft short enough, the cleaned text itself is included.
 
