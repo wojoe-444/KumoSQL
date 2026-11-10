@@ -53,6 +53,10 @@ The hook has a price: `python -m kumosql.<moved name>` does not work (use `pytho
 
 After the switch, an existing checkout needs `pip install -e .` once more: it installs the pinned prover next to KumoSQL. To work on both at once, clone the prover and `pip install -e path/to/Kumo_SQL_Prover` after that; the import aliases follow whatever is installed, and `tests/test_prover_aliases.py` fails when the list of moved modules no longer matches it.
 
+## Keeping the prover repository in step
+
+While a prover change can still land here (a rule, a fix, a floor), `tools/prover_resync.py FROM TO PROVER_CHECKOUT` carries it over: it lists what changed between two KumoSQL commits in the files that live in the prover, writes the patch with the package renamed, and with `--apply` applies it there; `--verify` compares every moved source file, test, runner and results file at a commit with the prover checkout and names any that differ other than on purpose (the pytest gate rules, runner options). A hunk that does not apply is left in a `.rej` file for a hand edit. After the carry, the prover repository's pull request records its gate, the floors of the evals it moved and the comparison of the changed ones, as for the first one, and KumoSQL bumps its pin.
+
 ## Canaries
 
 `tests/test_prover_canary.py` keeps real pairs from the SQLSolver suites that the algebraic prover proves (14 each from Calcite, TPC-C and Spark SQL, 8 from TPC-H, which has 22 pairs in all) and four pairs the suites must never prove, from `tests/fixtures/prover_canary.json`. They run in seconds through the entry points KumoSQL imports. `tests/test_canaries.py` (the gate's canaries, ten cases each of the SQLSolver suites, QED and the mined Calcite set) stays here too and calls the runners through their copies in `tools/` (`sqlsolver_bench`, `qed_bench`, `calcite_mined_bench`); the prover repository carries the same file. A failure here means the wiring broke (the pin, the import paths, the parser extension); a score that drops is for the prover repository's scheduled run to report.
