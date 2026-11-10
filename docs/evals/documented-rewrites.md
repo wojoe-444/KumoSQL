@@ -14,5 +14,6 @@ Labels are checked on DuckDB and cases are decided exactly as for [DB-GPT's exam
 | Date | Equivalent proved | Not equivalent refuted | Wrong |
 | --- | ---: | ---: | ---: |
 | 2026-10-03 | 17/19 | 5/6 | 0 |
+| 2026-11-10 | 18/19 | 5/6 | 0 |
 
-Unknown: R012b-17 (`REGEXP_CONTAINS(body, '.*abc.*')` against `body LIKE '%abc%'`, different functions to the prover), R012b-22 (a filtered `ROW_NUMBER` subquery against `QUALIFY`) and R012-039 (the random databases rarely hold two matching region rows with one key; the stored counterexample shows the difference). The cases were written and labelled with every case in view and there is no held-out split (tuned on test).
+R012b-22 (a filtered `ROW_NUMBER` subquery against `QUALIFY`) is proved since 2026-11-10: `boolean_identities.py` ([fuzzing.md](fuzzing.md)) drops its `WHERE TRUE`, after which the two windows read the same input; that rule was written for the SQLancer families, not for this case. Unknown: R012b-17 (`REGEXP_CONTAINS(body, '.*abc.*')` against `body LIKE '%abc%'`, different functions to the prover) and R012-039 (the random databases rarely hold two matching region rows with one key; the stored counterexample shows the difference). The cases were written and labelled with every case in view and there is no held-out split (tuned on test).

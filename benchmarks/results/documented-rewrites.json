@@ -2,18 +2,27 @@
   "suite": "Documented rewrites (vendor and style guides)",
   "order": 37,
   "size": 25,
-  "score": "17/19 proved, 5/6 refuted, 0 wrong",
+  "score": "18/19 proved, 5/6 refuted, 0 wrong",
   "metric": "Rewrites that SQLFluff, dbt, BigQuery, Snowflake, Redshift and SQL Server documentation recommends, as cases written for KumoSQL: sound ones proved, the documented rewrites that change results refuted by a database.",
   "evidence": "proof",
   "correctness": "Labels checked on DuckDB by the test suite (random databases, stored counterexamples, optimizer off); wrong is a proof against a not-equivalent label or a refutation against an equivalent one.",
   "coverage": {
-    "proven": 17,
+    "proven": 18,
     "refuted": 5,
-    "unknown": 3
+    "unknown": 2
   },
   "held_out": "none",
   "docs": "docs/evals/documented-rewrites.md",
   "command": "python tools/documented_rewrites_bench.py --write-results",
-  "date": "2026-10-03",
-  "caveats": "Cases written for KumoSQL from documented claims collected by an outside research assistant and re-labelled by hand on DuckDB; 25 cases, no held-out split (tuned on test). Legacy-SQL migration mappings and rewrites that need unenforced keys are left out."
+  "date": "2026-11-10",
+  "caveats": "Cases written for KumoSQL from documented claims collected by an outside research assistant and re-labelled by hand on DuckDB; 25 cases, no held-out split (tuned on test). Legacy-SQL migration mappings and rewrites that need unenforced keys are left out.",
+  "environment": {
+    "python": "3.13.18",
+    "sqlglot": "30.21.0",
+    "sqlglotc": "30.21.0",
+    "duckdb": "1.5.6",
+    "z3-solver": "5.4.0.0",
+    "sqlfluff": "4.5.0",
+    "commit": "e6209e08"
+  }
 }
