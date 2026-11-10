@@ -160,3 +160,14 @@ def test_a_limit_tail_on_partitions_is_not_proved_against_the_wrong_distinct_que
     tail = f"{_tlp(q, 'b > 0')} LIMIT 1"
     assert _prove("SELECT DISTINCT a AS k FROM t LIMIT 2", tail) is not PROVEN
     assert _prove("SELECT a AS k FROM t LIMIT 1", tail) is not PROVEN
+
+
+def test_without_the_solver_the_union_stays_as_written(monkeypatch):
+    """z3-solver is an optional extra: the rule asks it whether the filters cover every row, so without it nothing merges."""
+
+    from kumosql import distinct_partition_rules
+
+    monkeypatch.setattr(distinct_partition_rules, "z3", None)
+    sql = "SELECT a FROM t WHERE a > 1 UNION DISTINCT SELECT a FROM t WHERE NOT a > 1 UNION DISTINCT SELECT a FROM t WHERE a > 1 IS NULL"
+    tree = sqlglot.parse_one(sql, dialect="bigquery")
+    assert merge_distinct_partitions(tree).sql(dialect="bigquery") == sqlglot.parse_one(sql, dialect="bigquery").sql(dialect="bigquery")

@@ -22,7 +22,10 @@ it, no GROUP BY, HAVING, QUALIFY, ORDER BY or other clauses, and no subquery in 
 
 from __future__ import annotations
 
-import z3
+try:
+    import z3
+except ImportError:  # z3-solver is an optional extra; without it the unions stay as written
+    z3 = None
 from sqlglot import exp
 
 from .partition_rules import _Logic, _shape, _volatile
@@ -37,6 +40,8 @@ _WRAPPED_SELECT_ARGS = ("with_", "order", "limit", "offset", "locks", "sample", 
 def merge_distinct_partitions(tree: exp.Expression) -> exp.Expression:
     """Merge the filter-split branches of every ``UNION DISTINCT`` in ``tree`` (innermost first)."""
 
+    if z3 is None:  # the solver decides whether the filters cover every row; without it nothing is merged
+        return tree
     for node in list(tree.find_all(exp.Union))[::-1]:  # breadth-first, reversed: a node after its descendants
         if not _plain_union(node) or not node.args.get("distinct") or _covered(node):
             continue
