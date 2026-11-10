@@ -563,7 +563,7 @@ SQL-IQ's SQL Equivalence Judge, SQL Judge and Error Classification tasks are sco
 
 ## Proof admission
 
-A proof is counted in an eval's score only after that search and a near-miss probe (`python tools/proof_mutants.py <eval>`, which makes one small mistake in a proven pair and asks the prover again) find nothing. `python tools/proof_admission.py admit <eval>` runs both on each new proof and records the admitted ones in `benchmarks/admitted/`; a gate test fails when a results file and its ledger disagree. Nine evals have a ledger. See [docs/proof-admission.md](docs/proof-admission.md).
+A proof is counted in an eval's score only after that search and a near-miss probe (`python tools/proof_mutants.py <eval>`, which makes one small mistake in a proven pair and asks the prover again) find nothing. `python tools/proof_admission.py admit <eval>` runs both on each new proof and records the admitted ones in `benchmarks/admitted/`; a gate test fails when a results file and its ledger disagree. Eleven evals have a ledger. See [docs/proof-admission.md](docs/proof-admission.md).
 
 ## Output properties
 
