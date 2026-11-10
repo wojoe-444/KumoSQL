@@ -1,0 +1,439 @@
+{
+ "schemas": {
+  "library": {
+   "tables": {
+    "authors": {
+     "columns": {
+      "author_id": "INT64",
+      "name": "STRING",
+      "country": "STRING"
+     },
+     "not_null": [
+      "author_id",
+      "name"
+     ],
+     "keys": [
+      [
+       "author_id"
+      ]
+     ]
+    },
+    "books": {
+     "columns": {
+      "book_id": "INT64",
+      "author_id": "INT64",
+      "title": "STRING",
+      "pages": "INT64"
+     },
+     "not_null": [
+      "book_id",
+      "author_id",
+      "title"
+     ],
+     "keys": [
+      [
+       "book_id"
+      ]
+     ]
+    },
+    "loans": {
+     "columns": {
+      "loan_id": "INT64",
+      "book_id": "INT64",
+      "member_id": "INT64"
+     },
+     "not_null": [
+      "loan_id",
+      "book_id",
+      "member_id"
+     ],
+     "keys": [
+      [
+       "loan_id"
+      ]
+     ]
+    },
+    "members": {
+     "columns": {
+      "member_id": "INT64",
+      "tier": "STRING",
+      "joined": "INT64"
+     },
+     "not_null": [
+      "member_id",
+      "joined"
+     ],
+     "keys": [
+      [
+       "member_id"
+      ]
+     ]
+    }
+   }
+  }
+ },
+ "cases": [
+  {
+   "id": "l-group",
+   "group": "aggregates",
+   "sql": "SELECT author_id, COUNT(*) AS n, MAX(pages) AS mp FROM books GROUP BY author_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "author_id"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "n",
+     true
+    ],
+    [
+     "non_null",
+     "mp",
+     false
+    ],
+    [
+     "non_null",
+     "author_id",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-join",
+   "group": "joins",
+   "sql": "SELECT b.book_id, a.name FROM books b JOIN authors a ON a.author_id = b.author_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "book_id"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "name",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-left-join",
+   "group": "joins",
+   "sql": "SELECT b.book_id, a.name FROM books b LEFT JOIN authors a ON a.author_id = b.author_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "book_id"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "name",
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-fanout",
+   "group": "joins",
+   "sql": "SELECT a.author_id, b.title FROM authors a JOIN books b ON b.author_id = a.author_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "author_id"
+     ],
+     false
+    ],
+    [
+     "unique",
+     [
+      "title"
+     ],
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-filter",
+   "group": "expressions",
+   "sql": "SELECT member_id, tier FROM members WHERE tier IS NOT NULL",
+   "claims": [
+    [
+     "non_null",
+     "tier",
+     true
+    ],
+    [
+     "unique",
+     [
+      "member_id"
+     ],
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-case-guard",
+   "group": "expressions",
+   "sql": "SELECT CASE WHEN tier IS NULL THEN 'none' ELSE tier END AS t FROM members",
+   "claims": [
+    [
+     "non_null",
+     "t",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-if-guard",
+   "group": "expressions",
+   "sql": "SELECT IF(pages IS NULL, 0, pages) AS p FROM books",
+   "claims": [
+    [
+     "non_null",
+     "p",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-case-no-else",
+   "group": "expressions",
+   "sql": "SELECT CASE WHEN pages > 100 THEN pages END AS p FROM books",
+   "claims": [
+    [
+     "non_null",
+     "p",
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-row-number-partition",
+   "group": "expressions",
+   "sql": "SELECT ROW_NUMBER() OVER (PARTITION BY author_id ORDER BY book_id) AS rn FROM books",
+   "claims": [
+    [
+     "unique",
+     [
+      "rn"
+     ],
+     false
+    ],
+    [
+     "non_null",
+     "rn",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-row-number",
+   "group": "expressions",
+   "sql": "SELECT book_id, ROW_NUMBER() OVER (ORDER BY book_id) AS rn FROM books",
+   "claims": [
+    [
+     "unique",
+     [
+      "rn"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "rn",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-count-filtered",
+   "group": "aggregates",
+   "sql": "SELECT COUNT(*) AS c FROM loans WHERE member_id = 3",
+   "claims": [
+    [
+     "rows",
+     "exactly_one",
+     true
+    ],
+    [
+     "non_null",
+     "c",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-min-global",
+   "group": "aggregates",
+   "sql": "SELECT MIN(joined) AS j FROM members",
+   "claims": [
+    [
+     "non_null",
+     "j",
+     false
+    ],
+    [
+     "rows",
+     "exactly_one",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-nonkey-lookup",
+   "group": "cardinality",
+   "sql": "SELECT loan_id FROM loans WHERE book_id = 1",
+   "claims": [
+    [
+     "rows",
+     "at_most_one",
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-key-lookup",
+   "group": "cardinality",
+   "sql": "SELECT * FROM members WHERE member_id = 9",
+   "claims": [
+    [
+     "rows",
+     "at_most_one",
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-join-filter",
+   "group": "joins",
+   "sql": "SELECT l.loan_id, m.tier FROM loans l JOIN members m ON m.member_id = l.member_id WHERE m.tier = 'gold'",
+   "claims": [
+    [
+     "non_null",
+     "tier",
+     true
+    ],
+    [
+     "unique",
+     [
+      "loan_id"
+     ],
+     true
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-cte-left",
+   "group": "joins",
+   "sql": "WITH per_book AS (SELECT book_id, COUNT(*) AS n FROM loans GROUP BY book_id) SELECT b.book_id, p.n FROM books b LEFT JOIN per_book p ON p.book_id = b.book_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "book_id"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "n",
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-fanout-2",
+   "group": "joins",
+   "sql": "SELECT b.author_id FROM books b JOIN loans l ON l.book_id = b.book_id",
+   "claims": [
+    [
+     "unique",
+     [
+      "author_id"
+     ],
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-scalar",
+   "group": "cardinality",
+   "sql": "SELECT a.name FROM authors a WHERE a.author_id = b.author_id",
+   "claims": [
+    [
+     "rows",
+     "at_most_one",
+     true
+    ]
+   ],
+   "outer": "books b",
+   "schema": "library"
+  },
+  {
+   "id": "l-union-all",
+   "group": "sets",
+   "sql": "SELECT member_id FROM members UNION ALL SELECT member_id FROM loans",
+   "claims": [
+    [
+     "non_null",
+     "member_id",
+     true
+    ],
+    [
+     "unique",
+     [
+      "member_id"
+     ],
+     false
+    ]
+   ],
+   "schema": "library"
+  },
+  {
+   "id": "l-distinct",
+   "group": "sets",
+   "sql": "SELECT DISTINCT tier FROM members",
+   "claims": [
+    [
+     "unique",
+     [
+      "tier"
+     ],
+     true
+    ],
+    [
+     "non_null",
+     "tier",
+     false
+    ]
+   ],
+   "schema": "library"
+  }
+ ]
+}

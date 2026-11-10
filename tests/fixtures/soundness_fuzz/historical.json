@@ -1,0 +1,122 @@
+[
+ {
+  "id": "S009-001",
+  "family": "global-aggregate-cardinality",
+  "left": "SELECT d.c FROM (SELECT COUNT(*) AS n,7 AS c FROM t) d",
+  "right": "SELECT 7 AS c FROM t",
+  "why": "Replacing the global aggregate projection by a constant-only projection removes the last aggregate and changes one output row to one per input row. The same root cause is shared with _prune_derived, canonical_rules.merge_projection_over_derived, and S007-001; this is a persistent core finding rather than an additional independent root cause.",
+  "tables": {
+   "t": [
+    [
+     2,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "u": [
+    [
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "S009-002",
+  "family": "membership-global-empty",
+  "left": "SELECT 0 IN (SELECT COUNT(*) FROM t WHERE FALSE) AS e",
+  "right": "SELECT FALSE AS e",
+  "why": "_is_empty_select treats WHERE FALSE as an empty query without checking global aggregation. COUNT emits the row 0, so membership is TRUE; the rewrite incorrectly returns FALSE.",
+  "tables": {
+   "t": [
+    [
+     2,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "u": [
+    [
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "S009-003",
+  "family": "later-outer-padding",
+  "left": "SELECT t.x,d.v,b.k FROM t JOIN (SELECT COALESCE(u.k,7) AS v FROM u) d ON TRUE RIGHT JOIN u b ON FALSE",
+  "right": "SELECT t.x, COALESCE(d.k, 7) AS v, b.k FROM t JOIN u AS d ON TRUE RIGHT JOIN u AS b ON FALSE",
+  "why": "_null_extended returns immediately for a joined source based only on its own join. It misses a later RIGHT/FULL join, so COALESCE is substituted after NULL padding and manufactures 7 instead of preserving the NULL derived output.",
+  "tables": {
+   "t": [
+    [
+     2,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "u": [
+    [
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "S009-004",
+  "family": "nested-cte-shadowing",
+  "left": "WITH q AS (SELECT 1 AS x) SELECT d.x FROM (WITH q AS (SELECT 2 AS x) SELECT x FROM q) d",
+  "right": "SELECT d.x FROM (SELECT x FROM (SELECT 1 AS x) AS q) AS d",
+  "why": "_inline_ctes searches all descendant Table nodes of the WITH owner without lexical shadowing. The inner q reference is replaced by the outer q body; the result changes from 2 to 1.",
+  "tables": {
+   "t": [
+    [
+     2,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "u": [
+    [
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "S009-005",
+  "family": "membership-union-tail",
+  "left": "SELECT 2 IN (SELECT x FROM t UNION ALL SELECT k FROM u LIMIT 0) AS e",
+  "right": "SELECT (2 IN (SELECT x FROM t) OR 2 IN (SELECT k FROM u)) AS e",
+  "why": "_in_over_union collects SELECT leaves and discards UNION-level LIMIT/OFFSET and other modifiers. LIMIT 0 makes membership FALSE; the unbounded branches contain 2 and the rewrite is TRUE.",
+  "tables": {
+   "t": [
+    [
+     2,
+     4
+    ],
+    [
+     2,
+     5
+    ]
+   ],
+   "u": [
+    [
+     1
+    ]
+   ]
+  }
+ }
+]

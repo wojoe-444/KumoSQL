@@ -182,8 +182,10 @@ def test_an_error_in_the_checker_is_a_refusal(monkeypatch):
 
 
 def test_the_check_imports_no_rule_normalizer_or_prover():
-    source = (Path(__file__).resolve().parent.parent / "src" / "kumosql" / "proof_format.py").read_text(encoding="utf-8")
-    imports = [line for line in source.splitlines() if line.startswith(("from .", "import kumosql", "from kumosql"))]
+    import kumo_sql_prover.proof_format as proof_format
+
+    source = Path(proof_format.__file__).read_text(encoding="utf-8")
+    imports = [line for line in source.splitlines() if line.startswith(("from .", "import kumosql", "from kumosql", "import kumo_sql_prover", "from kumo_sql_prover"))]
     assert imports == ["from .proof_steps import RewriteStep, StepCheck, _key"]
 
 

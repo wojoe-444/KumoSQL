@@ -1,0 +1,645 @@
+{
+ "battle_death": {
+  "battle": {
+   "bulgarian_commander": "text",
+   "date": "text",
+   "id": "number",
+   "latin_commander": "text",
+   "name": "text",
+   "result": "text"
+  },
+  "death": {
+   "caused_by_ship_id": "number",
+   "id": "number",
+   "injured": "number",
+   "killed": "number",
+   "note": "text"
+  },
+  "ship": {
+   "disposition_of_ship": "text",
+   "id": "number",
+   "location": "text",
+   "lost_in_battle": "number",
+   "name": "text",
+   "ship_type": "text",
+   "tonnage": "text"
+  }
+ },
+ "car_1": {
+  "car_makers": {
+   "Country": "text",
+   "FullName": "text",
+   "Id": "number",
+   "Maker": "text"
+  },
+  "car_names": {
+   "Make": "text",
+   "MakeId": "number",
+   "Model": "text"
+  },
+  "cars_data": {
+   "Accelerate": "number",
+   "Cylinders": "number",
+   "Edispl": "number",
+   "Horsepower": "text",
+   "Id": "number",
+   "MPG": "text",
+   "Weight": "number",
+   "Year": "number"
+  },
+  "continents": {
+   "ContId": "number",
+   "Continent": "text"
+  },
+  "countries": {
+   "Continent": "number",
+   "CountryId": "number",
+   "CountryName": "text"
+  },
+  "model_list": {
+   "Maker": "number",
+   "Model": "text",
+   "ModelId": "number"
+  }
+ },
+ "concert_singer": {
+  "concert": {
+   "Stadium_ID": "text",
+   "Theme": "text",
+   "Year": "text",
+   "concert_ID": "number",
+   "concert_Name": "text"
+  },
+  "singer": {
+   "Age": "number",
+   "Country": "text",
+   "Is_male": "others",
+   "Name": "text",
+   "Singer_ID": "number",
+   "Song_Name": "text",
+   "Song_release_year": "text"
+  },
+  "singer_in_concert": {
+   "Singer_ID": "text",
+   "concert_ID": "number"
+  },
+  "stadium": {
+   "Average": "number",
+   "Capacity": "number",
+   "Highest": "number",
+   "Location": "text",
+   "Lowest": "number",
+   "Name": "text",
+   "Stadium_ID": "number"
+  }
+ },
+ "course_teach": {
+  "course": {
+   "Course": "text",
+   "Course_ID": "number",
+   "Staring_Date": "text"
+  },
+  "course_arrange": {
+   "Course_ID": "number",
+   "Grade": "number",
+   "Teacher_ID": "number"
+  },
+  "teacher": {
+   "Age": "text",
+   "Hometown": "text",
+   "Name": "text",
+   "Teacher_ID": "number"
+  }
+ },
+ "cre_Doc_Template_Mgt": {
+  "Documents": {
+   "Document_Description": "text",
+   "Document_ID": "number",
+   "Document_Name": "text",
+   "Other_Details": "text",
+   "Template_ID": "number"
+  },
+  "Paragraphs": {
+   "Document_ID": "number",
+   "Other_Details": "text",
+   "Paragraph_ID": "number",
+   "Paragraph_Text": "text"
+  },
+  "Ref_Template_Types": {
+   "Template_Type_Code": "text",
+   "Template_Type_Description": "text"
+  },
+  "Templates": {
+   "Date_Effective_From": "time",
+   "Date_Effective_To": "time",
+   "Template_Details": "text",
+   "Template_ID": "number",
+   "Template_Type_Code": "text",
+   "Version_Number": "number"
+  }
+ },
+ "dog_kennels": {
+  "Breeds": {
+   "breed_code": "text",
+   "breed_name": "text"
+  },
+  "Charges": {
+   "charge_amount": "number",
+   "charge_id": "number",
+   "charge_type": "text"
+  },
+  "Dogs": {
+   "abandoned_yn": "text",
+   "age": "text",
+   "breed_code": "text",
+   "date_adopted": "time",
+   "date_arrived": "time",
+   "date_departed": "time",
+   "date_of_birth": "time",
+   "dog_id": "number",
+   "gender": "text",
+   "name": "text",
+   "owner_id": "number",
+   "size_code": "text",
+   "weight": "text"
+  },
+  "Owners": {
+   "cell_number": "text",
+   "city": "text",
+   "email_address": "text",
+   "first_name": "text",
+   "home_phone": "text",
+   "last_name": "text",
+   "owner_id": "number",
+   "state": "text",
+   "street": "text",
+   "zip_code": "text"
+  },
+  "Professionals": {
+   "cell_number": "text",
+   "city": "text",
+   "email_address": "text",
+   "first_name": "text",
+   "home_phone": "text",
+   "last_name": "text",
+   "professional_id": "number",
+   "role_code": "text",
+   "state": "text",
+   "street": "text",
+   "zip_code": "text"
+  },
+  "Sizes": {
+   "size_code": "text",
+   "size_description": "text"
+  },
+  "Treatment_Types": {
+   "treatment_type_code": "text",
+   "treatment_type_description": "text"
+  },
+  "Treatments": {
+   "cost_of_treatment": "number",
+   "date_of_treatment": "time",
+   "dog_id": "number",
+   "professional_id": "number",
+   "treatment_id": "number",
+   "treatment_type_code": "text"
+  }
+ },
+ "employee_hire_evaluation": {
+  "employee": {
+   "Age": "number",
+   "City": "text",
+   "Employee_ID": "number",
+   "Name": "text"
+  },
+  "evaluation": {
+   "Bonus": "number",
+   "Employee_ID": "text",
+   "Year_awarded": "text"
+  },
+  "hiring": {
+   "Employee_ID": "number",
+   "Is_full_time": "others",
+   "Shop_ID": "number",
+   "Start_from": "text"
+  },
+  "shop": {
+   "District": "text",
+   "Location": "text",
+   "Manager_name": "text",
+   "Name": "text",
+   "Number_products": "number",
+   "Shop_ID": "number"
+  }
+ },
+ "flight_2": {
+  "airlines": {
+   "Abbreviation": "text",
+   "Airline": "text",
+   "Country": "text",
+   "uid": "number"
+  },
+  "airports": {
+   "AirportCode": "text",
+   "AirportName": "text",
+   "City": "text",
+   "Country": "text",
+   "CountryAbbrev": "text"
+  },
+  "flights": {
+   "Airline": "number",
+   "DestAirport": "text",
+   "FlightNo": "number",
+   "SourceAirport": "text"
+  }
+ },
+ "museum_visit": {
+  "museum": {
+   "Museum_ID": "number",
+   "Name": "text",
+   "Num_of_Staff": "number",
+   "Open_Year": "text"
+  },
+  "visit": {
+   "Museum_ID": "number",
+   "Num_of_Ticket": "number",
+   "Total_spent": "number",
+   "visitor_ID": "text"
+  },
+  "visitor": {
+   "Age": "number",
+   "ID": "number",
+   "Level_of_membership": "number",
+   "Name": "text"
+  }
+ },
+ "network_1": {
+  "Friend": {
+   "friend_id": "number",
+   "student_id": "number"
+  },
+  "Highschooler": {
+   "ID": "number",
+   "grade": "number",
+   "name": "text"
+  },
+  "Likes": {
+   "liked_id": "number",
+   "student_id": "number"
+  }
+ },
+ "orchestra": {
+  "conductor": {
+   "Age": "number",
+   "Conductor_ID": "number",
+   "Name": "text",
+   "Nationality": "text",
+   "Year_of_Work": "number"
+  },
+  "orchestra": {
+   "Conductor_ID": "number",
+   "Major_Record_Format": "text",
+   "Orchestra": "text",
+   "Orchestra_ID": "number",
+   "Record_Company": "text",
+   "Year_of_Founded": "number"
+  },
+  "performance": {
+   "Date": "text",
+   "Official_ratings_(millions)": "number",
+   "Orchestra_ID": "number",
+   "Performance_ID": "number",
+   "Share": "text",
+   "Type": "text",
+   "Weekly_rank": "text"
+  },
+  "show": {
+   "Attendance": "number",
+   "If_first_show": "others",
+   "Performance_ID": "number",
+   "Result": "text",
+   "Show_ID": "number"
+  }
+ },
+ "pets_1": {
+  "Has_Pet": {
+   "PetID": "number",
+   "StuID": "number"
+  },
+  "Pets": {
+   "PetID": "number",
+   "PetType": "text",
+   "pet_age": "number",
+   "weight": "number"
+  },
+  "Student": {
+   "Advisor": "number",
+   "Age": "number",
+   "Fname": "text",
+   "LName": "text",
+   "Major": "number",
+   "Sex": "text",
+   "StuID": "number",
+   "city_code": "text"
+  }
+ },
+ "poker_player": {
+  "people": {
+   "Birth_Date": "text",
+   "Height": "number",
+   "Name": "text",
+   "Nationality": "text",
+   "People_ID": "number"
+  },
+  "poker_player": {
+   "Best_Finish": "number",
+   "Earnings": "number",
+   "Final_Table_Made": "number",
+   "Money_Rank": "number",
+   "People_ID": "number",
+   "Poker_Player_ID": "number"
+  }
+ },
+ "real_estate_properties": {
+  "Other_Available_Features": {
+   "feature_description": "text",
+   "feature_id": "number",
+   "feature_name": "text",
+   "feature_type_code": "text"
+  },
+  "Other_Property_Features": {
+   "feature_id": "number",
+   "property_feature_description": "text",
+   "property_id": "number"
+  },
+  "Properties": {
+   "agreed_selling_price": "number",
+   "apt_feature_1": "text",
+   "apt_feature_2": "text",
+   "apt_feature_3": "text",
+   "buyer_offered_price": "number",
+   "date_on_market": "time",
+   "date_sold": "time",
+   "fld_feature_1": "text",
+   "fld_feature_2": "text",
+   "fld_feature_3": "text",
+   "hse_feature_1": "text",
+   "hse_feature_2": "text",
+   "hse_feature_3": "text",
+   "oth_feature_1": "text",
+   "oth_feature_2": "text",
+   "oth_feature_3": "text",
+   "other_property_details": "text",
+   "property_address": "text",
+   "property_id": "number",
+   "property_name": "text",
+   "property_type_code": "text",
+   "room_count": "number",
+   "shp_feature_1": "text",
+   "shp_feature_2": "text",
+   "shp_feature_3": "text",
+   "vendor_requested_price": "number"
+  },
+  "Ref_Feature_Types": {
+   "feature_type_code": "text",
+   "feature_type_name": "text"
+  },
+  "Ref_Property_Types": {
+   "property_type_code": "text",
+   "property_type_description": "text"
+  }
+ },
+ "singer": {
+  "singer": {
+   "Birth_Year": "number",
+   "Citizenship": "text",
+   "Name": "text",
+   "Net_Worth_Millions": "number",
+   "Singer_ID": "number"
+  },
+  "song": {
+   "Highest_Position": "number",
+   "Sales": "number",
+   "Singer_ID": "number",
+   "Song_ID": "number",
+   "Title": "text"
+  }
+ },
+ "student_transcripts_tracking": {
+  "Addresses": {
+   "address_id": "number",
+   "city": "text",
+   "country": "text",
+   "line_1": "text",
+   "line_2": "text",
+   "line_3": "text",
+   "other_address_details": "text",
+   "state_province_county": "text",
+   "zip_postcode": "text"
+  },
+  "Courses": {
+   "course_description": "text",
+   "course_id": "number",
+   "course_name": "text",
+   "other_details": "text"
+  },
+  "Degree_Programs": {
+   "degree_program_id": "number",
+   "degree_summary_description": "text",
+   "degree_summary_name": "text",
+   "department_id": "number",
+   "other_details": "text"
+  },
+  "Departments": {
+   "department_description": "text",
+   "department_id": "number",
+   "department_name": "text",
+   "other_details": "text"
+  },
+  "Sections": {
+   "course_id": "number",
+   "other_details": "text",
+   "section_description": "text",
+   "section_id": "number",
+   "section_name": "text"
+  },
+  "Semesters": {
+   "other_details": "text",
+   "semester_description": "text",
+   "semester_id": "number",
+   "semester_name": "text"
+  },
+  "Student_Enrolment": {
+   "degree_program_id": "number",
+   "other_details": "text",
+   "semester_id": "number",
+   "student_enrolment_id": "number",
+   "student_id": "number"
+  },
+  "Student_Enrolment_Courses": {
+   "course_id": "number",
+   "student_course_id": "number",
+   "student_enrolment_id": "number"
+  },
+  "Students": {
+   "cell_mobile_number": "text",
+   "current_address_id": "number",
+   "date_first_registered": "time",
+   "date_left": "time",
+   "email_address": "text",
+   "first_name": "text",
+   "last_name": "text",
+   "middle_name": "text",
+   "other_student_details": "text",
+   "permanent_address_id": "number",
+   "ssn": "text",
+   "student_id": "number"
+  },
+  "Transcript_Contents": {
+   "student_course_id": "number",
+   "transcript_id": "number"
+  },
+  "Transcripts": {
+   "other_details": "text",
+   "transcript_date": "time",
+   "transcript_id": "number"
+  }
+ },
+ "tvshow": {
+  "Cartoon": {
+   "Channel": "text",
+   "Directed_by": "text",
+   "Original_air_date": "text",
+   "Production_code": "number",
+   "Title": "text",
+   "Written_by": "text",
+   "id": "number"
+  },
+  "TV_Channel": {
+   "Content": "text",
+   "Country": "text",
+   "Hight_definition_TV": "text",
+   "Language": "text",
+   "Package_Option": "text",
+   "Pay_per_view_PPV": "text",
+   "Pixel_aspect_ratio_PAR": "text",
+   "id": "text",
+   "series_name": "text"
+  },
+  "TV_series": {
+   "18_49_Rating_Share": "text",
+   "Air_Date": "text",
+   "Channel": "text",
+   "Episode": "text",
+   "Rating": "text",
+   "Share": "number",
+   "Viewers_m": "text",
+   "Weekly_Rank": "number",
+   "id": "number"
+  }
+ },
+ "voter_1": {
+  "AREA_CODE_STATE": {
+   "area_code": "number",
+   "state": "text"
+  },
+  "CONTESTANTS": {
+   "contestant_name": "text",
+   "contestant_number": "number"
+  },
+  "VOTES": {
+   "contestant_number": "number",
+   "created": "time",
+   "phone_number": "number",
+   "state": "text",
+   "vote_id": "number"
+  }
+ },
+ "world_1": {
+  "city": {
+   "CountryCode": "text",
+   "District": "text",
+   "ID": "number",
+   "Name": "text",
+   "Population": "number"
+  },
+  "country": {
+   "Capital": "number",
+   "Code": "text",
+   "Code2": "text",
+   "Continent": "text",
+   "GNP": "number",
+   "GNPOld": "number",
+   "GovernmentForm": "text",
+   "HeadOfState": "text",
+   "IndepYear": "number",
+   "LifeExpectancy": "number",
+   "LocalName": "text",
+   "Name": "text",
+   "Population": "number",
+   "Region": "text",
+   "SurfaceArea": "number"
+  },
+  "countrylanguage": {
+   "CountryCode": "text",
+   "IsOfficial": "text",
+   "Language": "text",
+   "Percentage": "number"
+  },
+  "sqlite_sequence": {
+   "name": "text",
+   "seq": "text"
+  }
+ },
+ "wta_1": {
+  "matches": {
+   "best_of": "number",
+   "draw_size": "number",
+   "loser_age": "number",
+   "loser_entry": "text",
+   "loser_hand": "text",
+   "loser_ht": "number",
+   "loser_id": "number",
+   "loser_ioc": "text",
+   "loser_name": "text",
+   "loser_rank": "number",
+   "loser_rank_points": "number",
+   "loser_seed": "number",
+   "match_num": "number",
+   "minutes": "number",
+   "round": "text",
+   "score": "text",
+   "surface": "text",
+   "tourney_date": "time",
+   "tourney_id": "text",
+   "tourney_level": "text",
+   "tourney_name": "text",
+   "winner_age": "number",
+   "winner_entry": "text",
+   "winner_hand": "text",
+   "winner_ht": "number",
+   "winner_id": "number",
+   "winner_ioc": "text",
+   "winner_name": "text",
+   "winner_rank": "number",
+   "winner_rank_points": "number",
+   "winner_seed": "number",
+   "year": "number"
+  },
+  "players": {
+   "birth_date": "time",
+   "country_code": "text",
+   "first_name": "text",
+   "hand": "text",
+   "last_name": "text",
+   "player_id": "number"
+  },
+  "rankings": {
+   "player_id": "number",
+   "ranking": "number",
+   "ranking_date": "time",
+   "ranking_points": "number",
+   "tours": "number"
+  }
+ }
+}

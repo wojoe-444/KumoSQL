@@ -1,0 +1,770 @@
+{
+ "source": {
+  "repository": "https://github.com/WindOctober/Logos",
+  "commit": "333d5275ac871f5b36ce3a7dc5f6fef5f7879069",
+  "folder": "benchmarks/core",
+  "licence": "Logos code MIT (LICENSE); R-Bot workload Apache-2.0 (licenses/RBot-LICENSE); TPC-DS kit EULA (licenses/TPCDS-EULA.txt). The query text is fetched at run time and never committed."
+ },
+ "files": {
+  "../../LICENSE": "ac4463a051570534b521c60ec59484cb0d5973e671e6b56ed53c4fdf276bb18f",
+  "licenses/RBot-LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+  "licenses/TPCDS-EULA.txt": "adc6ad576e1723eac91ff83ec2d016ef254202286f5a767b99558c8e4e3c61e3",
+  "rbot/dsb/create_tables.sql": "805a1b08edf45fee0326efca6056ca881d92a00969e102fe731cf0781d24c0ea",
+  "rbot/dsb/query001/query001_0.sql": "9262f1f129bb6b357513fd4e03f45588f56b9b72494f104716bdb5b96f355d9f",
+  "rbot/dsb/query001/query001_1.sql": "ec0b06d0f837dff1a8e726e8c6c21fc5d516ff1aa7e09f4564a6f0378fe6dae7",
+  "rbot/dsb/query010/query010_0.sql": "573246b35edf60cfafc2fa482c20f3736a61b892b86f98fa03c57503e68bebba",
+  "rbot/dsb/query010/query010_1.sql": "8ba0bdf884fc30ce1b1349afaf56fea6590157aa1430cf1695ee2e86a0d91a84",
+  "rbot/dsb/query013/query013_0.sql": "63f9aa33d1b58bbf91319b9bf1a1d9ef768dca0293343de49fb721f62ff5435a",
+  "rbot/dsb/query013/query013_1.sql": "41ddaa63d96136385b42697a5ab78d6823ccdd9cb91d3471d2161df2f20a77b7",
+  "rbot/dsb/query014/query014_0.sql": "5afc9a5c820dada7e8fb6d90a8bed25514dc5bc22e1021de27a5baf01ea2c1f8",
+  "rbot/dsb/query014/query014_1.sql": "aac55d623dbbf886854cd57bdd9f502fdda0d6746edb72e3055fb03c1a3aaef9",
+  "rbot/dsb/query018/query018_0.sql": "484547944f831f42b60199c7d20c10a2f5f88979e6ec0c4a785408cd52fdf2fb",
+  "rbot/dsb/query018/query018_1.sql": "3e52bddce5380944d792d5c87f9de0ce110cbb88b4e3c955d2d3ba95e5c200cc",
+  "rbot/dsb/query019/query019_0.sql": "58e5a58cb7658e46a452979156a295769e79270a3e234a8ad3e46bc670db96d9",
+  "rbot/dsb/query019/query019_1.sql": "97dc83198ae7c5842f1a989d0bc156a1fd23381f48af07b9743278837d045f0d",
+  "rbot/dsb/query023/query023_0.sql": "41b4e53becd7f676edd6e0b693c4eb96b37e947c12f58a90f4aa6fa4dc3adb75",
+  "rbot/dsb/query023/query023_1.sql": "7b6396c7c86d5dcf5f390afcdccf87628577943f1b32c316888a5b989cc305ca",
+  "rbot/dsb/query025/query025_0.sql": "cdf8fada367f24de808ff963226cf01d83acb7edc08ecfd3e96431d4fa012401",
+  "rbot/dsb/query025/query025_1.sql": "4e013fa1a8ebb876d803691f8d34ab8e02f8efec051fd39ef828e6fb12c9aa1c",
+  "rbot/dsb/query027/query027_0.sql": "a67e889bfebd0361d19c838003d0fe13923e11440643bca44466dbc88dc190b5",
+  "rbot/dsb/query027/query027_1.sql": "a2da8bd8e626cfc100ceb60da05ea608a6a81d6a751076abaa630662b68425e5",
+  "rbot/dsb/query030/query030_0.sql": "c6ca2884656b278f46169d56db8a3fa77399aa4a241f5d6395f7634cec4afa2a",
+  "rbot/dsb/query030/query030_1.sql": "fa0721edb45c4120af0591a312763c61ac6b525ad28793c6d32dcdf20e9d81f3",
+  "rbot/dsb/query031/query031_0.sql": "b6d1d36fbf473c600884b442a88f43676aa347da83639b2ff48f39a043e82ff6",
+  "rbot/dsb/query031/query031_1.sql": "267458869862e4ee4c7e6e0dd0a88738cd9ab5ccce1e14e7ff27fd877d8e94ff",
+  "rbot/dsb/query032/query032_0.sql": "5742bc3247399bd88b39e341d0c80326f7fdbce594e9d91785c9a657f5fdb90e",
+  "rbot/dsb/query032/query032_1.sql": "4b03a2a53f01b3554c7418a479fde29422d4ec0a1200ca07140534b094a43f77",
+  "rbot/dsb/query038/query038_0.sql": "9896a687807d3e2cec9e837f1a4f7159ce2c27fa4c3f33c7deb0b20131c8fca1",
+  "rbot/dsb/query038/query038_1.sql": "788d9e5b076513ce36c22990ec48101d74cc04661363d873c5f81ef59cf53018",
+  "rbot/dsb/query039/query039_0.sql": "67bcc505154b6041676acdb410dde3de65f7a067e1714568eb6802be7faf2b80",
+  "rbot/dsb/query039/query039_1.sql": "67ee220c3a22a65a3491693235babecb02a9a33898ab8ecf5cd26fe1e4f86180",
+  "rbot/dsb/query040/query040_0.sql": "c4b82806066a6e98343d56061198aa3a72efcd92d8837ffb1c29d533c7fae465",
+  "rbot/dsb/query040/query040_1.sql": "279d9b33c13405a066aa374969351e5cf912a3d56c511c81fe18b8d2d0483602",
+  "rbot/dsb/query050/query050_0.sql": "24f82b7beaeda360dea090ba49459e9063ed35ba053cd2ee353390f13509cf3b",
+  "rbot/dsb/query050/query050_1.sql": "dff23d9b2bd4a36b5089cf9109a8bcdeea136d9c2186a1505dd72526cfe51ab0",
+  "rbot/dsb/query054/query054_0.sql": "18f84a9c960e39d87ece70c46ead15897191edac2f8590557292e5bbeece1caa",
+  "rbot/dsb/query054/query054_1.sql": "b7f6d7111ad2055fc6c6060280d99f38d8cb5e701a0f98f7712249f1730d3e04",
+  "rbot/dsb/query058/query058_0.sql": "ab1da77acc6b81e428374be68b6d0f091cfdb6798b935e03d43790553d3bde08",
+  "rbot/dsb/query058/query058_1.sql": "16b2db5afdcdcd653ca7ba5464818d36cc05ba9af109b1899b92af9038f4c574",
+  "rbot/dsb/query059/query059_0.sql": "4dc2ab0566f992042fcf202df818326505039ca94335aa93917c9376292ee299",
+  "rbot/dsb/query059/query059_1.sql": "ca6cf0009ba638c62dc019b473926658d7327c7f008205349f0a2636c6d99efe",
+  "rbot/dsb/query064/query064_0.sql": "8acdfeb733ce94640ee6709d0cb5990a8dcf7893dfa6492f0e3e8e20505578cc",
+  "rbot/dsb/query064/query064_1.sql": "77080092c9e12b0d5aff9362021bbed0c23927a9066b34d690eb5c5f624d510e",
+  "rbot/dsb/query065/query065_0.sql": "16ff43ef9c9afd99540084c229dd3f8f7545fe2c73c224c3092f59add34459f6",
+  "rbot/dsb/query065/query065_1.sql": "3cda25b4ce0239af6b51afed1061f036d1ec563b701d5ecd2391f2a2a76238b9",
+  "rbot/dsb/query069/query069_0.sql": "eed801a564ce0ca4f0fccf0488ff7a12f7de8b1ae7f65c379044491993c94cd2",
+  "rbot/dsb/query069/query069_1.sql": "f8cfaeafc6fc31980c0d9a02a5a3de37187bcfe619b67a0d7f996354604497a4",
+  "rbot/dsb/query072/query072_0.sql": "9da84fa3cbed5f3b7a9b00b71d11bf08d0c1e41a834df8326eee55d8e6a6a21f",
+  "rbot/dsb/query072/query072_1.sql": "630d6c476e3d134837b1430eae1b2dbb6bee83c8c2a88199e47c4eb9991cb924",
+  "rbot/dsb/query075/query075_0.sql": "36f822e13cdab4f1ba21e89e0fbaa72a4da989d06b05d6462eece9e1838e4077",
+  "rbot/dsb/query075/query075_1.sql": "a0d720e0e733072cb98f6484a7902143b35d7b812a9858de867f4ba779221fc6",
+  "rbot/dsb/query080/query080_0.sql": "56572f072b9b71265328fc1ce7590784b43bfd4aeb3dae36e573b0678164b2c1",
+  "rbot/dsb/query080/query080_1.sql": "eacf6768ab5b41bc1d11bc4cfa683f42910552340c15f50ae912d89fd2478731",
+  "rbot/dsb/query081/query081_0.sql": "02801c8719bff927ba482532dfb7ef255531ac58c935afb94dd1f0e6b69946fc",
+  "rbot/dsb/query081/query081_1.sql": "46fb3aeeed21d248bf5cb5c9129bc9ef38b6074cc907eeaa1c0b5eb637c2947d",
+  "rbot/dsb/query083/query083_0.sql": "d1e67fa9882c101079901a5bbfc65150b502db757dcd97a3e7f1f463cf0e286a",
+  "rbot/dsb/query083/query083_1.sql": "1c51aa4195589b5cb22b754e21a0919f8ca5c588ea88f9c4557dffb6a87b211c",
+  "rbot/dsb/query084/query084_0.sql": "3d486276dd08f09294871cdf84d4bdeaea6724ea0a1da2f5a3474c8775cc9093",
+  "rbot/dsb/query084/query084_1.sql": "9dee9b1a0160e242e3042d412cabcf94f90aa33c09af640082a80c1812ce587f",
+  "rbot/dsb/query085/query085_0.sql": "c763f73f1cf885d02285e6c3a41717203c714ad71c1718c15f0e02cc8389e90b",
+  "rbot/dsb/query085/query085_1.sql": "a29e35ed453fc980c0499971082dbdd7c1e1eed161efff09e1717adcf3c854c1",
+  "rbot/dsb/query087/query087_0.sql": "1e263afd378eb30e6b9ad9e9075dedcccafdd53b0e32b1d24c19e8053a72fa8b",
+  "rbot/dsb/query087/query087_1.sql": "6ad76cb59de35495da6b0cba97b159bf68a26cc17c8cf6bb009b0d55bb660295",
+  "rbot/dsb/query091/query091_0.sql": "e9c96253f5901c9e34ef58aaa3188bebec9f53eaac308bed6a1b13b7590c0b6e",
+  "rbot/dsb/query091/query091_1.sql": "b089e0d1210cc82e3e750dba65ab353c65047f9b68ebed4c3b907a9dbadd9433",
+  "rbot/dsb/query092/query092_0.sql": "000f3b90891ef72f8018f4de49c43cba873c8c4d15c5e5e31ae31c9496752550",
+  "rbot/dsb/query092/query092_1.sql": "b03248db36fedafb8e2468fce569e9f7e1e2562c9a1ef96fd457b77093349ded",
+  "rbot/dsb/query094/query094_0.sql": "1fd05014cea6f6eee49a419ed12537d3e63d6daedeb1204fa02d04d908b90ad4",
+  "rbot/dsb/query094/query094_1.sql": "de443fb5f7a105e7ce3558329ed6d6d7007990faaa4ebfd58a290bca248dff76",
+  "rbot/dsb/query099/query099_0.sql": "6a0fb53289cf30c488f43c4f381e26577e9e2518049e113c4af988732cd70b45",
+  "rbot/dsb/query099/query099_1.sql": "4536022748d4d340a31be72d54891cb7573cea76f002a70b75221945e691d101",
+  "rbot/dsb/query100/query100_0.sql": "fef449692867f55a7ca370e61d68cec7d9e494589fbf31752bb0f9e7907145fd",
+  "rbot/dsb/query100/query100_1.sql": "aafdf22347706a213cf469d0fd0d1840cb30387e3860aa3b5355bbfef16b4a24",
+  "rbot/dsb/query101/query101_0.sql": "0e448f904eb690e4317be31580f85a1e28fca4400006d41fb4afee2612637786",
+  "rbot/dsb/query101/query101_1.sql": "bff440eacdb271294caf5897916b12e394c3cf65a76f3ec5f0fe3d829d2e628d",
+  "rbot/dsb/query102/query102_0.sql": "a10f220c298a53ca01292fcf26da1cf0745a2e4641f3e91bb647e3bfc4d55705",
+  "rbot/dsb/query102/query102_1.sql": "962153434a64128db4bdacafc524de7ea2355f2c0a597802b47596700cc54164",
+  "rbot/rewrite-pairs.manifest.json": "443fecfdd35d13e1997b15eaaa48e294733082a40d4652973bed767dce9cf66b",
+  "rbot/tpch/create_tables.sql": "4fc33b97f09b573d748179f6a0a4d049f8d5057c7919ce2c163bb80e1af23eef",
+  "rbot/tpch/query1/query1_0.sql": "ce5aa50aabc577dd5118ea19fecab30f721db6a55bbedbfb1e354e91ff833c13",
+  "rbot/tpch/query1/query1_1.sql": "47568d94831e35c38fbebb62fe541976c52f8214bb6694f189b246ab38230fce",
+  "rbot/tpch/query10/query10_0.sql": "4a83575b80f0b04a8d65ad187bc965ed8619edc6fe20919f3130f043ee83c2b7",
+  "rbot/tpch/query10/query10_1.sql": "a89b49a0c0faf23123ccbf1efe22d0c236021531b90dfd023483334b280c1562",
+  "rbot/tpch/query11/query11_0.sql": "0f31524d68f2ec94f5167c72aa948ca816b44305c7bcfac3bc368e0ce981a220",
+  "rbot/tpch/query11/query11_1.sql": "bc1cf4c20f2ea09aa90163290651bb0dde745f2b9573ef202d606667419c84be",
+  "rbot/tpch/query12/query12_0.sql": "b0df59cbb67f86b39fd62393e022739759d8db0d442cfa64ca8a48391fe44a0d",
+  "rbot/tpch/query12/query12_1.sql": "3b8b429e2573f11c65205423be4910f846c6c9bf1f0fd50c644c5c546a721bec",
+  "rbot/tpch/query13/query13_0.sql": "50948949af5fe3df0677b612b1de33cc00112d3adfbfa629007739319452d4f1",
+  "rbot/tpch/query13/query13_1.sql": "4d38af87ddf2316d0bad18934062aedaa3e7e7daa2e0ae74c031866f80a4eef8",
+  "rbot/tpch/query14/query14_0.sql": "de561001c5069cd65ad16e8517f6ad557d1f9f63e901d53f2fb4609ca487b55d",
+  "rbot/tpch/query14/query14_1.sql": "4d1ed01b4f1b6f19c7e59f64bfb196c802184667b8b9b71ad8a18ae03baa3ca5",
+  "rbot/tpch/query15/query15_0.sql": "ea5cc4952281f37f445e989026a0e22f96b42ce12b81c01f185f974ff9e735a7",
+  "rbot/tpch/query15/query15_1.sql": "246535059f8c4dcbe9fb7aff725646d2fbacc1a978682cef53b5653474974a5f",
+  "rbot/tpch/query16/query16_0.sql": "7743c97845f80b840c2d8c9b81983b19953eea3123e11b7b5ec76e32116a0803",
+  "rbot/tpch/query16/query16_1.sql": "5cc5e198e55722b15bb7b5b52196345881c8b2e0714229cbc44533dd921748ef",
+  "rbot/tpch/query17/query17_0.sql": "b2829c302ae876fda6399c6fc1d2c678de033a7ff85f20e74dd0457ce89fa99a",
+  "rbot/tpch/query17/query17_1.sql": "2e9309278a3d7b3cb679102a7896d38b55dce0de653aad3f7b605f0c915dfbd4",
+  "rbot/tpch/query18/query18_0.sql": "4dbe19d90a13481e6d62b2a297baaf4afe1297720facca882054e3f076b99b9e",
+  "rbot/tpch/query18/query18_1.sql": "95e2b4556c14487377a85cf6aa1bac209e87a59568cdbf1fd31ee5607d00cb71",
+  "rbot/tpch/query19/query19_0.sql": "a6f145368382bb5e0147b492287c289ce61bbff335d72219aebb94717b5ca6fd",
+  "rbot/tpch/query19/query19_1.sql": "657e89d06d6dff9460a2fe83ffe6f63b30b37676d1a6c65502aa76ac4903510a",
+  "rbot/tpch/query2/query2_0.sql": "ea69888141220ca67e7b46193392e85515e6eecd7ca82e7bdeec5ce488cb3c40",
+  "rbot/tpch/query2/query2_1.sql": "ad780b9d1e7a514172b07e5279b1f0d05616ccec5e8de1a664284abf7c6f676e",
+  "rbot/tpch/query20/query20_0.sql": "2f33b4b78a26e382c00895a86913aba6a1fbf4d7144c533be6632b17527ebd5d",
+  "rbot/tpch/query20/query20_1.sql": "80d0b3f0a27a060b7ea653bd97e5f99763386476516c00da77f6afcc86225662",
+  "rbot/tpch/query21/query21_0.sql": "1f7034c673511387030df7c6be6d4e96f5d3424a6270743074398fa40d226a40",
+  "rbot/tpch/query21/query21_1.sql": "dab1c9a25df3cf9f60be350a0d28fa5eaa624a87274ae5a4100afeef431d61b0",
+  "rbot/tpch/query22/query22_0.sql": "121d1e715c2bb0741774a10f616404b07f71defafa33052134d708ebec3ebe36",
+  "rbot/tpch/query22/query22_1.sql": "d63964d02d294be5782dd9798903a13c48e616442d76729319622303c4145b23",
+  "rbot/tpch/query3/query3_0.sql": "7e633d6558011125df8b4bf1d5564d2dd419cf82912201af9774bbebf88f6753",
+  "rbot/tpch/query3/query3_1.sql": "ee73158df9dfc2900c8edc61332a690cf9b178fb776f0e0c20401f8f26a7bc9a",
+  "rbot/tpch/query4/query4_0.sql": "e6a051b614e2443bec4c4f57d549c96c3792c6be5bf59d61b94997bafedc91b0",
+  "rbot/tpch/query4/query4_1.sql": "6c459ed40cf46bbbf474a8d930057bbaae1c65d1d26544ceee4b4ffa2072b306",
+  "rbot/tpch/query5/query5_0.sql": "ce2848386af75ee3267d9a55c352fd1aab699296080e83874d32e36b18bc4ba4",
+  "rbot/tpch/query5/query5_1.sql": "62d71408e52854e7f526179893adfe9f8ddbd144fea6250cdccd8d6ef86cdd90",
+  "rbot/tpch/query6/query6_0.sql": "0f01955d3e4e1f284a755daf90380f77fd59f9b182200afa3d3a0f4e71db0f03",
+  "rbot/tpch/query6/query6_1.sql": "63203155e141c73c4ed6ff6072cb9e7f38953d1d6beccacab1163133763d586c",
+  "rbot/tpch/query7/query7_0.sql": "7e2e25aadf36b1da3285d929d998fa08886364548def3b7cf517c03fd5352e78",
+  "rbot/tpch/query7/query7_1.sql": "b65b556d333a81d9b7f1f9b466537eb5b09b6ace2cbec41e35dbc230dc270ee9",
+  "rbot/tpch/query8/query8_0.sql": "397100ff66b97e1c80fc83bd88ee0c79bd2e9ae5bf78b639889d8299b08451fd",
+  "rbot/tpch/query8/query8_1.sql": "9903aef9eb720aaa5da83ad7d6c0eed3d9758b3273e05f00ef32d97123e7fabd",
+  "rbot/tpch/query9/query9_0.sql": "aa60ad1bce6ddd665bcc4b13bab1817830c0e7150c806bd27bb3896167210398",
+  "rbot/tpch/query9/query9_1.sql": "1de82667f59268929f7ad72c6f622c6343dde8249e9d3fa516b60ec58914003f",
+  "tpcds/variants/create_tables.sql": "567a6aaf9311602649cf967bc28b31c37a4d644a9537b3f593d330939643a8b1",
+  "tpcds/variants/manifest.tsv": "3abaaa76fded0f8dd2ccc7fe68cd43bfcf6699a8e0f559b1f3c25fad72c78429",
+  "tpcds/variants/query005/query005_0.sql": "89c1b5b1c4212e4e0e6076706e2febe5f3d1d672ca9ddcf0e9dda5dc4c418db5",
+  "tpcds/variants/query005/query005_1.sql": "54e43cf2fc3c5b0fd7768eb057c2d1a946d4da4cf3d662cde9d258dce9f85607",
+  "tpcds/variants/query010/query010_0.sql": "e93b0aa0d48b8383a70e1d3d221c98f25ee87b0dc105cef4fb3de08ca6f8b30e",
+  "tpcds/variants/query010/query010_1.sql": "449fd32b29eb68e16391eb803ff13b05454674e2cbf0535f33ed57e0d0a965ff",
+  "tpcds/variants/query014/query014_0.sql": "6f6a61056b8c678c19a5dfa1f9546c45c68840fa014afebc80cadc3898da9ce2",
+  "tpcds/variants/query014/query014_1.sql": "84d0162d7e66415abb3bc6b1556706fbc8d1f0b58b859212f1251d84ed7bd831",
+  "tpcds/variants/query018/query018_0.sql": "c5f4d0df039d4c1abf4ab7fe3df5b7184e202f59190b537e01bc60917ed55e27",
+  "tpcds/variants/query018/query018_1.sql": "dca77e7a50e50b4267c5d75bff41335ef5890381268e9184de5d1e83cebb3dfb",
+  "tpcds/variants/query022/query022_0.sql": "70446226ddbfb91d479bbb0cf6cb3bae2313c5c8f8ec78f3d18cafdac01e2d40",
+  "tpcds/variants/query022/query022_1.sql": "9777502124723aa961d3d77e57c6d7f3cb4e021484662379ee39872b5e482ba0",
+  "tpcds/variants/query027/query027_0.sql": "017d0e277193a5af44e20166738b613c3b1fa4762e133e021fc19d3f11d555b9",
+  "tpcds/variants/query027/query027_1.sql": "cf8e255d2dba0da9e5798f0f9502242c5b9dfc40042ee3546b621037317bb161",
+  "tpcds/variants/query035/query035_0.sql": "09b47db9b87b9ebb2565140ce57a0a3c2c7fcfdc4d2271ccf1b729764fb2a29c",
+  "tpcds/variants/query035/query035_1.sql": "f4674c2f78887a27cf1b72417eb1c0b63913a15d65d7760ef6f5e27576196c19",
+  "tpcds/variants/query036/query036_0.sql": "88695cd7de0be186e9b69f2fd215b354c0f2634c040744c6899558c92a4f5603",
+  "tpcds/variants/query036/query036_1.sql": "5f207bf6ff14371e19037ead00b4f2017c23d6a5664a2c5879e9065abe37a41d",
+  "tpcds/variants/query051/query051_0.sql": "7c924e65790123076197516e37ab29692d38f6a799459596a5ed44536a7c828f",
+  "tpcds/variants/query051/query051_1.sql": "fabb0b67aada4b5d0de26d8ed1b917211cea6c169c363fa522bc26f99836b31c",
+  "tpcds/variants/query067/query067_0.sql": "9eaf2b12e7be3c6ec45db60fdb1dc545aaa5ff4a6f8e853b5e1890d703fa01a8",
+  "tpcds/variants/query067/query067_1.sql": "0244c902638da5379e16629fafa81536897c41d340917b23ebe566f919010c44",
+  "tpcds/variants/query070/query070_0.sql": "cbc46a7f39f229dbfc2ee4c2e52f56b2719bc77b729b7f48969380cf372c385d",
+  "tpcds/variants/query070/query070_1.sql": "69600ed5a30c20e378fe2cad3ba2978a25f0b616299eefdde9a8d24157f3a5f9",
+  "tpcds/variants/query077/query077_0.sql": "cd251bbf0613d0da65e1ef360120adf3eadbcc4e8d4ee489a175fe0213160105",
+  "tpcds/variants/query077/query077_1.sql": "9565101acc8dedf2f79810caf584576d3734e5710003b4f2ba4749cc81a61063",
+  "tpcds/variants/query080/query080_0.sql": "9a9e2194becfb43db38f83ed6607db2ae819fa1b21c1249438529490a9a3e3ef",
+  "tpcds/variants/query080/query080_1.sql": "4f017997d515f35aa91f47561fcfa2c02bccadfdfe17d9b507a66c0156424f28",
+  "tpcds/variants/query086/query086_0.sql": "434d88e11b2c572d9b41fa7afd56cfe4bc15e89efdedf26ac1d21c30fe7f97a1",
+  "tpcds/variants/query086/query086_1.sql": "512c6ad4dead6d877a2a8110c7839708b2afb04378531b83530b9c068ec6fb6e"
+ },
+ "cases": {
+  "rbot-tpch/query1": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query1/query1_0.sql",
+   "target": "rbot/tpch/query1/query1_1.sql"
+  },
+  "rbot-tpch/query2": {
+   "family": "rbot-tpch",
+   "rule": "FILTER_SUB_QUERY_TO_CORRELATE",
+   "source": "rbot/tpch/query2/query2_0.sql",
+   "target": "rbot/tpch/query2/query2_1.sql"
+  },
+  "rbot-tpch/query3": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query3/query3_0.sql",
+   "target": "rbot/tpch/query3/query3_1.sql"
+  },
+  "rbot-tpch/query4": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/tpch/query4/query4_0.sql",
+   "target": "rbot/tpch/query4/query4_1.sql"
+  },
+  "rbot-tpch/query5": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query5/query5_0.sql",
+   "target": "rbot/tpch/query5/query5_1.sql"
+  },
+  "rbot-tpch/query6": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query6/query6_0.sql",
+   "target": "rbot/tpch/query6/query6_1.sql"
+  },
+  "rbot-tpch/query7": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query7/query7_0.sql",
+   "target": "rbot/tpch/query7/query7_1.sql"
+  },
+  "rbot-tpch/query8": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query8/query8_0.sql",
+   "target": "rbot/tpch/query8/query8_1.sql"
+  },
+  "rbot-tpch/query9": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query9/query9_0.sql",
+   "target": "rbot/tpch/query9/query9_1.sql"
+  },
+  "rbot-tpch/query10": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query10/query10_0.sql",
+   "target": "rbot/tpch/query10/query10_1.sql"
+  },
+  "rbot-tpch/query11": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query11/query11_0.sql",
+   "target": "rbot/tpch/query11/query11_1.sql"
+  },
+  "rbot-tpch/query12": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query12/query12_0.sql",
+   "target": "rbot/tpch/query12/query12_1.sql"
+  },
+  "rbot-tpch/query13": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/tpch/query13/query13_0.sql",
+   "target": "rbot/tpch/query13/query13_1.sql"
+  },
+  "rbot-tpch/query14": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query14/query14_0.sql",
+   "target": "rbot/tpch/query14/query14_1.sql"
+  },
+  "rbot-tpch/query15": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query15/query15_0.sql",
+   "target": "rbot/tpch/query15/query15_1.sql"
+  },
+  "rbot-tpch/query16": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_EXPAND_DISTINCT_AGGREGATES",
+   "source": "rbot/tpch/query16/query16_0.sql",
+   "target": "rbot/tpch/query16/query16_1.sql"
+  },
+  "rbot-tpch/query17": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/tpch/query17/query17_0.sql",
+   "target": "rbot/tpch/query17/query17_1.sql"
+  },
+  "rbot-tpch/query18": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/tpch/query18/query18_0.sql",
+   "target": "rbot/tpch/query18/query18_1.sql"
+  },
+  "rbot-tpch/query19": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query19/query19_0.sql",
+   "target": "rbot/tpch/query19/query19_1.sql"
+  },
+  "rbot-tpch/query20": {
+   "family": "rbot-tpch",
+   "rule": "FILTER_INTO_JOIN",
+   "source": "rbot/tpch/query20/query20_0.sql",
+   "target": "rbot/tpch/query20/query20_1.sql"
+  },
+  "rbot-tpch/query21": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/tpch/query21/query21_0.sql",
+   "target": "rbot/tpch/query21/query21_1.sql"
+  },
+  "rbot-tpch/query22": {
+   "family": "rbot-tpch",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/tpch/query22/query22_0.sql",
+   "target": "rbot/tpch/query22/query22_1.sql"
+  },
+  "rbot-dsb/query001": {
+   "family": "rbot-dsb",
+   "rule": "FILTER_SUB_QUERY_TO_CORRELATE",
+   "source": "rbot/dsb/query001/query001_0.sql",
+   "target": "rbot/dsb/query001/query001_1.sql"
+  },
+  "rbot-dsb/query010": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query010/query010_0.sql",
+   "target": "rbot/dsb/query010/query010_1.sql"
+  },
+  "rbot-dsb/query013": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query013/query013_0.sql",
+   "target": "rbot/dsb/query013/query013_1.sql"
+  },
+  "rbot-dsb/query014": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query014/query014_0.sql",
+   "target": "rbot/dsb/query014/query014_1.sql"
+  },
+  "rbot-dsb/query018": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query018/query018_0.sql",
+   "target": "rbot/dsb/query018/query018_1.sql"
+  },
+  "rbot-dsb/query019": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query019/query019_0.sql",
+   "target": "rbot/dsb/query019/query019_1.sql"
+  },
+  "rbot-dsb/query023": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query023/query023_0.sql",
+   "target": "rbot/dsb/query023/query023_1.sql"
+  },
+  "rbot-dsb/query025": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query025/query025_0.sql",
+   "target": "rbot/dsb/query025/query025_1.sql"
+  },
+  "rbot-dsb/query027": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query027/query027_0.sql",
+   "target": "rbot/dsb/query027/query027_1.sql"
+  },
+  "rbot-dsb/query030": {
+   "family": "rbot-dsb",
+   "rule": "FILTER_SUB_QUERY_TO_CORRELATE",
+   "source": "rbot/dsb/query030/query030_0.sql",
+   "target": "rbot/dsb/query030/query030_1.sql"
+  },
+  "rbot-dsb/query031": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query031/query031_0.sql",
+   "target": "rbot/dsb/query031/query031_1.sql"
+  },
+  "rbot-dsb/query032": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query032/query032_0.sql",
+   "target": "rbot/dsb/query032/query032_1.sql"
+  },
+  "rbot-dsb/query038": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query038/query038_0.sql",
+   "target": "rbot/dsb/query038/query038_1.sql"
+  },
+  "rbot-dsb/query039": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query039/query039_0.sql",
+   "target": "rbot/dsb/query039/query039_1.sql"
+  },
+  "rbot-dsb/query040": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query040/query040_0.sql",
+   "target": "rbot/dsb/query040/query040_1.sql"
+  },
+  "rbot-dsb/query050": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query050/query050_0.sql",
+   "target": "rbot/dsb/query050/query050_1.sql"
+  },
+  "rbot-dsb/query054": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query054/query054_0.sql",
+   "target": "rbot/dsb/query054/query054_1.sql"
+  },
+  "rbot-dsb/query058": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query058/query058_0.sql",
+   "target": "rbot/dsb/query058/query058_1.sql"
+  },
+  "rbot-dsb/query059": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_CASE_TO_FILTER",
+   "source": "rbot/dsb/query059/query059_0.sql",
+   "target": "rbot/dsb/query059/query059_1.sql"
+  },
+  "rbot-dsb/query064": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query064/query064_0.sql",
+   "target": "rbot/dsb/query064/query064_1.sql"
+  },
+  "rbot-dsb/query065": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query065/query065_0.sql",
+   "target": "rbot/dsb/query065/query065_1.sql"
+  },
+  "rbot-dsb/query069": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query069/query069_0.sql",
+   "target": "rbot/dsb/query069/query069_1.sql"
+  },
+  "rbot-dsb/query072": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query072/query072_0.sql",
+   "target": "rbot/dsb/query072/query072_1.sql"
+  },
+  "rbot-dsb/query075": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query075/query075_0.sql",
+   "target": "rbot/dsb/query075/query075_1.sql"
+  },
+  "rbot-dsb/query080": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query080/query080_0.sql",
+   "target": "rbot/dsb/query080/query080_1.sql"
+  },
+  "rbot-dsb/query081": {
+   "family": "rbot-dsb",
+   "rule": "FILTER_SUB_QUERY_TO_CORRELATE",
+   "source": "rbot/dsb/query081/query081_0.sql",
+   "target": "rbot/dsb/query081/query081_1.sql"
+  },
+  "rbot-dsb/query083": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query083/query083_0.sql",
+   "target": "rbot/dsb/query083/query083_1.sql"
+  },
+  "rbot-dsb/query084": {
+   "family": "rbot-dsb",
+   "rule": "FILTER_INTO_JOIN",
+   "source": "rbot/dsb/query084/query084_0.sql",
+   "target": "rbot/dsb/query084/query084_1.sql"
+  },
+  "rbot-dsb/query085": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query085/query085_0.sql",
+   "target": "rbot/dsb/query085/query085_1.sql"
+  },
+  "rbot-dsb/query087": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query087/query087_0.sql",
+   "target": "rbot/dsb/query087/query087_1.sql"
+  },
+  "rbot-dsb/query091": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query091/query091_0.sql",
+   "target": "rbot/dsb/query091/query091_1.sql"
+  },
+  "rbot-dsb/query092": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query092/query092_0.sql",
+   "target": "rbot/dsb/query092/query092_1.sql"
+  },
+  "rbot-dsb/query094": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_EXPAND_DISTINCT_AGGREGATES",
+   "source": "rbot/dsb/query094/query094_0.sql",
+   "target": "rbot/dsb/query094/query094_1.sql"
+  },
+  "rbot-dsb/query099": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_REDUCE_FUNCTIONS",
+   "source": "rbot/dsb/query099/query099_0.sql",
+   "target": "rbot/dsb/query099/query099_1.sql"
+  },
+  "rbot-dsb/query100": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query100/query100_0.sql",
+   "target": "rbot/dsb/query100/query100_1.sql"
+  },
+  "rbot-dsb/query101": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query101/query101_0.sql",
+   "target": "rbot/dsb/query101/query101_1.sql"
+  },
+  "rbot-dsb/query102": {
+   "family": "rbot-dsb",
+   "rule": "AGGREGATE_PROJECT_MERGE",
+   "source": "rbot/dsb/query102/query102_0.sql",
+   "target": "rbot/dsb/query102/query102_1.sql"
+  },
+  "tpcds-variants/query005": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query005/query005_0.sql",
+   "target": "tpcds/variants/query005/query005_1.sql",
+   "templates": [
+    "query_templates/query5.tpl",
+    "query_variants/query5a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query010": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query010/query010_0.sql",
+   "target": "tpcds/variants/query010/query010_1.sql",
+   "templates": [
+    "query_templates/query10.tpl",
+    "query_variants/query10a.tpl"
+   ],
+   "features": [
+    "top",
+    "union",
+    "union_all"
+   ]
+  },
+  "tpcds-variants/query014": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query014/query014_0.sql",
+   "target": "tpcds/variants/query014/query014_1.sql",
+   "templates": [
+    "query_templates/query14.tpl",
+    "query_variants/query14a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "intersect",
+    "with"
+   ]
+  },
+  "tpcds-variants/query018": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query018/query018_0.sql",
+   "target": "tpcds/variants/query018/query018_1.sql",
+   "templates": [
+    "query_templates/query18.tpl",
+    "query_variants/query18a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query022": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query022/query022_0.sql",
+   "target": "tpcds/variants/query022/query022_1.sql",
+   "templates": [
+    "query_templates/query22.tpl",
+    "query_variants/query22a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query027": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query027/query027_0.sql",
+   "target": "tpcds/variants/query027/query027_1.sql",
+   "templates": [
+    "query_templates/query27.tpl",
+    "query_variants/query27a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "grouping",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query035": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query035/query035_0.sql",
+   "target": "tpcds/variants/query035/query035_1.sql",
+   "templates": [
+    "query_templates/query35.tpl",
+    "query_variants/query35a.tpl"
+   ],
+   "features": [
+    "top",
+    "union",
+    "union_all"
+   ]
+  },
+  "tpcds-variants/query036": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query036/query036_0.sql",
+   "target": "tpcds/variants/query036/query036_1.sql",
+   "templates": [
+    "query_templates/query36.tpl",
+    "query_variants/query36a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "grouping",
+    "rank",
+    "window",
+    "union",
+    "with"
+   ]
+  },
+  "tpcds-variants/query051": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query051/query051_0.sql",
+   "target": "tpcds/variants/query051/query051_1.sql",
+   "templates": [
+    "query_templates/query51.tpl",
+    "query_variants/query51a.tpl"
+   ],
+   "features": [
+    "top",
+    "window",
+    "full_outer",
+    "with"
+   ]
+  },
+  "tpcds-variants/query067": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query067/query067_0.sql",
+   "target": "tpcds/variants/query067/query067_1.sql",
+   "templates": [
+    "query_templates/query67.tpl",
+    "query_variants/query67a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "rank",
+    "window",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query070": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query070/query070_0.sql",
+   "target": "tpcds/variants/query070/query070_1.sql",
+   "templates": [
+    "query_templates/query70.tpl",
+    "query_variants/query70a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "grouping",
+    "rank",
+    "window",
+    "union",
+    "with"
+   ]
+  },
+  "tpcds-variants/query077": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query077/query077_0.sql",
+   "target": "tpcds/variants/query077/query077_1.sql",
+   "templates": [
+    "query_templates/query77.tpl",
+    "query_variants/query77a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query080": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query080/query080_0.sql",
+   "target": "tpcds/variants/query080/query080_1.sql",
+   "templates": [
+    "query_templates/query80.tpl",
+    "query_variants/query80a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "union",
+    "union_all",
+    "with"
+   ]
+  },
+  "tpcds-variants/query086": {
+   "family": "tpcds-variants",
+   "rule": "tpcds-variant",
+   "source": "tpcds/variants/query086/query086_0.sql",
+   "target": "tpcds/variants/query086/query086_1.sql",
+   "templates": [
+    "query_templates/query86.tpl",
+    "query_variants/query86a.tpl"
+   ],
+   "features": [
+    "top",
+    "rollup",
+    "grouping",
+    "rank",
+    "window",
+    "union",
+    "with"
+   ]
+  }
+ },
+ "label_failures": {
+  "rbot-tpch/query1": "AGGREGATE_REDUCE_FUNCTIONS writes AVG(x) as CAST(SUM(x) / COUNT(*) AS DECIMAL(15, 2)), which rounds to 2 places (Calcite types AVG of a DECIMAL(15, 2) column as DECIMAL(15, 2)); on TPC-H scale 0.1, avg_qty is 25.537587 against 25.54",
+  "rbot-dsb/query080": "AGGREGATE_REDUCE_FUNCTIONS writes the outer SUM(\"returns\") under GROUP BY ROLLUP as COALESCE(SUM(\"returns\"), 0); the grand-total row over no input rows is then 0.00 instead of NULL (small database with no qualifying sales)",
+  "tpcds-variants/query014": "the 14a variant (manual ROLLUP expansion) returns a grand-total row of NULLs where the base query returns its catalog rows, and its second statement returns no row where the base returns one, on small databases that meet the declared keys (the generated TPC-DS data agrees)",
+  "tpcds-variants/query036": "the 36a variant (ROLLUP spelled as a UNION of groupings) returns one row of NULLs where the base query returns three rows, on a small database that meets the declared keys"
+ },
+ "known_wrong": {}
+}
