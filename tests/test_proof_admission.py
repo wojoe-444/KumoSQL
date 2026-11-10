@@ -175,6 +175,44 @@ def test_an_eval_that_cannot_be_mutated_is_admitted_on_the_search_alone():
     assert (result["verdict"], result["how"]) == ("admitted", "searched")
 
 
+def test_an_eval_that_scores_a_proven_pair_as_something_else_says_what_it_counts(monkeypatch):
+    class Scored:  # proves every pair, but its eval refutes one first and scores it as different
+        def case(self, item):
+            return object()
+
+        def counted(self, item):
+            return item["pair"] == "counted"
+
+    class Plain:
+        def case(self, item):
+            return object() if item["pair"] == "proven" else None
+
+    monkeypatch.setattr(A, "_ADAPTERS", {"scored": Scored(), "plain": Plain()})
+    assert A._prove(("scored", {"pair": "counted"}, OPTIONS)) == ("counted", True)
+    assert A._prove(("scored", {"pair": "refuted first"}, OPTIONS)) == ("refuted first", False)
+    assert A._prove(("plain", {"pair": "proven"}, OPTIONS)) == ("proven", True)
+    assert A._prove(("plain", {"pair": "open"}, OPTIONS)) == ("open", False)
+
+
+def test_a_proof_the_eval_itself_does_not_count_is_not_admitted():
+    def search(job):
+        return {"verdict": "survived", "meta": {"eval_verdict": "over-budget"}}
+
+    result = A.examine("demo", {"pair": "p"}, _options(), adapter=_Adapter(), search=search, probe=lambda job: 1 / 0)
+    assert result["verdict"] == "not-proven"
+
+
+def test_the_verieql_suites_are_listed_under_their_results_files():
+    pytest.importorskip("z3")
+    pytest.importorskip("duckdb")
+    from recheck import verieql
+
+    for suite in ("calcite", "literature"):
+        adapter = verieql.ADAPTERS[f"verieql-{suite}-proof"]
+        assert adapter.suites == (suite,) and not M.supported(adapter)
+        assert (A.RESULTS / f"{adapter.name}.json").is_file() and adapter.name in A.ledgers()
+
+
 # --- the near-miss probe -------------------------------------------------------------------------
 
 

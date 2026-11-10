@@ -79,6 +79,38 @@ def test_bare_order_by_key_is_the_output_of_that_name():
     assert prove_equivalent_smt("SELECT a AS b, b AS a FROM t ORDER BY a LIMIT 1", "SELECT a AS b, b AS a FROM t ORDER BY 2 LIMIT 1", schema=SCHEMA).proven
 
 
+def test_an_unaliased_expression_is_not_an_output_named_after_the_column_it_reads():
+    # ``CAST(a AS FLOAT64)`` and ``-a`` have no name ORDER BY can use, so ``ORDER BY a`` is the column and nothing is
+    # ambiguous. The guard above once took such an entry for a second output called ``a`` and refused the pair
+    # (VeriEQL Calcite-397 pair 8, ``ORDER BY deptno`` beside an unaliased ``CAST(deptno AS DOUBLE)``).
+    for dialect in ("bigquery", "duckdb"):
+        assert prove_equivalent_smt(
+            "SELECT a, CAST(a AS FLOAT64) FROM t ORDER BY a LIMIT 1", "SELECT a, CAST(a AS FLOAT64) FROM t ORDER BY 1 LIMIT 1", schema=SCHEMA, types=TYPES, dialect=dialect
+        ).proven, dialect
+        assert prove_equivalent_smt("SELECT id, -a FROM t ORDER BY a + 1 LIMIT 1", "SELECT id, -a FROM t ORDER BY t.a + 1 LIMIT 1", schema=SCHEMA, types=TYPES, dialect=dialect).proven, dialect
+        # the column is still the column: ordering by it is not ordering by the expression that reads it
+        assert not prove_equivalent_smt("SELECT id, -a FROM t ORDER BY a LIMIT 1", "SELECT id, -a FROM t ORDER BY 2 LIMIT 1", schema=SCHEMA, types=TYPES, dialect=dialect).proven, dialect
+
+
+# sqlglot gives an unaliased CAST the name of the column it reads, and ``_split_limit`` matched ORDER BY keys by that
+# name, so ``ORDER BY b`` was read as ordering by the CAST (a false proof from 2026-10-02 until 2026-11-10). On b = 9, 10, 100 BigQuery returns the row with 9 for the left side of each pair and
+# the row with 10 for the right side ('10' sorts before '9'); run there on 2026-11-10, zero bytes billed.
+CAST_IS_NOT_THE_COLUMN = [
+    ("SELECT id, CAST(b AS STRING) FROM t ORDER BY b LIMIT 1", "SELECT id, CAST(b AS STRING) FROM t ORDER BY 2 LIMIT 1"),
+    ("SELECT id, CAST(b AS STRING) FROM t ORDER BY b LIMIT 1", "SELECT id, CAST(b AS STRING) FROM t ORDER BY CAST(b AS STRING) LIMIT 1"),
+    ("SELECT id, SAFE_CAST(b AS STRING) FROM t ORDER BY b LIMIT 1", "SELECT id, SAFE_CAST(b AS STRING) FROM t ORDER BY 2 LIMIT 1"),
+    ("SELECT id, (CAST(b AS STRING)) FROM t ORDER BY b LIMIT 1", "SELECT id, (CAST(b AS STRING)) FROM t ORDER BY 2 LIMIT 1"),
+]
+
+
+@pytest.mark.parametrize("left,right", CAST_IS_NOT_THE_COLUMN)
+@pytest.mark.parametrize("types", [TYPES, None], ids=["typed", "untyped"])
+def test_order_by_a_column_is_not_order_by_an_unaliased_cast_of_it(left, right, types):
+    assert not prove_equivalent(left, right).proven
+    assert not prove_equivalent_smt(left, right, schema=SCHEMA, types=types, dialect="bigquery").proven
+    assert not prove_equivalent_algebraic(left, right, schema=SCHEMA, types=types, dialect="bigquery").proven
+
+
 def test_other_dialects_refuse_a_name_read_both_ways():
     for sql in (
         "SELECT b AS a FROM t QUALIFY RANK() OVER (ORDER BY a) = 1",

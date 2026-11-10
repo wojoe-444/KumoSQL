@@ -17,6 +17,8 @@ Only a proof that passes both is added to the list, and only then does the quick
 
 The first run compared nine benchmarks' counts with what the prover really proves. Eight matched. One row on the scoreboard said 22 of 22 while the prover proved 21; an unrelated bug had quietly lost one proof weeks earlier and nobody had noticed. It was fixed the same day.
 
+A second stale row turned up the same day on a benchmark that had no list yet: it said 335 proofs where 333 were real. Two had been withdrawn a month earlier by safety checks, and nobody had measured since. That benchmark now has a list too.
+
 Looking for wrong proofs by hand at the same time, with BigQuery itself as the judge, found three kinds, all in how the prover reads BigQuery SQL: a decimal written next to an exact-decimal column, and a name that is both a new output and a table column in `ORDER BY` and in `QUALIFY`. All three are fixed, and [how KumoSQL checks whether queries match](provers.md) explains them. A run of 20,000 machine-generated pairs found no wrong proof.
 
 ## Limits
@@ -24,7 +26,8 @@ Looking for wrong proofs by hand at the same time, with BigQuery itself as the j
 - Passing both tests is strong evidence, not a guarantee. A rare database that was never built can still tell two queries apart.
 - The tests run the queries on DuckDB. Where BigQuery and DuckDB read a query differently, these tests cannot see a mistake; two of the three kinds found by hand were like that.
 - The proofs that were already counted when the list was started were let in without these two tests. They had been through an earlier round of the first test.
-- Nine benchmarks have a list so far; the others are not covered.
+- Eleven benchmarks have a list so far; the others are not covered.
+- The quick test compares two recorded numbers. If a change to the prover loses a proof, the test only notices once someone measures the benchmark again.
 - The quick test compares counts. If a change loses one proof and gains another, the count stays the same; a slower command finds that, and it has to be run on a schedule.
 
 The [full reference](../docs/proof-admission.md) has the commands, the file format and the recorded numbers.

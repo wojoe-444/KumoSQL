@@ -32,7 +32,7 @@ An adapter proves each pair exactly as its eval does (same entry point, options 
 | `sqlsolver-calcite`, `sqlsolver-spark`, `sqlsolver-tpch`, `sqlsolver-tpcc`, `qed-calcite`, `calcite-mined`, `rbot-calcite`, `cosette`, `spes-only` | `calcite_family.py` |
 | the same `sqlsolver-calcite` and `sqlsolver-spark` adapters, with the three pairs round one could not run made runnable | `calcite_unrunnable.py` (loads after `calcite_family.py` and replaces those two entries) |
 | `singh`, `singh-fractions`, `singh-leetcode-types` | `singh.py` |
-| `verieql` (pairs are named `<suite>:<VeriEQL index>`) | `verieql.py` |
+| `verieql` (pairs are named `<suite>:<VeriEQL index>`); `verieql-calcite-proof` and `verieql-literature-proof` are one suite each under the name of its results file, for the [admission ledger](proof-admission.md) | `verieql.py` |
 | `conditional-equivalence-singh`, `conditional-equivalence-verieql` (proofs that hold only under named NOT NULL, unique-key and foreign-key conditions; the conditions are declared to the search, so every database meets them) | `conditional.py` |
 | `sqlancer-tlp-norec`, `unsafe-rewrite-detection`, `rewrite-composition`, `join-rewrites`, `constraint-rewrites` | `fuzz_rewrites.py` |
 | `mv-reuse-calcite`, `mv-benchmark`, `containment`, `aggregate-decomposition` | `reuse_containment.py` |
