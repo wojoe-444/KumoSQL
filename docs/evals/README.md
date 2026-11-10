@@ -94,7 +94,7 @@ These features keep their eval results on the feature's own page.
 
 ## Adding an eval
 
-1. Write the harness under `tools/` and a test under `tests/`; add the test to `EVAL_FILES` in `tests/conftest.py`. Use [eval diff](eval-diff.md) to compare slow evals without running their full corpora.
+1. Write the harness under `tools/` and a test under `tests/`; put `pytestmark = pytest.mark.eval` in the test file (no list to edit). Use [eval diff](eval-diff.md) to compare slow evals without running their full corpora.
 2. Pin the source version, keep original and adapted cases apart, and reserve held-out cases.
 3. Add `benchmarks/results/<name>.json` and run `python tools/scoreboard.py`.
-4. Add or extend a page in this folder, list it in the table above and in [docs/README.md](../README.md). `tests/test_docs.py` checks that every page and every results file is listed.
+4. Add or extend a page in this folder, list it in the table above and in [docs/README.md](../README.md), or leave that to `python tools/docs_index.py --write`, which adds any page or results file no index names to a generated block at the end of each index. `tests/test_docs.py` checks the links and that every page has a plain-language companion.

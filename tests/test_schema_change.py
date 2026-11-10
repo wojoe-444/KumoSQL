@@ -9,6 +9,8 @@ import pytest
 from kumosql.pipeline import Pipeline
 from kumosql.pipeline_types import Model, Target
 
+pytestmark = pytest.mark.eval
+
 TOOLS = Path(__file__).resolve().parent.parent / "tools"
 
 

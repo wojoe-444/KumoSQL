@@ -79,4 +79,4 @@ Feature guides also explain evaluations for [model reuse](../model-reuse.md), [j
 
 Use the [full eval index](../../docs/evals/README.md) to find each `benchmarks/results/*.json` file. Its `command` field is the rerun command, and its date and caveats describe the measurement. The [project scoreboard](../../README.md#benchmark-scoreboard) displays those recorded results.
 
-From a development checkout, `python tools/run_tests.py --evals` runs the benchmark floor tests. Full corpus runs can require downloads, databases, or hours of execution; read the matching full guide first. When adding a docs page, add its simple counterpart and index entry too.
+From a development checkout, `python tools/run_tests.py --evals` runs the benchmark floor tests. Full corpus runs can require downloads, databases, or hours of execution; read the matching full guide first. When adding a docs page, add its simple counterpart. If you skip the index entry, `python tools/docs_index.py --write` adds it to a generated list at the end of the index.

@@ -17,6 +17,8 @@ import unsafe_fuzz  # noqa: E402
 from kumosql import check_idempotence, canonical_rule_order  # noqa: E402
 from kumosql.result_equivalence import ResultEquivalenceStatus, check_result_equivalence  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 
 def _assert_sound(summary):
     c = summary["all"]["correctness"]

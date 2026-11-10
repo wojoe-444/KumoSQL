@@ -12,6 +12,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 _path = Path(__file__).resolve().parent.parent / "tools" / "logos_bench.py"
 _spec = importlib.util.spec_from_file_location("logos_bench", _path)
 bench = importlib.util.module_from_spec(_spec)

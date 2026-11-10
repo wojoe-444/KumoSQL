@@ -2,6 +2,7 @@ import functools
 import itertools
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -149,77 +150,24 @@ HEAVY_FILES = [
 ]
 
 
-# Test files that score KumoSQL against a benchmark corpus and hold its floors. They are marked ``eval``, so
-# ``pytest -m eval`` runs just the floors and ``pytest -m "not eval"`` everything else.
-EVAL_FILES = {
-    "test_eval_execution_cache.py",
-    "test_googlesql_conformance_parser.py",
-    "test_gsql_eval_regress_b.py",
-    "test_uexpr_tpch.py",
-    "test_proof_format_sqlfluff.py",
-    "test_proof_recheck_dialect.py",
-    "test_proof_recheck_fuzz_reuse.py",
-    "test_proof_recheck_pipelines_bounded.py",
-    "test_conditional_candidates.py",
-    "test_googlesql_conformance.py",
-    "test_smt_counterexample_determinism.py",
-    "test_cost_validity_bench.py",
-    "test_keyed_set_join.py",
-    "test_engine_suites.py",
-    "test_bq_behavior_eval.py",
-    "test_googlesql_results_eval.py",
-    "test_googlesql_types_eval.py",
-    "test_bq_utils_udf_eval.py",
-    "test_arcwise_bench.py",
-    "test_bq_corpus_bench.py",
-    "test_calcite_mined_benchmarks.py",
-    "test_conditional_benchmark.py",
-    "test_constraint_dependence.py",
-    "test_join_rewrite_bench.py",
-    "test_cosette_benchmarks.py",
-    "test_dbgpt_rules_bench.py",
-    "test_documented_rewrites_bench.py",
-    "test_dlbench_bench.py",
-    "test_engine_pairs_bench.py",
-    "test_dup_bench.py",
-    "test_incremental.py",
-    "test_jaffle_shop_bench.py",
-    "test_lineage_benchmarks.py",
-    "test_lineage_goldens_bench.py",
-    "test_logos_bench.py",
-    "test_llm_sql_solver_bench.py",
-    "test_llmr2_bench.py",
-    "test_minimization_bench.py",
-    "test_numeric_traps_bench.py",
-    "test_model_reuse_evals.py",
-    "test_mv_workload_bench.py",
-    "test_optimizer_bugs_bench.py",
-    "test_output_properties.py",
-    "test_pipeline_bench.py",
-    "test_qed_benchmarks.py",
-    "test_querybooster_bench.py",
-    "test_quite_bench.py",
-    "test_rbot_benchmarks.py",
-    "test_rbot_normalise.py",
-    "test_reduction_bench.py",
-    "test_soundness_fuzz.py",
-    "test_sample_db_bench.py",
-    "test_sample_db_pagila.py",
-    "test_sample_db_oracle.py",
-    "test_safety_corpus.py",
-    "test_schema_change.py",
-    "test_script_bench.py",
-    "test_singh_bedathur_benchmark.py",
-    "test_spider2_bench.py",
-    "test_sqlfluff_fixtures_bench.py",
-    "test_sqlfluff_refusals_bench.py",
-    "test_sqliq_bench.py",
-    "test_sqlsolver_benchmarks.py",
-    "test_targeted_data_bench.py",
-    "test_transformation_bench.py",
-    "test_unsafe_fuzz.py",
-    "test_verieql_benchmarks.py",
-}
+# A test file that scores KumoSQL against a benchmark corpus and holds its floors declares it with
+# ``pytestmark = pytest.mark.eval``: ``pytest -m eval`` runs just the floors and ``pytest -m "not eval"`` everything
+# else. Nothing registers the file here; ``eval_files`` finds the declaration.
+_EVAL_DECLARATION = re.compile(r"^pytestmark\s*=.*\bmark\.eval\b", re.M)
+
+
+@functools.lru_cache(maxsize=1)
+def eval_files() -> frozenset[str]:
+    """Names of the test files that declare themselves benchmark floors."""
+
+    found = set()
+    for path in Path(__file__).resolve().parent.glob("test_*.py"):
+        try:
+            if _EVAL_DECLARATION.search(path.read_text(encoding="utf-8")):
+                found.add(path.name)
+        except OSError:
+            continue
+    return frozenset(found)
 
 
 @pytest.hookimpl(optionalhook=True)
@@ -284,7 +232,7 @@ def _timing(order):
             return together[name]
         if nodeid in slow:
             return slow[nodeid]
-        if known and name not in known and name.rsplit("/", 1)[-1] in EVAL_FILES:
+        if known and name not in known and name.rsplit("/", 1)[-1] in eval_files():
             return NEW_EVAL_SECONDS
         return None
 
@@ -292,9 +240,6 @@ def _timing(order):
 
 
 def pytest_collection_modifyitems(config, items):
-    for item in items:
-        if item.path.name in EVAL_FILES:
-            item.add_marker(pytest.mark.eval)
     order = _order_data()
     slow = order.get("slow", {})
     seconds, together = _timing(order)

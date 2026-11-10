@@ -26,6 +26,8 @@ from recheck import engine  # noqa: E402
 from recheck import fuzz_rewrites as fr  # noqa: E402
 from recheck import reuse_containment as rc  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 FUZZ_EVALS = {"sqlancer-tlp-norec", "unsafe-rewrite-detection", "rewrite-composition", "join-rewrites", "constraint-rewrites"}
 REUSE_EVALS = {"mv-reuse-calcite", "containment", "aggregate-decomposition", "mv-benchmark"}
 

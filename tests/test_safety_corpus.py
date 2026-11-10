@@ -14,6 +14,8 @@ from tools.check_safety_corpus import (
     run_gate,
 )
 
+pytestmark = pytest.mark.eval
+
 
 def test_every_builtin_and_full_pipeline_pass_independent_safety_gate():
     totals = run_gate()

@@ -18,6 +18,8 @@ pytest.importorskip("duckdb")
 from kumosql import view_candidates as vc  # noqa: E402
 from kumosql.model_reuse import rewrite_over_model  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 _path = Path(__file__).resolve().parent.parent / "tools" / "mv_workload_bench.py"
 _spec = importlib.util.spec_from_file_location("mv_workload_bench", _path)
 bench = importlib.util.module_from_spec(_spec)

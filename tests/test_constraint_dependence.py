@@ -12,6 +12,8 @@ from kumosql.algebraic_equivalence import prove_equivalent_algebraic
 from kumosql.constraint_dependence import constraints_with, guarantees_of, needed_guarantees
 from kumosql.smt_equivalence import TableConstraints
 
+pytestmark = pytest.mark.eval
+
 SCHEMA = {"orders": ["id", "customer_id", "total"], "customers": ["id", "name"]}
 CONSTRAINTS = {
     "orders": TableConstraints(

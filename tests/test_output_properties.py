@@ -9,6 +9,8 @@ import pytest
 from kumosql.output_properties import infer_properties
 from kumosql.smt_equivalence import TableConstraints
 
+pytestmark = pytest.mark.eval
+
 SCHEMA = {"orders": ["id", "customer_id", "amount"], "customers": ["id", "name"], "items": ["order_id", "line", "qty"]}
 CONSTRAINTS = {
     "orders": TableConstraints(not_null=frozenset({"id", "customer_id"}), keys=(("id",),)),

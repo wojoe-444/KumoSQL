@@ -9,6 +9,8 @@ import pytest
 from kumosql.result_equivalence import check_result_equivalence
 from tools import transformation_bench as bench
 
+pytestmark = pytest.mark.eval
+
 duckdb_needed = pytest.mark.skipif(importlib.util.find_spec("duckdb") is None, reason="duckdb is required for result equivalence")
 
 QUERY = (

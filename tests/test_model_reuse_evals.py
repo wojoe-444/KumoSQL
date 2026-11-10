@@ -77,6 +77,8 @@ def test_containment_sample_has_no_wrong_answers(tmp_path):
 from kumosql.containment import check_containment  # noqa: E402
 from kumosql.model_reuse import rewrite_over_model  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 ORDERS = {"orders": ["id", "amount"]}
 
 

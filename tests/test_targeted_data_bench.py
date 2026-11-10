@@ -19,6 +19,8 @@ _spec.loader.exec_module(bench)
 from kumosql.result_equivalence import BigQueryWouldFail, DatasetRunner, compare_outputs  # noqa: E402
 from kumosql.targeted_data import database_suite  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 CASES = json.loads((ROOT / "tests" / "fixtures" / "targeted_data" / "cases.json").read_text(encoding="utf-8"))
 ITEMS, SUITES = bench.build_corpus("dev")
 

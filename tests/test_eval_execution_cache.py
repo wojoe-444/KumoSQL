@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.eval
+
 
 @pytest.fixture
 def bench(monkeypatch, tmp_path):

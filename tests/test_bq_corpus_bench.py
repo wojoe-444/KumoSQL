@@ -15,6 +15,8 @@ from kumosql.pipeline import load_sqlx_project  # noqa: E402
 from kumosql.scripts import analyse_script, token_reads  # noqa: E402
 from kumosql.sqlx import SqlxRestorationError, mask_sqlx_interpolations, restore_sqlx_interpolations  # noqa: E402
 
+pytestmark = pytest.mark.eval
+
 
 @pytest.fixture(autouse=True)
 def quiet_timing(monkeypatch):
