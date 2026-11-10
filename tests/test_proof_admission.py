@@ -210,7 +210,7 @@ def test_the_verieql_suites_are_listed_under_their_results_files():
     for suite in ("calcite", "literature"):
         adapter = verieql.ADAPTERS[f"verieql-{suite}-proof"]
         assert adapter.suites == (suite,) and not M.supported(adapter)
-        assert (A.RESULTS / f"{adapter.name}.json").is_file() and adapter.name in A.ledgers()
+        assert adapter.name in A.ledgers()  # the results file itself lives in the prover repository since the split
 
 
 # --- the near-miss probe -------------------------------------------------------------------------
