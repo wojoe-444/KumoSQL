@@ -45,7 +45,7 @@ The tool writes the file sorted by pair; it is not edited by hand (`tests/test_p
 
 The count is a tripwire, not the whole check: a prover change that loses one proof and gains another leaves it unchanged. `admit --dry-run` is the precise comparison and belongs with the scheduled eval runs.
 
-Evals with a ledger today: the SQLSolver suites (Calcite, Spark, TPC-H, TPC-C), QED, mined Calcite, R-Bot, Cosette and SPES; 1,335 `baseline` lines, started on 2026-11-10. Every ledger matched its results file except TPC-H, whose row said 22 while the prover proved 21 (pair 20, lost to an unrelated dialect bug that was fixed the same day); the check found that on its first run. An eval joins by `admit <eval> --baseline` once its adapter's proven count equals its results file. The evals without a ledger are not gated.
+Evals with a ledger today: the SQLSolver suites (Calcite, Spark, TPC-H, TPC-C), QED, mined Calcite, R-Bot, Cosette and SPES; 1,335 `baseline` lines, started on 2026-11-10. Every ledger matched its results file except TPC-H, whose row said 22 while the prover proved 21 (pair 20, lost to a dialect bug in nested proofs); the check found that on its first run. Once that bug was fixed the same day, `admit sqlsolver-tpch` put pair 20 through the search and the probe, and it is the first `checked` line. An eval joins by `admit <eval> --baseline` once its adapter's proven count equals its results file. The evals without a ledger are not gated.
 
 ## The near-miss probe
 
