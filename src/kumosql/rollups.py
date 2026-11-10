@@ -40,14 +40,14 @@ from sqlglot import exp, parse
 from .overlap import Check, MatchRole
 from .pipeline import Pipeline
 from .scopes import Scope
-from .table_profile import AttributeMeaning, TableProfile, profile_pipeline, profile_query
+from .table_profile import COLUMN_MEANING, AttributeMeaning, TableProfile, profile_pipeline, profile_query
 from .table_roles import TableRole, infer_roles
 
 __all__ = ["GrainMapping", "Rollup", "RollupResult", "find_rollups"]
 
 _ORDER = {"derivable_exact": 0, "derivable_with_conditions": 1, "not_derivable": 2, "unknown": 3}
 _DECOMPOSABLE = {"SUM", "COUNT", "MIN", "MAX", "LOGICAL_AND", "LOGICAL_OR"}
-_COL = re.compile(r"col:[^\s()|,\[\]]+")
+_COL = re.compile(COLUMN_MEANING)
 _AGG = re.compile(r"agg:([A-Z_0-9]+)\(")
 _JOIN = "join:"
 
@@ -220,8 +220,11 @@ def _with_role(item: Rollup, role: MatchRole | None) -> Rollup:
 
 
 def _short(meaning: str) -> str:
-    """The column part of a ``col:`` meaning, without the table."""
+    """The column part of a ``col:`` meaning, without the table (a field keeps its path: ``column.a.b``)."""
 
+    field = re.fullmatch(r"field\((.+), ([a-z0-9_.]+)\)", meaning)
+    if field is not None:
+        return f"{_short(field.group(1))}.{field.group(2)}"
     return meaning.rsplit(".", 1)[-1]
 
 
@@ -339,8 +342,8 @@ def _compare(
     for attr in sorted(known_attrs, key=lambda a: a.column.lower()):
         by_meaning.setdefault(attr.meaning or "", attr)
     same = _equivalences(target)
-    raw = {same.get(m, m): a for m, a in by_meaning.items() if m.startswith("col:")}
-    held = {same.get(m, m): a for m, a in by_meaning.items() if m.startswith(("col:", "expr:"))}
+    raw = {same.get(m, m): a for m, a in by_meaning.items() if m.startswith(("col:", "field("))}
+    held = {same.get(m, m): a for m, a in by_meaning.items() if m.startswith(("col:", "field(", "expr:"))}
     target_keys = [same.get(m, m) for m in target_keys]
     mappings = [GrainMapping(same.get(m.child, m.child), same.get(m.parent, m.parent), m.many_to_one, m.changes_over_time, m.complete) for m in mappings]
     mappings += [m for m in (_truncation(tk, h) for tk in target_keys for h in held) if m is not None]

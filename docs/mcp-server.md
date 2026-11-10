@@ -5,12 +5,12 @@
 One stdio [Model Context Protocol](https://modelcontextprotocol.io) server for an agent that works on a Dataform project. It loads the project once, keeps it in memory and answers **one question per call** with a **bounded answer**: about 2 KB by default, with counts, what it could not determine and why, a next step, and the argument that asks for more. This is step 4 of the [roadmap](roadmap.md#4-one-agent-facing-server); the tools below are its first four.
 
 ```
-python -m kumosql mcp PROJECT [--source-schema FILE] [--profiles DIR]
+python -m kumosql mcp PROJECT [--source-schema FILE] [--assume-grain TABLE=COL[,COL]]... [--profiles DIR]
 python -m kumosql mcp --git URL [--branch B] [--refresh]
 python -m kumosql mcp                      # saved data profiles only, no project
 ```
 
-`PROJECT` is what `pipeline-report` takes: a Dataform project folder, a folder of `.sql` files or the JSON of `dataform compile --json`. The server answers `initialize` at once and parses and analyses the project in the background (about 3 seconds for the 106-model public project in the fixtures); the first question waits for it, and every later one is served from memory (a column trace or an impact answer takes 10 milliseconds or less). Register it with an MCP client as the command `python -m kumosql mcp /path/to/project`. Messages are JSON-RPC 2.0, one per line; progress logs go to stderr, never stdout.
+`PROJECT` is what `pipeline-report` takes: a Dataform project folder, a folder of `.sql` files or the JSON of `dataform compile --json`. The server answers `initialize` at once and parses and analyses the project in the background (about 3 seconds for the 106-model public project in the fixtures); the first question waits for it, and every later one is served from memory (a column trace or an impact answer takes 10 milliseconds or less). `--assume-grain` declares which columns identify a row of a table the project does not define, for example `--assume-grain logs.events=insert_id` (repeatable; the table is written as the other tools take it). Such a grain is reported as `declared`, never as derived, and a table or column that does not exist is dropped with a line on stderr. Without it the server uses only what the project itself shows: grains derived from the queries and `assertions: {uniqueKey}` in the models' configs. Register it with an MCP client as the command `python -m kumosql mcp /path/to/project`. Messages are JSON-RPC 2.0, one per line; progress logs go to stderr, never stdout.
 
 ## The questions
 
@@ -38,18 +38,19 @@ Every tool also takes `max_bytes` (the size bound, 1,000 to 20,000, default 2,00
 
 ## Example
 
-`describe_table` on a table whose lineage reads a nested field (shortened):
+`describe_table` on a table that reads fields inside a nested column (shortened). The path is part of the meaning, so the column is known and can be compared:
 
 ```json
-{"answer": "csa_3_11_intermediary_stats (incremental): one row per day; 7 columns, 2 of 7 column meanings unknown; reads 1, read by 2.",
+{"answer": "csa_3_11_intermediary_stats (incremental): one row per day; 7 columns, all column meanings known; reads 1, read by 2.",
  "table": "[PROJECT_ID].csa.csa_3_11_intermediary_stats", "kind": "incremental", "grain": ["day"], "grain_status": "derived",
- "counts": {"columns": 7, "meaning_unknown": 2, "reads": 1, "read_by": 2},
- "columns": ["day = expr:EXTRACT(DATE FROM col:[LOGS_DATASET_ID]._AllLogs.timestamp)", "actions = ? (nested_field)", "..."],
+ "counts": {"columns": 7, "meaning_unknown": 0, "reads": 1, "read_by": 2},
+ "columns": ["day = expr:EXTRACT(DATE FROM col:[LOGS_DATASET_ID]._AllLogs.timestamp)", "actions = expr:agg:ARRAY_AGG(DISTINCT field(col:[LOGS_DATASET_ID]._AllLogs.proto_payload, audit_log.method_...", "..."],
  "columns_shown": "1-6 of 7",
- "unknown": [{"what": "2 column meanings: actions, actors", "reason": "nested_field: reads a field inside a STRUCT or JSON column, whose meaning is not tracked yet"}],
- "next": ["trace_column table=... column=actions shows how far its source can be followed."],
- "more": "Ask again with offset=6 for the next columns, or max_bytes=2129 for everything on this page."}
+ "unknown": [{"what": "rows kept", "reason": "..."}],
+ "next": ["..."]}
 ```
+
+A column that cannot be followed says so with the reason (`role = ? (ambiguous_column)`), and a table whose grain is unknown says `source_without_grain`.
 
 ## Measured sizes
 
@@ -57,12 +58,28 @@ On `tests/fixtures/bq_corpora/security-analytics` (106 models, 626 output column
 
 | Tool | Questions asked | Median | 95th percentile | Largest |
 | --- | ---: | ---: | ---: | ---: |
-| `describe_table` | 106 (every model) | 1,658 B | 1,954 B | 1,986 B |
-| `trace_column` | 626 (every column) | 782 B | 1,239 B | 1,984 B |
-| `impact` | 318 (each model, plus two columns each) | 561 B | 914 B | 1,116 B |
-| `find_existing` | 20 | 822 B | 823 B | 823 B |
+| `describe_table` | 106 (every model) | 1,726 B | 1,966 B | 1,998 B |
+| `trace_column` | 626 (every column) | 782 B | 1,238 B | 1,984 B |
+| `impact` | 318 (each model, plus two columns each) | 561 B | 911 B | 1,116 B |
+| `find_existing` | 106 (every model) | 744 B | 1,729 B | 1,932 B |
 
-For comparison, the roadmap measured 141 KB for reading every `.sqlx` file, 1,197 KB for the `pipeline-report` JSON, and about 50 KB for the overlap search that compared 0 of 105 tables. The same question through `find_existing` is 822 bytes. Latency is dominated by the one-time load; the figures come from one 4-core container and indicate scale only.
+For comparison, the roadmap measured 141 KB for reading every `.sqlx` file, 1,197 KB for the `pipeline-report` JSON, and about 50 KB for the overlap search that compared 0 of 105 tables. The same question through `find_existing` is at most 1,932 bytes, and 744 bytes at the median. Latency is dominated by the one-time load; the figures come from one 4-core container and indicate scale only.
+
+### What `find_existing` can decide on this project
+
+Before and after closing the two analysis gaps (nested-field meanings, grain from declarations), asking `find_existing` about each of the 106 models:
+
+| | Before | After |
+| --- | ---: | ---: |
+| Column meanings unknown (of 626) | 402 (351 `nested_field`) | 45 |
+| Tables with grain `source_without_grain` | 41 | 41 |
+| Models for which `find_existing` compared other tables | 3 | 54 |
+| `find_existing` answers `found` / `none_found` | 2 / 1 | 43 / 11 |
+| `find_existing` answers `cannot_tell` | 103 | 52 |
+
+A decided answer compared 62 other tables at the median. All 43 `found` answers are `partial` matches (`low` confidence): no table on this project has the same filters as another, because most of them filter on the time they run (`CURRENT_TIMESTAMP()`), so the row scope cannot be compared. The remaining 45 unknown meanings are `unnest_element` (26: a value of an unnested array), `ambiguous_column` (13), `unresolved_column` (4) and `non_deterministic` (2).
+
+The 41 `source_without_grain` tables all read `_AllLogs`, a log table the project declares without any key, and the project declares no `uniqueKey` assertion anywhere, so nothing in the project can give them a grain. Declaring `--assume-grain` for that table (an event id, for instance) removes the reason, but the grain stays unknown on this project because none of those views keeps the id column in its output (`grain_not_in_output`: 32; the 17 that unnest an array say so: a join that can multiply rows), so the number of comparable tables stays at 54. The `cannot_tell` answers are the 49 tables with no known grain (31 of them with all meanings known) and 3 with a known grain but an unknown meaning.
 
 ## Saved data profiles
 
@@ -83,7 +100,8 @@ def find_tables(session, args):
 
 ## Limits
 
-- On the 106-model public project 351 of 626 column meanings are unknown because they read fields inside nested columns, and 41 tables have `source_without_grain` because they read tables the project does not define. A table with an unknown grain or unknown meanings cannot be compared, so `find_existing` there returns `cannot_tell` (accurately, and in 800 bytes). Closing those gaps means tracking meanings through STRUCT fields and source schemas; it is not part of this step.
+- On the 106-model public project 45 of 626 column meanings are unknown and 49 tables have no known grain (41 `source_without_grain`, 8 `grain_not_in_output`); `find_existing` there answers for 54 of 106 tables and says `cannot_tell` for the other 52, naming the blocker. Tables that read the same log table cannot be told apart by grain unless the project, or `--assume-grain`, names the columns that identify an event and the view keeps them. Values of an unnested array (`UNNEST(...) AS item`, then `item.name`) and fields of a computed value stay unknown. See [what `find_existing` can decide](#what-find_existing-can-decide-on-this-project).
+- A declared grain is a claim. `assertions: {uniqueKey}` is checked by Dataform when the assertions run; `--assume-grain` is not checked by anything, so a wrong one makes `find_existing` match tables that differ. Answers show it as `declared`.
 - `impact` does not read job history yet, so readers seen only in query history are not listed, and `safe_to_delete` stays `unknown`.
 - Nothing here reaches BigQuery. Preflight checks, query comparison and on-demand profiling are the remaining tools of the [roadmap](roadmap.md#6-preflight-comparison-and-on-demand-profiling).
 - Answers are measured in bytes of JSON, not tokens.
