@@ -42,7 +42,7 @@ SHARED_DIR = Path("/mnt/project-files/test-history")
 ORDER_FILE = ROOT / "tests" / "order.json"
 SCHEMA = 3  # 2 added the times: cpu_seconds, test_seconds, test_cpu_seconds, file_seconds, slow_cpu, machine;
 # 3 times a slow test with its setup and teardown (2 timed the call only) and adds slow_setup
-SLOW_SECONDS = 3.0  # a test at least this slow (setup, call and teardown) is recorded with its duration and runs in the slow tier
+SLOW_SECONDS = 2.0  # a test at least this slow (setup, call and teardown) is recorded with its duration and runs in the slow tier
 USUALLY_FAST_SECONDS = 10.0  # a test slower than this stays in the slow tier even when it is slow in only some runs
 MASS_FAILURE = 20  # a run with this many failures is an environment problem, not a test that broke
 MESSAGE_CHARS = 200
@@ -715,12 +715,23 @@ def command_trend(args) -> int:
 
 
 def command_order(args) -> int:
-    records = load_records(Path(args.dir) if args.dir else None, args.since)
+    if args.run:
+        records = [json.loads(Path(name).read_text(encoding="utf-8").splitlines()[0]) for name in args.run]
+    else:
+        records = load_records(Path(args.dir) if args.dir else None, args.since)
     if not records:
         print("No test history to build an order from.", file=sys.stderr)
         return 1
     order = build_order(records, root=ROOT)
     target = Path(args.output)
+    if args.merge and target.is_file():
+        # keep what longer history already knows; add the tests these runs found slow (never drops a test from the slow tier)
+        previous = json.loads(target.read_text(encoding="utf-8"))
+        order["slow"] = dict(sorted({**order["slow"], **previous.get("slow", {})}.items(), key=lambda kv: -kv[1]))
+        order["together"] = {**order["together"], **previous.get("together", {})}
+        order["files"] = sorted(set(order["files"]) | set(previous.get("files", [])))
+        order["risky"] = order["risky"] or previous.get("risky", [])
+        order["runs"] = previous.get("runs", 0) + len(records)
     if args.write:
         target.write_text(json.dumps(order, indent=1) + "\n", encoding="utf-8")
         print(f"wrote {target}: {len(order['slow'])} slow tests, {len(order['together'])} files with a slow shared fixture, {len(order['risky'])} often-failing tests, from {order['runs']} runs")
@@ -795,6 +806,8 @@ def main(argv: list[str] | None = None) -> int:
     trend.add_argument("--test", help="the recorded times of every test (an id containing :: or [) or file matching this text")
     order.add_argument("--write", action="store_true", help="write the file instead of printing it")
     order.add_argument("--output", default=str(ORDER_FILE))
+    order.add_argument("--run", nargs="+", metavar="FILE", help="build from these recorded run files only (a whole run, e.g. the newest gate run) instead of the whole history")
+    order.add_argument("--merge", action="store_true", help="add to the existing file's slow tier instead of replacing it")
     imp.add_argument("junit")
     imp.add_argument("--commit", default="")
     imp.add_argument("--branch", default="master")

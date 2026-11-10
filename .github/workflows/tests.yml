@@ -1,5 +1,10 @@
 name: Tests
 
+# Two tiers (docs/roadmap.md, step 2; docs/test-history.md):
+#   gate    every pull request and push: the routine suite held to a five-minute budget. Benchmarks do not run here.
+#   nightly the full default suite including every benchmark floor, with proof verdicts cached by prover source.
+# GitHub Actions must be enabled for the repository for either job to run.
+
 on:
   push:
   pull_request:
@@ -7,10 +12,15 @@ on:
   schedule:
     - cron: "0 6 * * *"
 
+permissions:
+  contents: read
+
 jobs:
-  unit:
-    name: pytest (sqlglot 30.21.0 compiled)
+  gate:
+    name: gate (routine tier, 5 minute budget)
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,11 +29,43 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e ".[dev,smt]" "sqlglotc==30.21.0" --only-binary sqlglotc
-      - name: Run unit tests
-        # Routine checks exclude costly floors; nightly/manual runs retain the full default suite.
+      - name: Run the gate
+        # Fails when the run takes longer than 300 seconds, so the gate cannot grow back unnoticed.
+        run: python tools/run_tests.py --gate --label "gate ${{ github.sha }}"
+
+  nightly:
+    name: nightly (full suite and benchmark floors)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install -e ".[dev,smt]" "sqlglotc==30.21.0" --only-binary sqlglotc
+      - name: Restore proof verdicts
+        # Keys hold a hash of the prover's source, so a prover change misses for every pair; a stale cache is harmless.
+        uses: actions/cache@v4
+        with:
+          path: .verdict-cache
+          key: verdicts-${{ hashFiles('src/kumosql/**/*.py') }}
+          restore-keys: verdicts-
+      - name: Run the full suite
+        id: full
+        run: python tools/run_tests.py --verdict-cache .verdict-cache --label "nightly ${{ github.sha }}"
+      - name: Open an issue when a benchmark floor or test fails
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python tools/run_tests.py --label "periodic full coverage"
-          else
-            python tools/run_tests.py --routine --label "routine regression checks"
-          fi
+          gh issue create \
+            --title "Nightly run failed on ${GITHUB_SHA::8}" \
+            --label nightly \
+            --body "The nightly full run failed (benchmark floor or test). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            || gh issue create --title "Nightly run failed on ${GITHUB_SHA::8}" --body "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
