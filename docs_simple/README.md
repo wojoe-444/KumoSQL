@@ -27,6 +27,7 @@ This folder is the plain-language companion to [the full documentation](../docs/
 | Extract a copied WITH query into one model | [Shared models](shared-models.md) |
 | Shrink a Dataform project to the outputs you need | [Project reduction](project-reduction.md) |
 | Summarize what is stored in a table, for people or agents | [Data profiling](data-profiling.md) |
+| Let an AI agent ask short questions about a project | [Agent server](mcp-server.md) |
 | Know the column types a query returns without running it | [Type inference](type-inference.md) |
 | Check incremental updates | [Incremental models](incremental.md) |
 | Understand join size estimates | [Join ordering](joinorder.md) |
@@ -68,3 +69,9 @@ This folder is the plain-language companion to [the full documentation](../docs/
 A proof establishes equivalence within the prover's supported SQL and stated assumptions. A bounded check covers every modeled database up to a row limit. An executed check compares results on particular datasets. A BigQuery dry run checks planning and schemas. These are different strengths of evidence.
 
 `unknown` or `unproven` means KumoSQL has not established the answer. It does not mean the queries are different. The [provers guide](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/provers.md) explains how to read these results.
+
+## More pages (generated)
+
+<!-- generated-pages:start (python tools/docs_index.py --write) -->
+- [The field trial, explained simply](field-trial.md): All simple guides · Full reference
+<!-- generated-pages:end -->

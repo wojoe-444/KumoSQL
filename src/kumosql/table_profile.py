@@ -38,6 +38,14 @@ __all__ = [
 ]
 
 _QUERY_KEY = "__proposed_query__"
+
+# How a column meaning is written, for the code that searches meanings (filters, aggregates) for the columns they read.
+# A table name may hold ``[PLACEHOLDER]`` parts (a template project); an array index such as ``[0]`` ends the name.
+SOURCE_COLUMN = r"col:(?:\[[A-Z_][A-Z0-9_]*\]|[^\s()|,\[\]])+"
+FIELD_COLUMN = rf"field\({SOURCE_COLUMN}, [A-Za-z0-9_.]+\)"
+COLUMN_MEANING = rf"(?:{FIELD_COLUMN}|{SOURCE_COLUMN})"
+_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_FIELD_MEANING = re.compile(rf"field\(({SOURCE_COLUMN}), ([A-Za-z0-9_.]+)\)")
 _MAX_DEPTH = 12
 
 
@@ -72,7 +80,8 @@ class AttributeMeaning:
 
     ``meaning`` is ``None`` when ``status`` is ``unknown``. Otherwise it starts
     with ``col:`` (a source column reached through passthroughs, renames, views
-    and CTEs), ``agg:`` (an aggregate: function and input meaning), ``window:``,
+    and CTEs), ``field(col:..., a.b)`` (a path of field names inside one source
+    column), ``agg:`` (an aggregate: function and input meaning), ``window:``,
     ``union(`` , ``const:`` or ``expr:`` (a normalized expression).
     ``equality_only`` marks meanings that can be compared for equality but never
     for similarity. ``sources`` are the ultimate source columns and
@@ -276,6 +285,8 @@ class _Src:
     key: str = ""
     query: exp.Expression | None = None
     env: dict | None = None
+    # The only names an aliased UNNEST makes visible (its element, and its offset column); None when not known.
+    names: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -347,6 +358,30 @@ def _canon_pass(node: exp.Expression) -> exp.Expression:
             clone.set("expressions", [o.copy() for o in ordered])
             return clone
     return node
+
+
+def _join_field_paths(expr: exp.Expression) -> exp.Expression:
+    """``a.b.c.d.e`` parses as a column ``a.b.c.d`` with ``.e`` after it; make it one column with the whole path.
+
+    sqlglot keeps four name parts in a column and puts the rest in ``Dot`` nodes. The path is kept in the column's
+    ``meta["parts"]`` so every spelling of one path reads the same.
+    """
+
+    def join(node: exp.Expression) -> exp.Expression:
+        if not isinstance(node, exp.Dot):
+            return node
+        names: list[str] = []
+        leaf: exp.Expression = node
+        while isinstance(leaf, exp.Dot) and isinstance(leaf.expression, exp.Identifier):
+            names.append(leaf.expression.name)
+            leaf = leaf.this
+        if not names or not isinstance(leaf, exp.Column) or isinstance(leaf.this, exp.Star):
+            return node
+        column = leaf.copy()
+        column.meta["parts"] = [part.name for part in leaf.parts] + names[::-1]
+        return column
+
+    return expr.transform(join)
 
 
 def _is_call(text: str) -> bool:
@@ -491,6 +526,14 @@ class _Profiler:
             return _Src(alias, kind, key, key=key)
         if isinstance(node, exp.Subquery):
             return _Src(alias, "query", alias or "subquery", query=node.this, env=env)
+        if isinstance(node, exp.Unnest):
+            table_alias = node.args.get("alias")
+            columns = [c.name.lower() for c in (table_alias.columns if table_alias is not None else [])]
+            offset = node.args.get("offset")
+            if columns and offset is not None and offset is not False:
+                columns.append(offset.name.lower() if hasattr(offset, "name") and offset.name else "offset")
+            # Behind an alias the elements of an array of STRUCTs are reached only through the alias.
+            return _Src(alias, "opaque", "unnest", names=tuple(columns) if columns else None)
         return _Src(alias, "opaque", alias or type(node).__name__.lower())
 
     def _ctx(self, select: exp.Select, env: dict) -> _Ctx:
@@ -541,8 +584,18 @@ class _Profiler:
 
     def _ref_meaning(self, ref: ColumnRef) -> AttributeMeaning:
         if ref.table in self.p.models:
-            return self._attr(ref.table, ref.column)
-        return AttributeMeaning(ref.column, f"col:{ref.table}.{ref.column.lower()}", "known")
+            attr = self._attr(ref.table, ref.column)
+            if not ref.path or attr.status != "known" or attr.meaning is None:
+                return attr
+            try:
+                return AttributeMeaning(ref.column, self._field(attr.meaning, list(ref.path)), "known")
+            except _Unresolved as exc:
+                return AttributeMeaning(ref.column, reason=exc.reason)
+        base = f"col:{ref.table}.{ref.column.lower()}"
+        try:
+            return AttributeMeaning(ref.column, self._field(base, list(ref.path)), "known")
+        except _Unresolved as exc:
+            return AttributeMeaning(ref.column, reason=exc.reason)
 
     def _trace(self, ref: ColumnRef):
         if ref not in self._traces:
@@ -602,7 +655,7 @@ class _Profiler:
                 problem = exc.reason
         if meaning is None:
             return AttributeMeaning(column, reason=problem or "unresolved", sources=sources, transform=record.transform)
-        equality_only = meaning.startswith(("expr:", "window:", "union("))
+        equality_only = meaning.startswith(("expr:", "window:", "union(", "field("))
         return AttributeMeaning(column, meaning, "known", None, sources, record.transform, equality_only)
 
     def _model_column_meaning(self, key: str, column: str) -> str:
@@ -677,6 +730,8 @@ class _Profiler:
                 names = self._output_names(src.query, src.env or {})
                 if "*" not in names:
                     return name in {n.lower() for n in names}
+            elif src.names is not None:
+                return name in src.names
         except Exception:
             return None
         return None
@@ -689,6 +744,8 @@ class _Profiler:
         unsure = [src for src, has in verdicts if has is None]
         if len(having) == 1 and not unsure:
             return self._src_col(having[0], name)
+        if not having and len(unsure) == 1:  # every other source lacks it, and a valid query reads it from somewhere
+            return self._src_col(unsure[0], name)
         raise _Unresolved("ambiguous_column")
 
     def _src_col(self, src: _Src, name: str) -> str:
@@ -708,25 +765,19 @@ class _Profiler:
                 return self._query_out(src.query, src.env or {}, name)
             finally:
                 self._active.discard(guard)
+        if src.names and name in src.names:
+            raise _Unresolved("unnest_element")  # one value per array element: not a column of any table
         raise _Unresolved("unsupported_source")
 
     def _col_meaning(self, col: exp.Column, ctx: _Ctx, allow_alias: bool, depth: int) -> str:
         if depth > _MAX_DEPTH:
             raise _Unresolved("too_deep")
-        if col.args.get("db") or col.args.get("catalog"):
-            raise _Unresolved("nested_field")
         if isinstance(col.this, exp.Star):
             raise _Unresolved("star_expression")
-        name = col.name.lower()
-        qualifier = col.table.lower()
-        if qualifier:
-            src = ctx.by_alias.get(qualifier)
-            if src is not None:
-                return self._src_col(src, name)
-            if len(ctx.srcs) == 1:  # a field of a struct column
-                base = self._col_meaning(exp.column(qualifier), ctx, allow_alias, depth + 1)
-                return f"{base}.{name}"
-            raise _Unresolved("unknown_qualifier")
+        parts = list(col.meta.get("parts") or [part.name for part in col.parts])  # as written: a JSON field name is case-sensitive
+        if len(parts) > 1:
+            return self._qualified_meaning(parts, ctx, allow_alias, depth)
+        name = parts[0].lower()
         if allow_alias:
             for outname, expr in ctx.projs:
                 plain = isinstance(expr, exp.Column) and expr.name.lower() == name and not expr.table
@@ -738,10 +789,85 @@ class _Profiler:
             raise _Unresolved("unknown_column")
         return self._locate(ctx, name)
 
+    def _qualified_meaning(self, parts: list[str], ctx: _Ctx, allow_alias: bool, depth: int) -> str:
+        """``alias.column``, ``alias.column.field...``, ``column.field...`` and ``dataset.table.column...``.
+
+        The first part names a table alias when one matches (BigQuery gives the alias precedence), a table by its
+        qualified name when one does, and otherwise a column of the only (or the one known) source, so what follows
+        it is a path of field names inside that column.
+        """
+
+        names = [part.lower() for part in parts]
+        first = names[0]
+        src = ctx.by_alias.get(first)
+        if src is not None:
+            return self._field(self._src_col(src, names[1]), parts[2:])
+        qualified = self._by_qualified_name(names, ctx)
+        if qualified is not None:
+            src, used = qualified
+            if self._src_has(src, first):
+                raise _Unresolved("ambiguous_column")  # a column of that name would read the same way
+            return self._field(self._src_col(src, names[used]), parts[used + 1 :])
+        if not ctx.srcs:
+            raise _Unresolved("unknown_qualifier")
+        if any(src.names and first in src.names for src in ctx.srcs):
+            raise _Unresolved("unnest_element")
+        base = self._col_meaning(exp.column(first), ctx, allow_alias, depth + 1)  # a STRUCT or JSON column
+        return self._field(base, parts[1:])
+
+    @staticmethod
+    def _by_qualified_name(parts: list[str], ctx: _Ctx) -> tuple[_Src, int] | None:
+        """The source a ``dataset.table.column`` or ``project.dataset.table.column`` reference names, and how many parts name it."""
+
+        if len(parts) < 3:
+            return None
+        found = []
+        for src in ctx.srcs:
+            if src.kind not in ("model", "table") or not src.alias:
+                continue
+            table = src.key.lower().split(".")
+            for used in (2, 3):
+                if len(parts) > used and table[-used:] == parts[:used] and src.alias == table[-1]:
+                    found.append((src, used))
+        return found[0] if len(found) == 1 else None
+
+    def _field(self, base: str, path: Sequence[str]) -> str:
+        """``field(<base column>, a.b.c)``: the value at a path of field names inside one source column.
+
+        Two such meanings are equal only when both read the same path of the same source column, so a different
+        path, or the same path in another column or table, never compares equal. The base must itself be a source
+        column (or a field of one); a field of a computed value stays unknown. Field names keep the case they were
+        written in, because a JSON field name is case-sensitive; they are folded to lower case only when the source
+        schema says the column is a STRUCT, whose field names are not.
+        """
+
+        if not path:
+            return base
+        if not all(_FIELD_NAME.fullmatch(name) for name in path):
+            raise _Unresolved("nested_field")
+        found = _FIELD_MEANING.fullmatch(base)
+        column, head = (found.group(1), [found.group(2)]) if found is not None else (base, [])
+        if not column.startswith("col:"):
+            raise _Unresolved("nested_field")
+        names = [*head, *path]
+        if self._is_struct(column):
+            names = [name.lower() for name in names]
+        return f"field({column}, {'.'.join(names)})"
+
+    def _is_struct(self, column: str) -> bool:
+        """Whether the source schema types ``col:<table>.<column>`` as a STRUCT (RECORD)."""
+
+        for table, columns in self.p.source_schema.items():
+            prefix = f"col:{table}."
+            if column.startswith(prefix):
+                kind = {name.lower(): str(typ) for name, typ in columns.items()}.get(column[len(prefix) :].lower(), "")
+                return kind.upper().startswith(("STRUCT", "RECORD"))
+        return False
+
     def _render(self, expr: exp.Expression, ctx: _Ctx, allow_alias: bool = False, depth: int = 0) -> tuple[str, str]:
         """(kind, text) with columns replaced by their meanings; raises when unknown."""
 
-        expr = expr.copy()
+        expr = _join_field_paths(expr.copy())
         while isinstance(expr, exp.Paren):
             expr = expr.this
         for node in expr.walk():
@@ -819,8 +945,27 @@ class _Profiler:
             result = Grain(reason=f"profile_error: {type(exc).__name__}")
         finally:
             self._active.discard(guard)
+        if not result.known:
+            result = self._asserted_grain(key) or result
         self._grains[cache_key] = result
         return result
+
+    def _asserted_grain(self, key: str) -> Grain | None:
+        """The project's own ``assertions: {uniqueKey}`` of a model, used only where the query does not show its grain.
+
+        The columns must be output columns of the model. A grain derived from the query wins over it, so declaring a
+        key never changes a grain that was already known; with several keys the shortest one stands.
+        """
+
+        model = self.p.models.get(key)
+        outputs = {name.lower(): name for name in self.analysis.outputs.get(key, ()) if name != "*"}
+        if model is None or not outputs:
+            return None
+        usable = [k for k in model.unique_keys if k and all(c.lower() in outputs for c in k)]
+        if not usable:
+            return None
+        best = min(usable, key=lambda k: (len(set(c.lower() for c in k)), sorted(c.lower() for c in k)))
+        return Grain(_sorted_keys([outputs[c.lower()] for c in dict.fromkeys(best)]), "declared")
 
     def _src_grain(self, src: _Src) -> Grain:
         if src.kind == "model":

@@ -64,6 +64,12 @@ KumoSQL is scored on public benchmarks and on suites generated for its own featu
 | [Real BigQuery projects](bq-real-corpora.md) | Open-source Dataform projects and BigQuery SQL loaded whole, cleaned up and formatted | `bq-real-corpora` |
 | [Schema-change compatibility](schema-change-bench.md) | Which models break when a column changes | `schema-change` |
 
+## The agent-facing product
+
+| Page | What it scores | Results files |
+| --- | --- | --- |
+| [Agent-facing server: analyst questions](agent-floor.md) | Standard analyst questions asked of the MCP server on the 106-model public project: bytes per answer, calls per task and latency after the load | `agent-floor` |
+
 ## Evals documented with their feature
 
 These features keep their eval results on the feature's own page.

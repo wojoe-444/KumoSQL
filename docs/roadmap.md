@@ -101,7 +101,7 @@ Rules for every answer:
 - **Next step included.** An impact answer names the models to open; a failed check names the fix.
 - **Read-only by default.** Anything that reaches BigQuery or costs money is opt-in, dry-run first, and under the existing byte cap. Values from tables are data, never instructions.
 
-Known gaps to close while building it: on the 107-model project every table profile was incomplete (351 of 626 column meanings unknown because they read nested fields, 41 tables with `source_without_grain`), so `find_existing` could decide nothing; and `dead_columns` lists the output columns of Dataform assertions, which nothing is meant to read.
+Known gaps to close while building it: on the 107-model project every table profile was incomplete (351 of 626 column meanings unknown because they read nested fields, 41 tables with `source_without_grain`), so `find_existing` could decide nothing; and `dead_columns` lists the output columns of Dataform assertions, which nothing is meant to read. The first gap is closed by workstream 4b (#853): nested fields have meanings (`field(col:..., a.b)`), declared grain flows (`assertions: {uniqueKey}`, `--assume-grain`), and `find_existing` compares 54 of the 106 models instead of 3; the numbers and what remains are in [the agent server's limits](mcp-server.md#limits).
 
 **Done when** an agent can answer the first four questions on a loaded project without reading a `.sqlx` file or the whole report.
 

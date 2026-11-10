@@ -60,6 +60,12 @@ For comparing slow evals between code versions, see [Eval diff](eval-diff.md).
 
 Feature guides also explain evaluations for [model reuse](../model-reuse.md), [join ordering](../joinorder.md), [output properties](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/output-properties.md), [constraint-dependent rewrites](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/constraint-rewrites.md), [incremental models](../incremental.md), and [scripts](../scripts.md).
 
+## The agent-facing product
+
+| Guide | Question it tests |
+| --- | --- |
+| [Agent-facing server: analyst questions](agent-floor.md) | How much does an agent read, and how long does it wait, to answer an analyst's question? |
+
 ## Find numbers or rerun a suite
 
 Use the [full eval index](../../docs/evals/README.md) to find each `benchmarks/results/*.json` file. Its `command` field is the rerun command, and its date and caveats describe the measurement. The [project scoreboard](../../README.md#benchmark-scoreboard) displays those recorded results.

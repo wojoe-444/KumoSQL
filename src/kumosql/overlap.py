@@ -33,14 +33,14 @@ from typing import Mapping, Sequence
 
 from .pipeline import Pipeline
 from .scopes import Scope
-from .table_profile import TableProfile, profile_pipeline, profile_query
+from .table_profile import COLUMN_MEANING, TableProfile, profile_pipeline, profile_query
 from .table_roles import TableRole, infer_roles
 
 __all__ = ["Check", "Match", "MatchRole", "OverlapResult", "find_overlaps"]
 
 _KIND_ORDER = {"same_meaning": 0, "contains": 1, "partial": 2, "unknown": 3}
 _CONFIDENCE_ORDER = {"high": 0, "medium": 1, "low": 2}
-_COLUMN_MEANING = re.compile(r"col:[^\s()|,\[\]]+")
+_COLUMN_MEANING = re.compile(COLUMN_MEANING)
 
 
 @dataclass(frozen=True)

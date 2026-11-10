@@ -22,6 +22,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 | [Project reduction](project-reduction.md) | The smallest Dataform project that still produces the outputs you keep, as a proved patch on the `.sqlx` files |
 | [GoogleSQL type inference](type-inference.md) | The output column types of a BigQuery query, STRUCT and ARRAY included, without running it: the catalog, unknown, coercion and supertype rules, set operations, pipe syntax, findings and the scan tool |
 | [Data profiling](data-profiling.md) | Per-column statistics of a table's values (nulls, distinct, min, max, quartiles, most common values) on BigQuery or DuckDB, saved profiles, and the read-only MCP resources agents read |
+| [Agent-facing server](mcp-server.md) | `python -m kumosql mcp`: one stdio MCP server that loads a project once and answers one question per call (describe a table, trace a column, assess a change, find an existing table) in about 2 KB, with counts, explicit unknowns and a next step |
 | [Incremental models](incremental.md) | Whether an incremental run equals a full refresh |
 | [Join ordering and cardinality](joinorder.md) | Sub-join size estimates and join orders, in pure Python |
 | [UI roadmap](ui-roadmap.md) | The JSON each graph, cost and change view reads |
@@ -42,3 +43,9 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 ## Evals
 
 The [evals folder](evals/README.md) has one page per eval family (the SQLSolver, VeriEQL, Logos' TPC-H, DSB and TPC-DS pairs, Singh and Bedathur, SQL-IQ and LLM-SQL-Solver equivalence suites, DLBench's cross-dialect translations, pairs from optimizer wrong-result bugs, Arcwise-Plat's corrections of BIRD's gold SQL, BigQuery number and error traps for the SMT prover, DB-GPT's rewrite examples, rewrites recommended by vendor docs, bounded verification, rewriting benchmarks, engine test suites, syntax and behaviour coverage, lineage and Dataform evals, fuzzing) and a table naming the `benchmarks/results/*.json` file behind every eval. Each eval's numbers are in the README scoreboard ([format](../benchmarks/README.md)).
+
+## More pages (generated)
+
+<!-- generated-pages:start (python tools/docs_index.py --write) -->
+- [Field trial: analyst tasks with and without the agent server](field-trial.md): Step 7 of the roadmap.
+<!-- generated-pages:end -->
