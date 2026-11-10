@@ -1,18 +1,18 @@
 {
   "suite": "VeriEQL Calcite-397 (proofs)",
   "order": 42,
-  "score": "335/397, 0 wrong",
+  "score": "334/397, 0 wrong",
   "metric": "Pairs proved equivalent by the z3 prover over all databases meeting the declared keys and NOT NULL columns, with no LLM. Inequivalent pairs stay out of this count.",
   "evidence": "proof",
   "correctness": "0 false proofs: every proof survives 1,000 further random DuckDB databases and VeriEQL's published counterexamples replayed on DuckDB",
   "coverage": {
-    "proven": 335,
-    "unknown": 62
+    "proven": 334,
+    "unknown": 63
   },
-  "caveats": "No labels. 9 pairs are not run: 5 whose Calcite text lost a correlated column (WHERE * = t5.DEPTNO), 2 with a subquery in an outer join's ON (DuckDB cannot run it), 1 comparing VARCHAR with INT and 1 naming a renamed lateral column ($cor0.SAL0). Calcite-only spellings ($f0 names, COUNT(a, b), SINGLE_VALUE, FIRST_VALUE, empty select lists, $cor correlation variables, repeated star columns, || as concatenation) are translated as docs/evals/verieql.md describes. 5 refuted pairs are marked equivalent by VeriEQL (80, 120, 126, 257, 367); each counterexample was executed and checked by hand (pair 80 returns 'TABLE' against 'TABLE ': Calcite pads CHAR literals, which DuckDB's VARCHAR does not). One pair (a correlated EXISTS with an unqualified column) is read differently by DuckDB than by VeriEQL. Rules were developed against SQLSolver's Calcite pairs, which overlap this suite (tuned on test). The outer-join flattening rules (src/kumosql/outer_join_flatten.py) were written with this suite's failing pairs in view (tuned on test). Measured on master 80ac740, after the structural aggregate rules (src/kumosql/aggregate_rules.py, #371). Re-measured on master 4d294afd (sqlglot 30.21, z3-solver 5.1.0.0, an otherwise idle 4-core machine): 315 to 335 proved, 0 wrong. Whether the gain comes from rules merged since 2026-10-02 or from solver timeouts that no longer fire on an idle machine was not separated.",
+  "caveats": "No labels. 9 pairs are not run: 5 whose Calcite text lost a correlated column (WHERE * = t5.DEPTNO), 2 with a subquery in an outer join's ON (DuckDB cannot run it), 1 comparing VARCHAR with INT and 1 naming a renamed lateral column ($cor0.SAL0). Calcite-only spellings ($f0 names, COUNT(a, b), SINGLE_VALUE, FIRST_VALUE, empty select lists, $cor correlation variables, repeated star columns, || as concatenation) are translated as docs/evals/verieql.md describes. 5 refuted pairs are marked equivalent by VeriEQL (80, 120, 126, 257, 367); each counterexample was executed and checked by hand (pair 80 returns 'TABLE' against 'TABLE ': Calcite pads CHAR literals, which DuckDB's VARCHAR does not). One pair (a correlated EXISTS with an unqualified column) is read differently by DuckDB than by VeriEQL. Rules were developed against SQLSolver's Calcite pairs, which overlap this suite (tuned on test). The outer-join flattening rules (src/kumosql/outer_join_flatten.py) were written with this suite's failing pairs in view (tuned on test). Measured on master 80ac740, after the structural aggregate rules (src/kumosql/aggregate_rules.py, #371). Re-measured on master 4d294afd (sqlglot 30.21, z3-solver 5.1.0.0, an otherwise idle 4-core machine): 315 to 335 proved, 0 wrong. Whether the gain comes from rules merged since 2026-10-02 or from solver timeouts that no longer fire on an idle machine was not separated. Re-measured 2026-11-10 on a 4-core machine that was running other jobs: master e86d58af gives 333 proved and 26 agreeing, and the SQLancer rule families of #861 add one proof (334 and 25), measured twice against master side by side. Whether master's two proofs fewer than the 2026-10-04 idle-machine record of 335 are solver timeouts under load or lost rules was not separated, and the two pairs were not identified.",
   "size": 397,
   "docs": "docs/evals/verieql.md",
   "command": "python tools/verieql_bench.py calcite --jobs 4 --audit",
-  "date": "2026-10-04",
+  "date": "2026-11-10",
   "held_out": "none"
 }

@@ -72,13 +72,15 @@ python tools/verieql_bench.py leetcode --jobs 4 --audit              # all cases
 
 The suites carry no labels, but four pairs are known to differ and `tests/test_verieql_benchmarks.py` runs the prover on them directly (so a counterexample the harness finds first cannot hide a proof): Calcite-397 positions 12 and 231 (0-based; indexes 13 and 232 in the artifact), which are `testAggregateCaseToFilter` ([CALCITE-5578](https://issues.apache.org/jira/browse/CALCITE-5578): `SUM(CASE WHEN c THEN x ELSE 0 END)` is 0 where `SUM(x) FILTER (WHERE c)` is NULL, on a table without a row for `c`) and `testReduceWithNonTypePredicate` ([CALCITE-5516](https://issues.apache.org/jira/browse/CALCITE-5516): `AVG` against an integer cast of the `SUM`/`COUNT` quotient), and Literature positions 46 and 47, which the paper says need more than 1,000 tuples to tell apart. The harness runs DuckDB, where `AVG` of an integer is a double, so it refutes the second Calcite pair; under Calcite's own typing (`AVG(INTEGER)` is `INTEGER`) the two sides can agree, and that pair is counted only as refuted, never as a label. The two Literature pairs come out `agrees`: no database of the sizes the generator reaches separates them. None is proved. `tests/test_known_nonequivalences.py` pins the same two Calcite rewrites on plain SQL with DuckDB witnesses. The current Calcite rule tests (the mined set) already carry the fixed form of `testAggregateCaseToFilter`, which is equivalent and proves.
 
-## Results (Literature and Calcite-397 2026-10-04, LeetCode 2026-10-02 less 6 proofs on 2026-10-04)
+## Results (Literature 2026-10-04, Calcite-397 2026-11-10, LeetCode 2026-10-02 less 6 proofs on 2026-10-04)
 
 | Suite | Pairs | Proven equivalent | Refuted (executed) | Agree on random databases | Not run | Wrong |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Literature | 64 | 28 | 25 | 9 | 2 | 0 |
-| Calcite-397 | 397 | 335 | 29 | 24 | 9 | 0 |
+| Calcite-397 | 397 | 334 | 29 | 25 | 9 | 0 |
 | LeetCode (all pairs) | 23,994 | 4,787 | 5,676 | 12,460 | 1,071 | 0 |
+
+Calcite-397 was re-measured on 2026-11-10 on a 4-core machine that was running other jobs. Master e86d58af proved 333 pairs and the [SQLancer rule families](fuzzing.md) merged that day add one, which gives 334; both sides were run twice side by side with the same answer. Master's two proofs fewer than the 335 recorded on an idle machine on 2026-10-04 may be solver timeouts under load or lost rules; that was not separated, and the two pairs were not identified.
 
 LeetCode lost 6 proofs (4,793 to 4,787) to the parser check: 6 of the 17 pairs it refuses had been proved, because they use `||` as OR (MySQL's default) where sqlglot reads concatenation. That was measured by re-running those 17 pairs, not the whole suite.
 
