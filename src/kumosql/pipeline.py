@@ -408,9 +408,11 @@ class Pipeline:
         """Output columns of intermediate models that no downstream model reads.
 
         Terminal models (nothing downstream) are treated as pipeline outputs
-        and never reported. A model is skipped when any consumer could not be
-        analysed, because an unseen reader might use any column. A column its
-        own config names (a built-in assertion, ``partitionBy``, ``clusterBy``,
+        and never reported. A Dataform assertion is never reported either: its
+        rows are the failures it checks for, and nothing is meant to read its
+        columns (a model may still list it as a dependency). A model is skipped
+        when any consumer could not be analysed, because an unseen reader might
+        use any column. A column its own config names (a built-in assertion, ``partitionBy``, ``clusterBy``,
         ``uniqueKey``, ``updatePartitionFilter``) counts as used, and a model
         whose config reads columns it cannot read is skipped.
         """
@@ -422,6 +424,8 @@ class Pipeline:
         for key in analysis.order:
             readers = downstream.get(key, set())
             if analysis.blind or not readers or key in analysis.opaque_readers_of:
+                continue
+            if key in self.models and self.models[key].kind == "assertion":
                 continue
             if any(reader not in analysis.consumed or reader in cyclic for reader in readers):
                 continue  # a reader that was not analysed, or sits in a dependency cycle (so its input columns were unknown), might use any column
