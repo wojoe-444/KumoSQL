@@ -188,9 +188,11 @@ class Tool:
     properties: dict[str, dict]
     required: tuple[str, ...]
     run: Callable[[Any, dict], Answer]
+    #: True for a tool that can reach BigQuery when asked to (it never does so by default)
+    open_world: bool = False
 
     def definition(self) -> dict:
-        """The ``tools/list`` entry: read-only, closed-world."""
+        """The ``tools/list`` entry: read-only; closed-world unless the tool can reach BigQuery on request."""
 
         return {
             "name": self.name,
@@ -202,7 +204,7 @@ class Tool:
                 "required": list(self.required),
                 "additionalProperties": False,
             },
-            "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+            "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": self.open_world},
         }
 
     def check(self, arguments: object) -> dict:
@@ -226,6 +228,10 @@ class Tool:
                 raise ToolError(f"argument {name!r} must be a string")
             if kind == "integer" and (isinstance(value, bool) or not isinstance(value, int)):
                 raise ToolError(f"argument {name!r} must be an integer")
+            if kind == "number" and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                raise ToolError(f"argument {name!r} must be a number")
+            if kind == "boolean" and not isinstance(value, bool):
+                raise ToolError(f"argument {name!r} must be true or false")
             if "enum" in spec and value not in spec["enum"]:
                 raise ToolError(f"argument {name!r} must be one of: {', '.join(spec['enum'])}")
         return arguments
@@ -234,13 +240,13 @@ class Tool:
 REGISTRY: dict[str, Tool] = {}
 
 
-def tool(name: str, title: str, description: str, properties: dict[str, dict] | None = None, required: tuple[str, ...] = ()):
-    """Register ``function(session, arguments) -> Answer`` as the tool ``name``."""
+def tool(name: str, title: str, description: str, properties: dict[str, dict] | None = None, required: tuple[str, ...] = (), *, open_world: bool = False):
+    """Register ``function(session, arguments) -> Answer`` as the tool ``name`` (``open_world``: it can reach BigQuery when asked)."""
 
     def register(function: Callable[[Any, dict], Answer]) -> Callable[[Any, dict], Answer]:
         if name in REGISTRY:
             raise ValueError(f"tool {name!r} is registered twice")
-        REGISTRY[name] = Tool(name, title, description, dict(properties or {}), tuple(required), function)
+        REGISTRY[name] = Tool(name, title, description, dict(properties or {}), tuple(required), function, open_world)
         return function
 
     return register

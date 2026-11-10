@@ -1,4 +1,4 @@
-"""The agent-facing server (``python -m kumosql mcp``): protocol, the four tools, bounded answers, read-only."""
+"""The agent-facing server (``python -m kumosql mcp``): protocol, the tools, bounded answers, read-only."""
 
 import io
 import json
@@ -69,7 +69,7 @@ def load_big():
 # ------------------------------------------------------------------- protocol
 
 
-def test_the_server_lists_four_read_only_tools_and_keeps_the_profile_resources(tmp_path):
+def test_the_server_lists_its_read_only_tools_and_keeps_the_profile_resources(tmp_path):
     store.save(DataProfile("p.ds.totals", "duckdb", "2026-10-07T12:00:00Z", 42, []), directory=tmp_path)
     server = mcp_server.AgentServer(Session(profiles=tmp_path))
 
@@ -80,9 +80,9 @@ def test_the_server_lists_four_read_only_tools_and_keeps_the_profile_resources(t
     assert rpc(server, "ping")["result"] == {}
 
     tools = rpc(server, "tools/list")["result"]["tools"]
-    assert [tool["name"] for tool in tools] == ["describe_table", "trace_column", "impact", "find_existing"]
+    assert [tool["name"] for tool in tools] == ["describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries"]
     for tool in tools:
-        assert tool["annotations"]["readOnlyHint"] and not tool["annotations"]["openWorldHint"]
+        assert tool["annotations"]["readOnlyHint"] and not tool["annotations"]["openWorldHint"]  # none of these can reach BigQuery
         assert {"max_bytes", "offset"} <= set(tool["inputSchema"]["properties"])
         assert tool["inputSchema"]["additionalProperties"] is False
 
@@ -315,6 +315,101 @@ def check_find_existing_is_short_and_explicit_when_nothing_can_be_compared(big):
     assert all(item["reason"] for item in body["unknown"])
 
 
+# --------------------------------------------------------------- find_tables
+
+
+def test_find_tables_ranks_by_name_columns_and_kind_and_says_why(small):
+    body, failed, used = ask(small, "find_tables", need="customer revenue")
+    assert not failed and used <= BOUND
+    assert body["candidates"][0]["table"] == "p.ds.totals_copy"  # its columns are customer and revenue
+    assert body["candidates"][0]["why"] == "columns customer, revenue" and body["candidates"][0]["words"] == "2 of 2"
+    assert body["candidates"][0]["grain"] == "one row per customer"
+    body, _, _ = ask(small, "find_tables", need="totals")  # names: the plural matches, the longer name ranks after the exact one
+    assert [c["table"] for c in body["candidates"][:2]] == ["p.ds.totals", "p.ds.totals_copy"]
+    body, _, _ = ask(small, "find_tables", need="rows", column="AMOUNT")  # an exact column name counts most, in any case
+    assert body["candidates"][0]["table"] == "p.ds.raw" and "amount" in body["candidates"][0]["why"]
+    assert ask(small, "find_tables", need="revenue by customer")[0] == ask(small, "find_tables", need="revenue by customer")[0]  # deterministic
+
+
+def test_find_tables_filters_by_kind_and_skips_assertions_and_pages(small):
+    body, _, _ = ask(small, "find_tables", need="id total", kind="view")
+    assert [c["table"] for c in body["candidates"]] == ["p.ds.report"] and body["candidates"][0]["kind"] == "view"
+    body, _, _ = ask(small, "find_tables", need="id")
+    assert "p.ds.check" not in {c["table"] for c in body["candidates"]}  # an assertion is not a table to use
+    paged, _, _ = ask(small, "find_tables", need="id", offset=1)
+    assert paged["candidates"][0]["table"] == body["candidates"][1]["table"]
+
+
+def test_find_tables_says_when_nothing_matches_and_refuses_an_empty_need(small):
+    body, failed, _ = ask(small, "find_tables", need="zebra")
+    assert not failed and body["counts"]["matches"] == 0 and "candidates" not in body and body["unknown"] and body["next"]
+    body, failed, _ = ask(small, "find_tables", need="the of and")
+    assert failed and "searchable" in body["error"] and body["next"]
+    assert ask(small, "find_tables", need="id", kind="cube")[1]
+
+
+def test_find_tables_uses_tags_and_the_columns_of_a_saved_data_profile(tmp_path):
+    files = {"a.sqlx": 'config { type: "table", tags: ["finance"] }\nSELECT 1 AS k\n', "b.sqlx": 'config { type: "table" }\nSELECT 1 AS k\n'}
+    from kumosql.data_profile import ColumnProfile
+
+    column = ColumnProfile("basket_size", "INT64", "numeric", 1, 0, 0.0)
+    store.save(DataProfile("p.ds.b", "duckdb", "2026-10-07T12:00:00Z", 1, [column]), directory=tmp_path / "profiles")
+    server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path / "proj", files)), profiles=tmp_path / "profiles"))
+    body, _, _ = ask(server, "find_tables", need="finance")
+    assert [c["table"] for c in body["candidates"]] == ["p.ds.a"] and body["candidates"][0]["why"] == "tag finance"
+    body, _, _ = ask(server, "find_tables", need="basket")
+    assert body["candidates"][0]["table"] == "p.ds.b" and "saved profile columns" in body["candidates"][0]["why"]
+
+
+def check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound(big):
+    for key in big.session.pipeline().models:
+        body, failed, used = ask(big, "find_tables", need=key.split(".")[-1])
+        assert not failed and used <= BOUND and len(body["candidates"]) <= 5
+        assert body["candidates"][0]["table"] == key, (key, body["candidates"][0]["table"])
+    body, _, used = ask(big, "find_tables", need="intermediary activity per day", column="day")
+    assert used <= BOUND and body["candidates"][0]["table"].endswith("csa_3_11_intermediary_stats")
+    assert body["unknown"] and body["next"]  # tables whose meanings are not tracked are named as a gap
+
+
+# ----------------------------------------------------------- compare_queries
+
+
+def test_compare_queries_proves_a_reordered_filter_and_lists_what_the_proof_assumes(small):
+    body, failed, used = ask(small, "compare_queries", left="SELECT id FROM p.ds.totals WHERE total > 10 AND id > 1", right="SELECT id FROM p.ds.totals WHERE id > 1 AND total > 10")
+    assert not failed and used <= BOUND and body["verdict"] == "equivalent" and body["proof"] == "unconditional"
+    assert body["compared_as"].startswith("bags of rows") and body["assumptions"] and body["next"]
+
+
+def test_compare_queries_shows_a_counterexample_when_the_queries_differ(small):
+    body, _, used = ask(small, "compare_queries", left="SELECT id FROM p.ds.totals WHERE total > 10", right="SELECT id FROM p.ds.totals WHERE total >= 10")
+    assert used <= BOUND and body["verdict"] == "not_equivalent"
+    example = body["counterexample"]
+    assert example["tables"]["p.ds.totals"][0]["total"] == 10 and example["left_returns"] == [] and example["right_returns"] == [[example["tables"]["p.ds.totals"][0]["id"]]]
+
+
+def test_compare_queries_says_unknown_with_the_reason_never_a_guess(small):
+    body, failed, _ = ask(small, "compare_queries", left="SELECT id FROM p.ds.totals", right="SELECT id FROM p.ds.totals ORDER BY id", respect_row_order=True)
+    assert not failed and body["verdict"] == "unknown" and "differ" in body["next"][0]
+    assert body["unknown"][0]["what"] == "whether the queries are equivalent" and body["unknown"][0]["reason"]
+    body, _, _ = ask(small, "compare_queries", left="SELECT (", right="SELECT 1")
+    assert body["verdict"] == "unknown" and body["unknown"][0]["reason"].startswith("parse error") and "\x1b" not in body["unknown"][0]["reason"]
+
+
+def test_compare_queries_refuses_a_time_cap_outside_one_to_sixty(small):
+    for seconds in (0, 61):
+        body, failed, _ = ask(small, "compare_queries", left="SELECT 1", right="SELECT 1", time_limit=seconds)
+        assert failed and "time_limit" in body["error"] and body["next"]
+
+
+def test_compare_queries_stops_at_the_time_cap_and_reports_unknown(small, monkeypatch):
+    monkeypatch.setattr("kumosql.mcp_compare.prove_pair", lambda *a, **k: __import__("time").sleep(30))
+    body, failed, _ = ask(small, "compare_queries", left="SELECT 1", right="SELECT 2", time_limit=1)
+    assert not failed and body["verdict"] == "unknown" and "1 s" in body["answer"] and 1 <= body["counts"]["seconds"] < 5
+    monkeypatch.setattr("kumosql.mcp_compare.prove_pair", lambda *a, **k: 1 / 0)
+    body, _, _ = ask(small, "compare_queries", left="SELECT 1", right="SELECT 2")
+    assert body["verdict"] == "unknown" and "ZeroDivisionError" in body["answer"]
+
+
 # ----------------------------------------------------------- bounded answers
 
 
@@ -361,6 +456,11 @@ def check_offset_pages_the_main_list_without_repeating_it(big):
     assert first["columns"] + second["columns"] == wide["columns"][: shown + len(second["columns"])]
 
 
+def check_compare_queries_reads_the_project_facts_of_the_big_project(big):
+    body, failed, used = ask(big, "compare_queries", left="SELECT day FROM csa.csa_3_11_intermediary_stats", right="SELECT day FROM csa.csa_3_11_intermediary_stats WHERE TRUE")
+    assert not failed and used <= BOUND and body["verdict"] == "equivalent"
+
+
 def test_the_big_project_answers_are_bounded_and_explicit():
     """One test, so the project is analysed once per run, not once per xdist worker (the gate keeps tests under 2 s)."""
 
@@ -371,6 +471,8 @@ def test_the_big_project_answers_are_bounded_and_explicit():
     check_every_default_answer_on_the_big_project_fits_the_bound(big)
     check_a_wider_bound_returns_more_and_the_answer_says_how_to_ask(big)
     check_offset_pages_the_main_list_without_repeating_it(big)
+    check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound(big)
+    check_compare_queries_reads_the_project_facts_of_the_big_project(big)
 
 
 def test_the_tools_neither_write_files_nor_open_connections(tmp_path, monkeypatch):
@@ -384,7 +486,8 @@ def test_the_tools_neither_write_files_nor_open_connections(tmp_path, monkeypatc
     monkeypatch.setattr(socket, "create_connection", refuse)
     server = mcp_server.AgentServer(Session(load_sqlx_project(project)))
     for name, arguments in [("describe_table", {"table": "totals"}), ("trace_column", {"table": "report", "column": "total"}),
-                            ("impact", {"table": "raw", "column": "amount"}), ("find_existing", {"table": "totals"})]:
+                            ("impact", {"table": "raw", "column": "amount"}), ("find_existing", {"table": "totals"}),
+                            ("find_tables", {"need": "totals"}), ("compare_queries", {"left": "SELECT id FROM p.ds.raw", "right": "SELECT id FROM p.ds.raw WHERE TRUE"})]:
         assert not ask(server, name, **arguments)[1]
     assert sorted(str(p) for p in (tmp_path / "proj").rglob("*")) == before  # the project is untouched
     # the only files written are KumoSQL's own diagnostics log and its name map, which every command writes in the data folder
