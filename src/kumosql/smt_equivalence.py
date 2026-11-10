@@ -5124,7 +5124,7 @@ def _split_limit(sql: str, dialect: str):
         first = first.this
     if not isinstance(first, exp.Select) or any(isinstance(e, exp.Star) for e in first.expressions):
         return None, "ORDER BY with a star select list"
-    outputs = [(e.alias_or_name.lower(), (e.this if isinstance(e, exp.Alias) else e).sql()) for e in first.expressions]
+    outputs = [(_output_name(e), (e.this if isinstance(e, exp.Alias) else e).sql()) for e in first.expressions]
     ordering = []
     hidden: list[exp.Expression] = []  # order keys that are not output columns, read as extra columns
     for item in order.expressions:
@@ -5181,6 +5181,13 @@ def _split_limit(sql: str, dialect: str):
         len(outputs),
     )
     return faithful_sql(core, dialect), spec
+
+
+def _output_name(output: exp.Expression) -> str:
+    """The name ORDER BY can call a select-list entry by: its alias, or the column or field it reads bare. Any other
+    unaliased expression has no such name (``CAST(a AS FLOAT64)`` is not an output called ``a``)."""
+
+    return output.alias_or_name.lower() if isinstance(output, (exp.Alias, exp.Column, exp.Dot)) else ""
 
 
 def _reads_shadowing_alias(key: exp.Expression, outputs: list[tuple[str, str]]) -> bool:
