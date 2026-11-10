@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/mcp-server.md)
 
-One stdio [Model Context Protocol](https://modelcontextprotocol.io) server for an agent that works on a Dataform project. It loads the project once, keeps it in memory and answers **one question per call** with a **bounded answer**: about 2 KB by default, with counts, what it could not determine and why, a next step, and the argument that asks for more. This is step 4 of the [roadmap](roadmap.md#4-one-agent-facing-server); the tools below are its first four.
+One stdio [Model Context Protocol](https://modelcontextprotocol.io) server for an agent that works on a Dataform project. It loads the project once, keeps it in memory and answers **one question per call** with a **bounded answer**: about 2 KB by default, with counts, what it could not determine and why, a next step, and the argument that asks for more. This is step 4 of the [roadmap](roadmap.md#4-one-agent-facing-server) (the first four tools) and step 6 ([preflight, comparison and on-demand profiling](roadmap.md#6-preflight-comparison-and-on-demand-profiling), the rest).
 
 ```
 python -m kumosql mcp PROJECT [--source-schema FILE] [--profiles DIR]
@@ -20,6 +20,8 @@ python -m kumosql mcp                      # saved data profiles only, no projec
 | `trace_column` | Where does this value come from, and which rows reach it? | `table`, `column` | `Pipeline.trace_column`, `explain_lineage` |
 | `impact` | What breaks if I change this? | `table`, optional `column`, optional `change` | `Pipeline.assess_change` |
 | `find_existing` | Does a table for this already exist, or one I can roll up? | one of `table`, `sql` | `find_overlaps`, `find_rollups` |
+| `find_tables` | Which table should I use? | `need`, optional `column`, optional `kind` | table profiles, tags, saved data profiles, the saved catalog |
+| `compare_queries` | Is my rewrite still the same query? | `left`, `right`, optional `time_limit`, optional `respect_row_order` | `prove_statements`, the SMT prover and its counterexample search |
 
 Every tool also takes `max_bytes` (the size bound, 1,000 to 20,000, default 2,000) and `offset` (where the answer's main list starts). A `table` is a model or declared source of the project, written as the full key, `dataset.table` or the bare table name, in any case. A name that matches several tables is not guessed: the error lists the candidates.
 
@@ -27,6 +29,8 @@ Every tool also takes `max_bytes` (the size bound, 1,000 to 20,000, default 2,00
 - **`trace_column`** returns the one-hop sources, the ultimate source columns, the models the value passes through (nearest first) and the filters and joins that limit its rows, written **once per model**. `column` may name a field inside a STRUCT column (`payload.user.id`). `complete: false` plus an `unknown` entry means a step could not be followed, so the sources are a lower bound.
 - **`impact`** takes `change` of `drop_column`, `rename_column`, `change_expression` or `drop_table` (default `drop_column` when a column is given, `drop_table` otherwise). It lists the models that break, change values, may change behaviour or break indirectly, nearest first, then the readers that could not be analysed (grouped by reason), and the files to open. `safe_to_delete` is always `unknown`: readers outside the project (query history, dashboards) are not visible.
 - **`find_existing`** compares the table (or a proposed `SELECT` written against the project's tables) with every other table. It returns `verdict`: `found` (same meaning, contains or partial matches, best first), `rollup_possible` (a finer-grain table could be aggregated), `none_found` (with how many tables were compared) or `cannot_tell`. When nothing can be compared the answer is a few lines saying so, naming what blocks it (the target's own grain or column meanings, or the other tables') instead of listing every table that was skipped.
+- **`find_tables`** takes a need in plain words (`need="daily revenue by customer"`), and optionally a `column` name (an exact name counts most) and a `kind` (`table`, `view`, `incremental`, `source`, or a role: `fact`, `dimension`, `bridge`). It returns up to five candidates, best first, each with its `score`, why it matched (`name`, `columns`, `tag`, `meaning of`, `saved profile columns`, `saved catalog`), how many of your words matched, its grain, how many models read it and what is unknown about it. The ranking is fixed word matching (lower case, singular, camelCase and underscores split, a shared start of four letters counts half) with fixed weights: a word in the table name 4, in a column name or tag 2, in the dataset, a tracked column meaning, a saved profile or the saved catalog 1, counted once at its best place; an exact `column` adds 6; ties go to the table more models read, then to the name. The same question always gives the same answer. Assertions are not offered. A table with an unknown grain or unknown column meanings can only be matched by name, and the answer says how many tables that is. `offset` pages the candidates. It reads only what the loaded project, the saved data profiles and the saved catalog hold: no BigQuery, no language model.
+- **`compare_queries`** takes two queries written against the project's tables. It runs the structural and algebraic proof first (what `prove-sql-equivalent` runs), and when that does not settle it the SMT prover with the columns, keys and NOT NULL columns the project declares, which can also return a database on which the queries differ. `verdict` is `equivalent` (with `proof`: `unconditional`, or `given declared project facts`, and the `assumptions` the proof rests on), `not_equivalent` (with a `counterexample`: made-up rows per table, at most three each and clipped, and what each query returns on them) or `unknown` (with the reason; unknown is not a claim that the queries differ, and is never turned into a proof). Rows are compared as bags; `respect_row_order=true` also requires the same `ORDER BY` (only the structural proof checks that, so more pairs stay unknown). Column types and names are not compared: the answer's next step is `check_query` with a dry run. `time_limit` is the cap in seconds (default 10, from 1 to 60): the check runs in a forked process that is killed at the cap, and a check that does not finish is `unknown`. It touches no database and no network.
 
 ## Rules every answer follows
 
@@ -53,7 +57,7 @@ Every tool also takes `max_bytes` (the size bound, 1,000 to 20,000, default 2,00
 
 ## Measured sizes
 
-On `tests/fixtures/bq_corpora/security-analytics` (106 models, 626 output columns), default bound, compact JSON. The sizes below come from asking every model and column; `tests/test_mcp_server.py` repeats it (every `describe_table` and `trace_column` question, `impact` for every model and a sample of columns, six `find_existing` questions) and fails when an answer exceeds 2,000 bytes.
+On `tests/fixtures/bq_corpora/security-analytics` (106 models, 626 output columns), default bound, compact JSON. The sizes below come from asking every model and column; `tests/test_mcp_server.py` repeats it (every `describe_table` and `trace_column` question, `impact` for every model and a sample of columns, six `find_existing` questions, `find_tables` for every model name, one `compare_queries`) and fails when an answer exceeds 2,000 bytes.
 
 | Tool | Questions asked | Median | 95th percentile | Largest |
 | --- | ---: | ---: | ---: | ---: |
@@ -61,6 +65,8 @@ On `tests/fixtures/bq_corpora/security-analytics` (106 models, 626 output column
 | `trace_column` | 626 (every column) | 782 B | 1,239 B | 1,984 B |
 | `impact` | 318 (each model, plus two columns each) | 561 B | 914 B | 1,116 B |
 | `find_existing` | 20 | 822 B | 823 B | 823 B |
+| `find_tables` | 106 (each model's own name as the need) | 1,762 B | 1,944 B | 1,950 B |
+| `compare_queries` | 2 (one proof, one counterexample) | 644 B | 865 B | 865 B |
 
 For comparison, the roadmap measured 141 KB for reading every `.sqlx` file, 1,197 KB for the `pipeline-report` JSON, and about 50 KB for the overlap search that compared 0 of 105 tables. The same question through `find_existing` is 822 bytes. Latency is dominated by the one-time load; the figures come from one 4-core container and indicate scale only.
 
@@ -85,6 +91,8 @@ def find_tables(session, args):
 
 - On the 106-model public project 351 of 626 column meanings are unknown because they read fields inside nested columns, and 41 tables have `source_without_grain` because they read tables the project does not define. A table with an unknown grain or unknown meanings cannot be compared, so `find_existing` there returns `cannot_tell` (accurately, and in 800 bytes). Closing those gaps means tracking meanings through STRUCT fields and source schemas; it is not part of this step.
 - `impact` does not read job history yet, so readers seen only in query history are not listed, and `safe_to_delete` stays `unknown`.
-- Nothing here reaches BigQuery. Preflight checks, query comparison and on-demand profiling are the remaining tools of the [roadmap](roadmap.md#6-preflight-comparison-and-on-demand-profiling).
+- Nothing here reaches BigQuery. The preflight check and on-demand profiling are the remaining tools of the [roadmap](roadmap.md#6-preflight-comparison-and-on-demand-profiling).
+- `find_tables` matches words, not meanings: "revenue" does not find a table whose columns are called `sales`. On the public project the top candidate for each model's own name is that model, and a need such as "intermediary activity per day" finds the right table by its name and its `day` column, but 351 of 626 column meanings are unknown there, so a better table may hide behind a name the words do not match.
+- `compare_queries` proves what the prover can prove today; most real rewrites that change a join or an aggregate come back `unknown`. A counterexample is a small made-up database, not data from your tables.
 - Answers are measured in bytes of JSON, not tokens.
 - The server handles one request at a time on stdin, and does not support JSON-RPC batches or cancellation.
