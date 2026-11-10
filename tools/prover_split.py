@@ -28,7 +28,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#: The modules the prover is made of: the eleven named by the roadmap (step 8), plus two benchmark-support leaves.
+#: The modules the prover is made of: the eleven named by the roadmap (step 8), plus two benchmark-support leaves and the parser extension.
 #: Their import closure is the prover.
 ROOTS = (
     "equivalence",
@@ -46,6 +46,9 @@ ROOTS = (
     # of the soundness fuzzers. Each is a leaf that imports nothing outside the closure above.
     "canonical_rules",
     "query_mutants",
+    # Teaches sqlglot's BigQuery parser syntax it lacks, once, when imported; every parse the prover makes relies on
+    # it, so the prover's own package imports it first (as ``kumosql/__init__`` always did).
+    "bigquery_syntax",
 )
 
 #: Product modules the prover must not import, directly or through a chain. ``engine`` is the registry of the
@@ -74,6 +77,24 @@ FORBIDDEN = (
     "containment",
     "consolidate",
     "lineage_filters",
+)
+
+
+#: Feature pages of ``docs/`` that describe the prover (each has a ``docs_simple/`` companion that moves with it).
+#: Eval pages (``docs/evals/``) follow their results files.
+PROVER_DOCS = (
+    "bigquery-on-duckdb.md",
+    "conditional-equivalence.md",
+    "constraint-rewrites.md",
+    "difference-explanations.md",
+    "numeric-assumption-report.md",
+    "output-properties.md",
+    "parser-checks.md",
+    "proof-safeguards.md",
+    "provers.md",
+    "rule-fuzzing.md",
+    "singleton-and-set-identity.md",
+    "ties.md",
 )
 
 
@@ -252,7 +273,8 @@ def plan(source: Path, package: str, repo: Path) -> dict:
     # tool and drop the ones that name a product module or a dropped tool, until nothing changes (tools import
     # tools). What is left and is reached from a tool that names the prover (or names it itself) moves; a helper
     # with no prover reference that the prover tools do not import (a corpus fetcher) stays.
-    stays = {"eval_diff", "run_tests", "scoreboard", "test_history", "prover_split", "xdist_scheduler"}
+    stays = {"eval_diff", "run_tests", "test_history", "prover_split", "xdist_scheduler"}
+    copied = {"scoreboard"}  # generic, used by both repositories: copied, never moved
     candidates = set(tools) - stays
     changed = True
     while changed:
@@ -262,11 +284,11 @@ def plan(source: Path, package: str, repo: Path) -> dict:
             if not refs <= prover or not other <= candidates:
                 candidates.discard(name)
                 changed = True
-    moved_tools = {name for name in candidates if tool_refs[name][0]}
+    moved_tools = {name for name in candidates if tool_refs[name][0] and name not in copied}
     stack = list(moved_tools)
     while stack:
         for name in tool_refs[stack.pop()][1]:
-            if name in candidates and name not in moved_tools:
+            if name in candidates and name not in moved_tools and name not in copied:
                 moved_tools.add(name)
                 stack.append(name)
     moved_tests = {
@@ -274,7 +296,50 @@ def plan(source: Path, package: str, repo: Path) -> dict:
         for name, (refs, used) in test_refs.items()
         if refs <= prover and used <= moved_tools and (refs or used)
     }
+    results = {}
+    for path in sorted((repo / "benchmarks" / "results").glob("*.json")):
+        command = json.loads(path.read_text(encoding="utf-8")).get("command", "")
+        used = re.findall(r"tools/([A-Za-z_0-9]+)\.py", command)
+        results[path.name] = bool(used) and all(tool in moved_tools for tool in used)
+    moved_results = {name for name, moves in results.items() if moves}
+
+    # An eval page moves when every results file it names moves; one that names some of each is copied to both.
+    pages: dict[str, tuple[set[str], set[str]]] = {}
+    index = (repo / "docs" / "evals" / "README.md").read_text(encoding="utf-8")
+    for line in index.splitlines():
+        link = re.match(r"\| \[[^\]]*\]\(([\w.-]+\.md)\)", line)
+        if link:
+            named = {f"{n}.json" for n in re.findall(r"`([a-z0-9_.-]+)`", line.split("|")[-2]) if f"{n}.json" in results}
+            pages[link.group(1)] = ({n for n in named if n in moved_results}, {n for n in named if n not in moved_results})
+    eval_pages_moved = sorted(page for page, (go, stay) in pages.items() if go and not stay)
+    eval_pages_shared = sorted(page for page, (go, stay) in pages.items() if go and stay)
+
+    moved_text = "\n".join(
+        [(tests_dir / name).read_text(encoding="utf-8", errors="replace") for name in sorted(moved_tests)]
+        + [f.read_text(encoding="utf-8", errors="replace") for name in sorted(moved_tools) for f in ([tools[name]] if tools[name].is_file() else sorted(tools[name].rglob("*.py")))]
+    )
+    staying_text = "\n".join(
+        [(tests_dir / name).read_text(encoding="utf-8", errors="replace") for name in sorted(set(test_refs) - moved_tests)]
+        + [f.read_text(encoding="utf-8", errors="replace") for name in sorted(set(tools) - moved_tools) for f in ([tools[name]] if tools[name].is_file() else sorted(tools[name].rglob("*.py")))]
+    )
+
+    def mentioned(text: str, entry: Path) -> bool:
+        return bool(re.search(r"[/\"']" + re.escape(entry.name) + r"[/\"'.]", text) or re.search(r"[/\"']" + re.escape(entry.stem) + r"[/\"'.]", text))
+
+    assets: dict[str, str] = {}
+    for base in (repo / "tests" / "fixtures", repo / "benchmarks"):
+        for entry in sorted(base.iterdir()):
+            if entry.name == "results" or entry.name == "README.md":
+                continue
+            if mentioned(moved_text, entry):
+                assets[str(entry.relative_to(repo))] = "both" if mentioned(staying_text, entry) else "prover"
     return {
+        "results": sorted(moved_results),
+        "results_staying": sorted(set(results) - moved_results),
+        "docs": sorted(PROVER_DOCS),
+        "eval_pages": eval_pages_moved,
+        "eval_pages_shared": eval_pages_shared,
+        "assets": assets,
         "tools": sorted(moved_tools),
         "tests": sorted(moved_tests),
         "tests_staying": sorted(set(test_refs) - moved_tests),
@@ -286,16 +351,58 @@ def plan(source: Path, package: str, repo: Path) -> dict:
     }
 
 
+def filter_repo_paths(source: Path, package: str, repo: Path, new_package: str = "kumo_sql_prover") -> list[str]:
+    """Lines for ``git filter-repo --paths-from-file``: every path that moves, with the package renamed.
+
+    Running it on a full clone keeps the history of each moved file at its new path::
+
+        python tools/prover_split.py --paths > paths.txt
+        git filter-repo --paths-from-file paths.txt
+    """
+
+    modules, graph = import_graph(source, package)
+    inside = closure(graph, ROOTS)
+    found = plan(source, package, repo)
+    lines: list[str] = []
+    seen_dirs: set[str] = set()
+    base = source.relative_to(repo).as_posix()
+    for module in sorted(inside):
+        path = modules[module]
+        top = module.split(".")[0]
+        if (source / top).is_dir():  # a package (``uexpr``): its whole folder
+            if top not in seen_dirs:
+                seen_dirs.add(top)
+                lines.append(f"{base}/{top}==>src/{new_package}/{top}")
+            continue
+        lines.append(f"{path.relative_to(repo).as_posix()}==>src/{new_package}/{path.name}")
+    lines += [f"tests/{name}" for name in found["tests"]] + ["tests/sqlglot_support.py"]
+    tools_dir = repo / "tools"
+    for name in sorted(set(found["tools"]) | {"scoreboard"}):
+        lines.append(f"tools/{name}.py" if (tools_dir / f"{name}.py").exists() else f"tools/{name}")
+    lines += [f"benchmarks/results/{name}" for name in found["results"]]
+    for page in found["docs"]:
+        lines += [f"docs/{page}", f"docs_simple/{page}"]
+    for page in found["eval_pages"] + found["eval_pages_shared"]:
+        lines += [f"docs/evals/{page}", f"docs_simple/evals/{page}"]
+    lines += sorted(found["assets"])
+    lines.append("benchmarks/README.md")
+    return lines
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--list", action="store_true", help="print every module of the closure")
     parser.add_argument("--check", action="store_true", help="exit 1 when the closure reaches a product-only module")
     parser.add_argument("--plan", action="store_true", help="also list the tests and tools that move with it")
     parser.add_argument("--json", action="store_true", help="print the result as JSON")
+    parser.add_argument("--paths", action="store_true", help="print the paths that move, as a git filter-repo paths file")
     parser.add_argument("--source", type=Path, default=ROOT / "src" / "kumosql", help="package source directory")
     parser.add_argument("--package", default="kumosql", help="package name used in imports")
     args = parser.parse_args(argv)
 
+    if args.paths:
+        print("\n".join(filter_repo_paths(args.source, args.package, ROOT)))
+        return 0
     result = analyse(args.source, args.package)
     if args.plan:
         result["plan"] = plan(args.source, args.package, ROOT)
