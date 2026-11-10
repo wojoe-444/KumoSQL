@@ -45,7 +45,7 @@ from sqlglot import exp
 from .ast_utils import MAX_EXPANDED_READS, UnmodeledConstruct, distinct_on, drop_case_conflicts, expand_group_by_all, expanded_reads, extended_grouping, is_call, spell_for_duckdb, star_modified
 from .duckdb_load import small_database
 from .set_operations import positional_sql_pair
-from .solver_lock import bounded_solver, serialized
+from .solver_lock import Z3_MISSING, bounded_solver, serialized
 from .type_names import invalid_type_name
 
 try:  # pragma: no cover - exercised through the tests
@@ -2200,7 +2200,7 @@ def _check_bounded(
     """
 
     if z3 is None:
-        return BoundedResult(BoundedStatus.UNKNOWN, "z3-solver is not installed")
+        return BoundedResult(BoundedStatus.UNKNOWN, Z3_MISSING)
     began = time.time()
     if prepare is not None:
         left_sql, right_sql = prepare(left_sql), prepare(right_sql)
@@ -2218,8 +2218,10 @@ def _check_bounded(
 
             try:
                 replay = DuckDBReplay(schema, left_sql, right_sql, dialect, translate=translate)
-            except Unfaithful:
-                replay = _no_replay  # DuckDB cannot run these as BigQuery does: no counterexample is confirmed
+            except (Unfaithful, ImportError):
+                # DuckDB cannot run these as BigQuery does, or is not installed (the ``execution`` extra): no
+                # counterexample is confirmed, and a bound with no difference is still reported.
+                replay = _no_replay
         for bound in range(start, rows + 1):
             outcome = None
             for attempt in range(3):

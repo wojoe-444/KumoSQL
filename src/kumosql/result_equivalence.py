@@ -565,7 +565,7 @@ def _connect(dialect: str = "bigquery"):
         import duckdb
     except ImportError as exc:  # pragma: no cover - exercised only without the extra
         raise ExecutionError(
-            "duckdb is required for result equivalence; install kumosql[execution]"
+            "duckdb is required for result equivalence (pip install duckdb)"
         ) from exc
     connection = small_database()
     if dialect == "bigquery":

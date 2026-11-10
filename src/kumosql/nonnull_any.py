@@ -1,6 +1,9 @@
 """Two-valued ANY on declared non-NULL columns, including unique grouped expansions."""
 
-import z3
+try:
+    import z3
+except ImportError:  # z3-solver is an optional extra; the rules below are reached only from a prover that has it
+    z3 = None
 from sqlglot import exp
 
 from .quantified_rules import _Encoder, _Unsupported
@@ -15,6 +18,8 @@ def rewrite_nonnull_any(
     types: dict | None = None,
     assumptions: set[str] | None = None,
 ) -> exp.Expression:
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
     from .algebraic_equivalence import _qualified_outer_columns, _merge_spj_source
     from .counted_membership import _unstable, _row_phase, GROUP_EQUALITY_ASSUMPTION
     from .mysql_boolean_outputs import boolean_value, INTEGER_TYPES

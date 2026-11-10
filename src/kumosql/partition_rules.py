@@ -23,7 +23,10 @@ from __future__ import annotations
 
 from itertools import combinations
 
-import z3
+try:
+    import z3
+except ImportError:  # z3-solver is an optional extra; the rules below are reached only from a prover that has it
+    z3 = None
 from sqlglot import exp
 
 from .solver_lock import bounded_solver, serialized
@@ -39,6 +42,8 @@ _RECOMBINE = {exp.Count: exp.Sum, exp.Sum: exp.Sum, exp.Min: exp.Min, exp.Max: e
 @serialized
 def recombine_partitions(tree: exp.Expression) -> exp.Expression:
     """Apply both rules everywhere in ``tree``."""
+    if z3 is None:  # the solver decides this rewrite; without it the query stays as written
+        return tree
 
     tree = tree.transform(_merge_reaggregation)
     return tree.transform(_merge_partitioned_union)
