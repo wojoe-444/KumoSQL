@@ -82,7 +82,7 @@ def test_the_server_lists_its_read_only_tools_and_keeps_the_profile_resources(tm
 
     tools = rpc(server, "tools/list")["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
-        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table"]
+        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables"]
     for tool in tools:
         assert tool["annotations"]["readOnlyHint"]
         # only the two tools that can ask BigQuery (a dry run, on request) say so
@@ -431,6 +431,40 @@ def check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound
     assert body["unknown"] and body["next"]  # tables whose meanings are not tracked are named as a gap
 
 
+# ------------------------------------------------------------ list_tables
+
+
+def test_list_tables_is_the_overview_and_counts_what_nothing_reads(small):
+    body, failed, used = ask(small, "list_tables")
+    assert not failed and used <= BOUND and body["counts"]["models"] == 4 and body["counts"]["sources"] == 0
+    assert body["counts"]["by_kind"] == {"table": 3, "view": 1}  # the assertion is not a table to use
+    assert body["counts"]["unread_models"] == 2  # totals_copy and report; raw and totals are read (an assertion reading a table counts as a reader)
+    assert body["tables"][0] == "ds.raw | table | reads 0 | read by 2 | depth 0"
+    assert "ds.totals | table | reads 1 | read by 2 | depth 1" in body["tables"]  # report, and the assertion that checks it and "ds.report | view | reads 1 | read by 0 | depth 2" in body["tables"]
+    assert not any("check" in line for line in body["tables"])
+
+
+def test_list_tables_filters_and_sorts_whole_project_questions(small):
+    body, _, _ = ask(small, "list_tables", max_readers=0)
+    assert body["tables"] == ["ds.report | view | reads 1 | read by 0 | depth 2", "ds.totals_copy | table | reads 1 | read by 0 | depth 1"] and "2 of 4" in body["answer"]
+    body, _, _ = ask(small, "list_tables", sort="depth")
+    assert [line.split(" | ")[0] for line in body["tables"]] == ["ds.report", "ds.totals", "ds.totals_copy", "ds.raw"]
+    body, _, _ = ask(small, "list_tables", name_contains="TOTALS", min_reads=1, kind="table")
+    assert [line.split(" | ")[0] for line in body["tables"]] == ["ds.totals", "ds.totals_copy"]
+    body, _, _ = ask(small, "list_tables", kind="assertion")
+    assert [line.split(" | ")[0] for line in body["tables"]] == ["ds.check"]
+    body, _, _ = ask(small, "list_tables", min_depth=5)
+    assert "tables" not in body and body["counts"]["matches"] == 0 and body["next"]
+
+
+def test_list_tables_refuses_an_unknown_kind_and_pages_with_offset(small):
+    body, failed, _ = ask(small, "list_tables", kind="materialised")
+    assert failed and "materialised" in body["error"] and "table, view" in body["next"][0]
+    first, _, _ = ask(small, "list_tables", max_bytes=1000)
+    rest, _, _ = ask(small, "list_tables", offset=2)
+    assert rest["tables"] == first["tables"][2:] and rest["tables_shown"].startswith("3-")
+
+
 # ----------------------------------------------------------- compare_queries
 
 
@@ -752,6 +786,30 @@ def check_compare_queries_reads_the_project_facts_of_the_big_project(big):
     assert not failed and used <= BOUND and body["verdict"] == "equivalent"
 
 
+def check_list_tables_answers_the_whole_graph_questions_of_the_field_trial(big):
+    """T04, T05 and T08 of the field trial, whose expected answers come from reading the .sqlx text, not from KumoSQL."""
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("field_trial_expectations", ROOT / "tools" / "field_trial.py")
+    trial = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(trial)
+    expected = {task["id"]: task["expected"] for task in trial.build_tasks()}
+
+    def names(body):
+        return sorted(line.split(" | ")[0].split(".")[-1] for line in body["tables"])
+
+    body, failed, used = ask(big, "list_tables", min_reads=2, max_bytes=20000)
+    assert not failed and names(body) == expected["T04"]
+    body, failed, used = ask(big, "list_tables", name_contains="_alert", min_reads=1, max_bytes=20000)
+    assert not failed and names(body) == expected["T08"]
+    body, failed, used = ask(big, "list_tables", max_readers=0, max_bytes=20000)
+    assert not failed and body["counts"]["matches"] == expected["T05"]
+    for arguments in ({}, {"sort": "depth"}, {"max_readers": 0}, {"folder": "definitions/summary"}):
+        body, failed, used = ask(big, "list_tables", **arguments)
+        assert not failed and used <= BOUND and body["next"]
+
+
 def test_the_big_project_answers_are_bounded_and_explicit(monkeypatch):
     """One test, so the project is analysed once per run, not once per xdist worker (the gate keeps tests under 2 s)."""
 
@@ -767,6 +825,7 @@ def test_the_big_project_answers_are_bounded_and_explicit(monkeypatch):
     check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound(big)
     check_compare_queries_reads_the_project_facts_of_the_big_project(big)
     check_check_query_and_profile_table_answers_fit_the_bound_on_the_big_project(big)
+    check_list_tables_answers_the_whole_graph_questions_of_the_field_trial(big)
 
 
 def test_the_tools_neither_write_files_nor_open_connections(tmp_path, monkeypatch):
