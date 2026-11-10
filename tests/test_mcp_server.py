@@ -427,6 +427,23 @@ def check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound
 # ----------------------------------------------------------- compare_queries
 
 
+def test_a_draft_may_use_dataform_ref_and_the_answer_says_how_it_was_read(small, no_network):
+    body, failed, _ = ask(small, "check_query", sql='SELECT id, SUM(total) FROM ${ref("totals")} GROUP BY id')
+    assert not failed and body["verdict"] != "cannot_check" and body["refs_read_as"] == ["ref(totals) = ds.totals"]
+    plain, _, _ = ask(small, "check_query", sql="SELECT id, SUM(total) FROM ds.totals GROUP BY id")
+    assert body["checked"] == plain["checked"] and body["counts"] == plain["counts"] and "refs_read_as" not in plain
+    left, failed, _ = ask(small, "compare_queries", left="SELECT id FROM ${ref('ds', 'totals')} WHERE total > 10 AND id > 1", right='SELECT id FROM ${ref("totals")} WHERE id > 1 AND total > 10')
+    assert not failed and left["verdict"] == "equivalent" and left["refs_read_as"] == ["ref(ds.totals) = ds.totals", "ref(totals) = ds.totals"]
+
+
+def test_a_ref_to_no_table_is_refused_with_the_close_tables_and_other_templates_are_named(small, no_network):
+    for tool, arguments in (("check_query", {"sql": "SELECT id FROM ${ref('totlas')}"}), ("compare_queries", {"left": "SELECT 1", "right": "SELECT id FROM ${ref('totlas')}"})):
+        body, failed, _ = ask(small, tool, **arguments)
+        assert failed and "totlas" in body["error"] and body["next"]
+    body, _, _ = ask(small, "check_query", sql="SELECT id FROM ${ref('totals')} WHERE ${when(incremental(), 'id > 1')}")
+    assert body["verdict"] == "cannot_check" and "when(incremental()" in body["answer"] and "ref(totals)" not in body["answer"]
+
+
 def test_compare_queries_proves_a_reordered_filter_and_lists_what_the_proof_assumes(small):
     body, failed, used = ask(small, "compare_queries", left="SELECT id FROM p.ds.totals WHERE total > 10 AND id > 1", right="SELECT id FROM p.ds.totals WHERE id > 1 AND total > 10")
     assert not failed and used <= BOUND and body["verdict"] == "equivalent" and body["proof"] == "unconditional"
@@ -515,7 +532,7 @@ def test_check_query_finds_ties_unknown_columns_and_says_what_it_did_not_check(s
 
 
 def test_check_query_refuses_what_it_cannot_read_and_what_is_ambiguous(small):
-    for sql, word in (("SELECT * FROM ${ref('raw')}", "template"), ("SELECT 1 FROM", "ParseError"), ("DELETE FROM p.ds.raw WHERE TRUE", "SELECT")):
+    for sql, word in (("SELECT * FROM ${self()}", "template"), ("SELECT 1 FROM", "ParseError"), ("DELETE FROM p.ds.raw WHERE TRUE", "SELECT")):
         body, failed, _ = ask(small, "check_query", sql=sql)
         assert not failed and body["verdict"] == "cannot_check" and word in body["findings"][0]["what"] and body["findings"][0]["fix"]
     for arguments in ({"dry_run": True}, {"project": "demo"}):
