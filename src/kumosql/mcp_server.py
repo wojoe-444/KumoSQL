@@ -11,7 +11,7 @@ with ``run=true``, under the byte cap). An answer quotes names, SQL and table va
 
 Tools: ``describe_table``, ``trace_column``, ``impact``, ``find_existing`` (:mod:`kumosql.mcp_tools`), ``find_tables``
 (:mod:`kumosql.mcp_find`), ``compare_queries`` (:mod:`kumosql.mcp_compare`), ``check_query`` (:mod:`kumosql.mcp_preflight`)
-and ``profile_table`` (:mod:`kumosql.mcp_profile`). A new tool is one
+``profile_table`` (:mod:`kumosql.mcp_profile`) and ``list_tables`` (:mod:`kumosql.mcp_list`). A new tool is one
 function registered with :func:`kumosql.mcp_answers.tool` in a module listed in ``TOOL_MODULES``.
 
 Register it with an MCP client as the command ``python -m kumosql mcp PROJECT``. Messages are JSON-RPC 2.0, one per
@@ -30,7 +30,7 @@ from . import mcp_answers, profile_mcp
 from .mcp_session import Session, load_project, parse_assumed_grain
 
 #: modules that register tools; each workstream adds its own here
-TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile")
+TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile", "kumosql.mcp_list")
 
 INSTRUCTIONS = (
     "Questions about one loaded data project, one small answer per call (about 2 KB). "
@@ -42,6 +42,7 @@ INSTRUCTIONS = (
     "compare_queries: are two queries the same (proven, a counterexample, or unknown). "
     "check_query: is a draft query sound (types, ties, fan-out; BigQuery dry run only on request). "
     "profile_table: what the values of a table look like (a dry run unless told to run). "
+    "list_tables: what is in the project, with filters (tables nothing reads, reading two or more models, deepest, by folder or tag). "
     "Every answer states what it could not determine and why, and names a next step; "
     "'more' says which argument (offset, max_bytes) returns the rest. "
     "All tools are read-only. None makes a network call unless asked: check_query with dry_run=true and profile_table with "
