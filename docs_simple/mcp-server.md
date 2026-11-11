@@ -10,7 +10,7 @@ An AI agent that helps with your Dataform project has a problem: the project is 
 python -m kumosql mcp path/to/your/dataform/project
 ```
 
-Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id`; KumoSQL then treats that as a stated fact, not something it worked out. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
+Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id`; KumoSQL then treats that as a stated fact, not something it worked out. If jobs outside the repository build some of your source tables, or dashboards and semantic models read your outputs, list them in a small file and add `--boundary that-file.yaml` (see below). KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
 
 ## Faster the second time
 
@@ -58,6 +58,29 @@ Every answer follows the same habits:
 
 It also serves the saved data profiles from [Data profiling](data-profiling.md), so one server covers both.
 
+## Things outside the repository
+
+Your repository does not know everything. A scheduled query may build one of your source tables, and a dashboard or a semantic model may read one of your outputs. Without help, "where does this come from" stops at the source and "what breaks" stops at the last model. Add `--boundary file.yaml` and list them:
+
+```yaml
+producers:
+  - table: lookups.region
+    by: {kind: scheduled_query, id: "1234", url: "https://example.test/q/1234"}
+    sql: external/region.sql
+consumers:
+  - {name: sales_semantic_model, kind: semantic, path: "semantic/*.malloy"}
+  - {name: weekly_dashboard, kind: dashboard, sql: external/dashboard_source.sql}
+```
+
+- Asking where a column comes from now goes past the source: "built by scheduled query 1234, which reads these columns", and on through that query's own sources, marked as outside the project.
+- Asking what breaks if you drop a column now also lists the dashboards and models that use it, marked as outside the project. For a consumer with an `sql` file KumoSQL reads the query, so the columns are exact. For Malloy files (`.malloy`) it reads each source: which table it reads and which columns it mentions. For any other file in a `path` it only searches for the table name and the column name. Those last two are approximations, and the answer says so: they can be wrong both ways.
+- A producer can be a notebook whose code was never exported. Write `sql_unavailable: the reason` instead of `sql:` and a trace says "built outside the project by notebook nb-7; its SQL is not available" instead of simply stopping.
+- With many dashboards the answer gives the count, a count per kind, and as many examples as fit; ask again with `offset` for the next page.
+- A file KumoSQL cannot read (nothing matches the path, it is not text, or it is too big) is reported as **unknown**, never as "nobody reads it".
+- A mistake in the file (a table the project does not have, SQL that does not parse) is explained in a line or two before the server starts, or, for a table name, in every answer.
+
+The limit: KumoSQL only knows what the file says. A job or dashboard you did not list is still invisible, so it still never says a deletion is safe. The full details are in the [reference](../docs/mcp-server.md#producers-and-consumers-outside-the-repository---boundary).
+
 ## Limits of the evidence
 
 - The formula search only finds copies that read the same column names, and it ignores which table a name came from. It searches each model's main query, not its extra before or after steps. Models it could not read are listed, not skipped silently. A link-table match "by name only" is a hint, not proof that the two columns mean the same thing.
@@ -66,7 +89,7 @@ It also serves the saved data profiles from [Data profiling](data-profiling.md),
 - `check_query` saying "no problems found" means the checks that ran found none; it is not a promise that the query is right. A dry run needs working Google credentials; without them the answer says "not checked" and still gives the offline checks.
 - "The same" from `compare_queries` is about the rows only: check column types separately. The example table it shows for "different" is made up, not your data.
 - On the large public example project, KumoSQL now understands columns that read a field inside a nested record (it treats "the `email` field of the `principal` record of this log column" as one value that two tables can share), and `find_existing` can compare 54 of its 106 tables, where before it could compare 3. For the other 52 it still says "cannot tell" in a few lines instead of guessing: for most of them nothing says which columns identify a row, because the tables read a raw log table with no declared key. If you know such a key you can tell the server with `--assume-grain table=column`, but a table only gains a known row identity if it also keeps that column in its output, and on this example none does. That declaration is your claim, and nothing checks it.
-- "What breaks" only covers what is inside the project. It cannot see dashboards or other people's queries, so it never says a deletion is safe.
+- "What breaks" only covers what is inside the project, plus the outside readers you list in a `--boundary` file. It cannot see dashboards or other people's queries that are not listed, so it never says a deletion is safe.
 - The warm start was tested on generated projects of about fifteen models, by counting how many models were analysed, and on the 106-model public project by comparing the analysis cold and replayed. The saving on a project of several hundred models is expected, not measured here.
 - The sizes were measured on one public project with no live data behind it. No agent was in the loop, so how many fewer questions an agent needs is not measured yet.
 
