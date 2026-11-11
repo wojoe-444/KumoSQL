@@ -23,6 +23,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
+from . import mcp_join_fanout as join_fanout
 from .bq_static_checks import static_checks
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
@@ -54,6 +55,9 @@ class Draft:
     def __init__(self, session: Session, sql: str) -> None:
         self.session = session
         self.sql = sql
+        #: what the fan-out check relied on that nothing proves (a stated grain, a saved measurement), and the calls that would settle what it could not decide
+        self.assumptions: list[str] = []
+        self.pointers: list[str] = []
         self.tree: exp.Expression | None = None
         self.error: str | None = None
         pipeline = session.pipeline()
@@ -232,7 +236,16 @@ def _fan_out_findings(session: Session, draft: Draft) -> tuple[list[dict], list[
                 continue
             grain, reason = _target_grain(session, draft, target, ctes, derived_cache)
             if grain is None:
-                gaps.append((f"whether the JOIN to {label} multiplies rows", reason))
+                outcome = join_fanout.judge(session, draft, select, join, target, label,
+                                            type(multiplied[0]).__name__.upper() if multiplied else None, reason)
+                if outcome.finding:
+                    findings.append(outcome.finding)
+                if outcome.gap:
+                    gaps.append(outcome.gap)
+                if outcome.assumption:
+                    draft.assumptions.append(outcome.assumption)
+                if outcome.pointer:
+                    draft.pointers.append(outcome.pointer)
                 continue
             keys = {k.casefold() for k in grain}
             has_condition = join.args.get("on") is not None or bool(join.args.get("using"))
@@ -276,6 +289,10 @@ def _target_grain(session: Session, draft: Draft, target: exp.Expression, ctes: 
         else:
             spelled = ".".join(p.name for p in (target.args.get("catalog"), target.args.get("db"), target.this) if p is not None and p.name).casefold()
             key = draft.tables.get(spelled)
+            claim = join_fanout.stated_grain(session, key, spelled) if key not in pipeline.models else None
+            if claim is not None:
+                draft.assumptions.append(clip(f"{target.alias_or_name}: one row per ({', '.join(claim.keys)}), stated by {claim.origin}, not checked against data", 200))
+                return list(claim.keys), ""
             if key is None:
                 return None, "the table is not defined in the project, so its grain is unknown"
             if key not in pipeline.models:
@@ -437,6 +454,8 @@ def check_query(session: Session, args: dict) -> Answer:
     gaps += project_checks.draft_notes(session, draft.keys())  # disabled, declared and built, declared-only: the repository cannot vouch for them
     if facts:
         answer.fields["ties_judged_assuming"] = "; ".join(facts)
+    if draft.assumptions:
+        answer.fields["fan_out_judged_assuming"] = list(dict.fromkeys(draft.assumptions))[:3]
 
     counts: dict[str, int] = {}
     for item in findings:
@@ -459,4 +478,6 @@ def check_query(session: Session, args: dict) -> Answer:
             answer.next("Run the query once the estimate is acceptable; compare_queries tells whether a rewrite of it is the same query.")
         else:
             answer.next("Add dry_run=true and project=... to have BigQuery plan it (free) and return the real column types." if not want_dry else "BigQuery was not reached (see unknown); fix that and ask again with dry_run=true.")
+    if draft.pointers:
+        answer.next(f"{draft.pointers[0]} (no connection: it returns the plan; with project=... a dry-run byte count; run=true to run) measures whether the join multiplies rows.")
     return answer

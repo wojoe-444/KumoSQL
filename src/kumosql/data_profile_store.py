@@ -134,6 +134,12 @@ def to_markdown(profile: DataProfile) -> str:
             _cell(column.name + ("" if column.unit == "rows" else " (elements)")), _cell(column.type), _percent(column.null_fraction),
             _cell(column.distinct), _cell(column.min), _cell(column.max), _cell(column.mean), _cell(", ".join(column.flags)),
         )) + " |")
+    from .join_profile_store import key_candidates
+
+    candidates = key_candidates(profile)
+    if candidates:
+        lines += ["", "## Key candidates", "", "Columns with no or very few repeated values (measured on this profile, not a declared key):", ""]
+        lines += [f"- {_cell(', '.join(o.columns))}: {o.verdict()}" for o in candidates]
     detailed = [column for column in profile.columns if _has_detail(column)]
     if detailed:
         lines += ["", "## Column details", ""]
