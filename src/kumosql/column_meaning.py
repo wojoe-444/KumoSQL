@@ -12,8 +12,8 @@ A model column inherits them when it is a plain copy:
   carried across a computation: a computed value is not what the upstream text describes.
 
 Nothing is guessed from names. A TIMESTAMP or DATETIME column with no declared zone is reported as unknown, never as an error.
-The column types come from the declared source schema and from typing each model's query in dependency order
-(:mod:`kumosql.googlesql_types`); a column whose type cannot be worked out is not reported.
+The column types are the project's own (:mod:`kumosql.project_types`: the schema snapshot or the source declarations, carried
+through the models); a column whose type cannot be worked out is not reported.
 
 :func:`origin` is also what :mod:`kumosql.column_lint` uses to find the column an operand of a draft really is.
 """
@@ -388,39 +388,15 @@ def declared_zone(session: Session, table: str, column: str) -> str:
 def column_types(session: Session) -> dict[str, dict[str, str]]:
     """``{table key: {column (lower case): type kind}}`` for every column whose type is known (computed once per session).
 
-    Source types come from the source schema; a model's come from typing its query against the tables it reads, in
-    dependency order. A type that cannot be worked out is left out, never guessed.
+    The types are the project's own (:mod:`kumosql.project_types`): from the schema snapshot or the source declarations,
+    carried through the models in dependency order. A type that cannot be worked out is left out, never guessed.
     """
 
-    return session._once("column_types", lambda: _infer_types(session))
+    def compute() -> dict[str, dict[str, str]]:
+        found = session.column_types().types
+        return {key: {name: gtype.kind for name, gtype in columns.items() if gtype is not None} for key, columns in found.items()}
 
-
-def _infer_types(session: Session) -> dict[str, dict[str, str]]:
-    from .googlesql_types import Catalog, Column, infer, parse_type
-
-    pipeline = session.pipeline()
-    catalog = Catalog()
-    types: dict[str, dict[str, str]] = {}
-    for key, columns in pipeline.source_schema.items():
-        entries = [Column(name, parse_type(str(kind)) if kind else None) for name, kind in columns.items()]
-        catalog.add(key, entries)
-        types[key] = {c.name.casefold(): c.type.kind for c in entries if c.type is not None}
-    parsed = pipeline._analyse().parsed
-    for key in pipeline.topological_order():
-        tree = parsed.get(key)
-        model = pipeline.models.get(key)
-        if tree is None or model is None or not model.is_query:
-            continue
-        try:
-            typed = infer(tree.copy(), catalog)
-        except Exception:  # noqa: BLE001 - an untyped model leaves its columns untyped
-            continue
-        if typed.columns is None:
-            continue
-        entries = [Column(c.name, c.type) for c in typed.columns if c.name]
-        catalog.add(key, entries)
-        types[key] = {c.name.casefold(): c.type.kind for c in entries if c.type is not None}
-    return types
+    return session._once("meaning_column_types", compute)
 
 
 def temporal_without_zone(session: Session) -> dict[str, list[str]]:

@@ -18,6 +18,7 @@ from . import data_profile_store as store
 from .pipeline import Pipeline
 from .pipeline_loading import load_compiled_graph, load_sqlx_project
 from .resilience import PipelineLoadError, parse_json_or_raise
+from .schema_snapshot import SchemaSnapshot, SchemaSnapshotError, load_schema_snapshot
 
 
 if TYPE_CHECKING:
@@ -81,11 +82,16 @@ class Session:
         profiles: Path | None = None,
         assume_grain: Mapping[str, Sequence[str]] | None = None,
         root: Path | None = None,
+        schema_snapshot: Path | SchemaSnapshot | None = None,
         boundary: "Path | BoundarySpec | None" = None,
         docs: Sequence[Path] = (),
         malloy: Sequence[Path] = (),
     ) -> None:
         self._assume_grain = dict(assume_grain or {})
+        #: a file of column types (``--schema-snapshot``) or an already loaded snapshot; read on first use, never fetched
+        self._snapshot_source = schema_snapshot
+        #: why the snapshot could not be read, when it could not
+        self.snapshot_error: str | None = None
         #: folders of Markdown docs and Malloy files that may state a table's primary key (``--docs``, ``--malloy``)
         self._docs, self._malloy = tuple(docs), tuple(malloy)
         self._pipeline = pipeline
@@ -149,6 +155,7 @@ class Session:
             self.profiles()
             stage("inferring roles")
             self.roles()
+            self.column_types()
             from .mcp_expression import expression_index
 
             expression_index(self)
@@ -281,6 +288,49 @@ class Session:
                     continue
             found[key] = tuple(columns)
         return found or None
+
+    def schema_snapshot(self) -> SchemaSnapshot | None:
+        """The schema snapshot the server was started with (``--schema-snapshot``), read once; ``None`` when there is none.
+
+        A file that cannot be read gives ``None`` and sets ``snapshot_error``: checks that need types then say the snapshot
+        is unreadable instead of passing.
+        """
+
+        if self._snapshot_source is None:
+            return None
+        return self._once("schema_snapshot", self._read_snapshot)
+
+    def _read_snapshot(self) -> SchemaSnapshot | None:
+        source = self._snapshot_source
+        if isinstance(source, SchemaSnapshot):
+            return source
+        from .project_types import snapshot_filter
+
+        try:
+            # streamed; rows of tables the project does not use are dropped as they are read, never kept
+            return load_schema_snapshot(source, keep=snapshot_filter(self.tables()))
+        except SchemaSnapshotError as exc:
+            self.snapshot_error = str(exc)
+            return None
+
+    def column_types(self):
+        """The type of every column of every table of the project, computed once (:mod:`kumosql.project_types`):
+        from the schema snapshot or the source declarations, carried through the models in dependency order."""
+
+        from . import project_types
+
+        return self._once("column_types", lambda: project_types.build(self))
+
+    def column_type(self, key: str, column: str):
+        """The :class:`~kumosql.googlesql_types.GType` of ``key.column`` (a table key of the project), or ``None``."""
+
+        return self.column_types().type(key, column)
+
+    def column_is_nullable(self, key: str, column: str) -> bool | None:
+        """``True`` when ``key.column`` may be NULL, ``False`` when it never is, ``None`` when not known (the schema
+        snapshot's ``is_nullable``, else what the model's query fixes)."""
+
+        return self.column_types().nullable(key, column)
 
     def roles(self) -> dict:
         from .table_roles import infer_roles

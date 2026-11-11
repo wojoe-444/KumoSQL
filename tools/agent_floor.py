@@ -106,6 +106,7 @@ def choose(server) -> dict[str, object]:
         "widest_column": column_names(widest)[-1], "nested_column": column_names(with_nested)[-1], "incremental_column": column_names(incremental)[0],
         "second_column": (column_names(most_read) + column_names(most_read))[1],
         "draft": f"SELECT {column_names(most_read)[0]} FROM `{most_read}`",
+        "typed_draft": f"SELECT {column_names(most_read)[0]} FROM `{most_read}` WHERE {column_names(most_read)[0]} = 1",
     }
 
 
@@ -148,6 +149,7 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
          lambda ask: ask("join_profile", left=c["most_read"], right=c["widest"], keys=c["most_read_column"], split_by=c["most_read_column"])),
         ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
         ("Is my draft's use of today's date safe from a silent UTC default?", ("check_query",), lambda ask: ask("check_query", sql="SELECT CURRENT_DATE() AS today")),
+        ("Do the columns my draft compares have types that can be compared?", ("check_query",), lambda ask: ask("check_query", sql=c["typed_draft"])),
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
         ("Does my draft use a word BigQuery reserves as an alias?", ("check_query",),
          lambda ask: ask("check_query", sql=f"SELECT {c['most_read_column']} AS new FROM `{c['most_read']}`")),
