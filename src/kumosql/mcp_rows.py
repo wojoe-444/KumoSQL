@@ -6,7 +6,7 @@ path order (the table first, then each model upstream), the conditions that can 
 its model, clause, kind and whether it is written on the column itself or on a column joined to it. Conditions come from the
 lineage records the other tools use (:mod:`kumosql.lineage_filters`); nothing here parses a query a second time.
 
-With a ``predicate`` such as ``status = 'archived'`` it also says which conditions remove the rows that satisfy it:
+With a ``predicate`` such as ``status = 'cancelled'`` it also says which conditions remove the rows that satisfy it:
 
 * ``can_remove``: proven, by the equivalence prover, that no row satisfying the predicate passes the condition;
 * ``may_remove``: the condition can drop such rows and it cannot be told whether it does (it reads another table, another column,
@@ -89,14 +89,14 @@ def _parse_predicate(session: Session, key: str, text: str) -> tuple[exp.Express
     try:
         node = parse_one(text, read="bigquery")
     except SqlglotError:
-        raise ToolError("the predicate is not valid SQL", ["Write one condition on the table's columns, such as status = 'archived' or order_date = DATE '2026-01-05'."]) from None
+        raise ToolError("the predicate is not valid SQL", ["Write one condition on the table's columns, such as status = 'cancelled' or region_code = 3."]) from None
     if isinstance(node, exp.Alias) or not isinstance(node, exp.Condition) or node.find(exp.Select, exp.Subquery, exp.Window, exp.AggFunc, exp.Star):
         raise ToolError("the predicate must be one simple condition", ["Use comparisons, IN, BETWEEN, IS NULL, AND, OR and NOT on columns and literals; no subquery, aggregate or window."])
     if node.find(*_NONDETERMINISTIC):
-        raise ToolError("the predicate depends on the time it runs", ["Write the date or value out, such as order_date = DATE '2026-01-05'."])
+        raise ToolError("the predicate depends on the time it runs", ["Write the date or value out, such as region_code = 3."])
     columns = list(node.find_all(exp.Column))
     if not columns:
-        raise ToolError("the predicate names no column", ["Name a column of the table, such as status = 'archived'."])
+        raise ToolError("the predicate names no column", ["Name a column of the table, such as status = 'cancelled'."])
     variables: dict[str, tuple[str, ColumnRef]] = {}
     short = key.split(".")[-1].casefold()
     for column in columns:
@@ -370,7 +370,7 @@ def _entries(session: Session, gathered: dict) -> tuple[list[Entry], dict[str, i
     "Where are rows dropped",
     "Why don't my example rows show up? Lists, from the table upstream towards the sources, the conditions that can remove rows "
     "on the way to a column: WHERE, QUALIFY, HAVING, inner joins and EXISTS / IN (subquery), each with its model, clause, kind "
-    "and whether it is on the column itself or on a column joined to it. With a predicate (status = 'archived') it says which "
+    "and whether it is on the column itself or on a column joined to it. With a predicate (status = 'cancelled') it says which "
     "conditions can_remove the rows that satisfy it (proven), which may_remove them (cannot tell) and which could not be "
     "checked, with the reason. Reads only the loaded project.",
     {
@@ -378,7 +378,7 @@ def _entries(session: Session, gathered: dict) -> tuple[list[Entry], dict[str, i
         "column": {"type": "string", "description": "An output column of the table whose rows are wanted (a STRUCT field may follow a dot)."},
         "predicate": {
             "type": "string",
-            "description": "One simple condition on the table's columns for the rows you expect, such as status = 'archived' or order_date = DATE '2026-01-05'.",
+            "description": "One simple condition on the table's columns for the rows you expect, such as status = 'cancelled' or region_code = 3.",
         },
     },
     required=("table",),
@@ -388,7 +388,7 @@ def rows_filtered(session: Session, args: dict) -> Answer:
     key = need_table(session, args["table"])
     column, text = args.get("column"), args.get("predicate")
     if not column and not text:
-        raise ToolError("pass a column or a predicate", [f"rows_filtered table={key} column=<a column> lists the conditions that reach it; predicate=\"status = 'archived'\" checks rows you expect."])
+        raise ToolError("pass a column or a predicate", [f"rows_filtered table={key} column=<a column> lists the conditions that reach it; predicate=\"status = 'cancelled'\" checks rows you expect."])
     if key not in pipeline.models:
         answer = Answer(f"{_short(key)} is a source: the project does not build it, so no condition of the project sits upstream of it.")
         answer.fields["table"] = key
