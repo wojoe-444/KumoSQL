@@ -11,7 +11,7 @@ with ``run=true``, under the byte cap). An answer quotes names, SQL and table va
 
 Tools: ``describe_table``, ``trace_column``, ``impact``, ``find_existing`` (:mod:`kumosql.mcp_tools`), ``find_tables``
 (:mod:`kumosql.mcp_find`), ``compare_queries`` (:mod:`kumosql.mcp_compare`), ``check_query`` (:mod:`kumosql.mcp_preflight`)
-``profile_table`` (:mod:`kumosql.mcp_profile`), ``join_profile`` (:mod:`kumosql.mcp_join_profile`) and ``list_tables`` (:mod:`kumosql.mcp_list`), ``clean_query`` (:mod:`kumosql.mcp_clean`) and ``project_checks`` (:mod:`kumosql.project_checks`). A new tool is one
+``profile_table`` (:mod:`kumosql.mcp_profile`), ``join_profile`` (:mod:`kumosql.mcp_join_profile`) and ``list_tables`` (:mod:`kumosql.mcp_list`), ``clean_query`` (:mod:`kumosql.mcp_clean`) ``project_checks`` (:mod:`kumosql.project_checks`) and ``rows_filtered`` (:mod:`kumosql.mcp_rows`). A new tool is one
 function registered with :func:`kumosql.mcp_answers.tool` in a module listed in ``TOOL_MODULES``.
 
 The index is built in a background thread and saved (:mod:`kumosql.mcp_cache`): a second start replays it, a call while it is
@@ -33,7 +33,7 @@ from .mcp_session import Session, load_project, parse_assumed_grain
 from .schema_snapshot import SchemaSnapshotError, check_schema_snapshot
 
 #: modules that register tools; each workstream adds its own here
-TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile", "kumosql.mcp_list", "kumosql.mcp_clean", "kumosql.project_checks", "kumosql.mcp_join_profile")
+TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile", "kumosql.mcp_list", "kumosql.mcp_clean", "kumosql.project_checks", "kumosql.mcp_join_profile", "kumosql.mcp_rows")
 
 INSTRUCTIONS = (
     "Questions about one loaded data project, one small answer per call (about 2 KB). "
@@ -49,6 +49,7 @@ INSTRUCTIONS = (
     "list_tables: what is in the project, with filters (tables nothing reads, reading two or more models, deepest, by folder or tag). "
     "project_checks: what is wrong with the repository itself, without the warehouse (declared and built, disabled but read, declared twice). "
     "join_profile: what joining two tables on given keys does (cardinality class, match rate each way, null keys, unmatched by a column); planned only unless project is given, run only with run=true, and a run is saved so check_query uses it. "
+    "rows_filtered: where are rows dropped on the way to a column (WHERE, joins, QUALIFY, EXISTS), and with a predicate which conditions remove the rows you expect. "
     "Every answer states what it could not determine and why, and names a next step; "
     "'more' says which argument (offset, max_bytes) returns the rest. "
     "All tools are read-only of your project. None makes a network call unless asked: check_query with dry_run=true and profile_table or join_profile with "
