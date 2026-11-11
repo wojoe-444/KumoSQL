@@ -1,6 +1,6 @@
 """Script suite: floors, and zero on everything wrong (see docs/scripts.md#evaluation).
 
-The numbers are the floors behind the README scoreboard row; raise them when a fix moves a score.
+The numbers are the floors behind the scoreboard row; raise them when a fix moves a score.
 """
 
 import importlib.util

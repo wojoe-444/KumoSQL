@@ -33,7 +33,7 @@ Run: `python tools/targeted_data_bench.py [--split dev|heldout|all]`; detail goe
 
 ## Results
 
-See the README scoreboard (rows *Targeted test data*, *Multi-database semantic suite*, *Counterexample minimization*) and `benchmarks/targeted_data/summary-*.json` for per-operator and per-suite tables.
+See the scoreboard page (rows *Targeted test data*, *Multi-database semantic suite*, *Counterexample minimization*) and `benchmarks/targeted_data/summary-*.json` for per-operator and per-suite tables.
 
 | | Dev (Calcite, Spark, university) | Held out (TPC-H, TPC-C) |
 | --- | ---: | ---: |

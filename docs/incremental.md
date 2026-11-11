@@ -52,7 +52,7 @@ With gaps, `pre-operation-window-from-source` (a window deleted and reloaded fro
 
 ## Scores
 
-`python tools/incremental_bench.py` runs the corpus in `tests/fixtures/incremental/` and reports counts per outcome; the README scoreboard has two rows (detection, evidence `executed`; proofs, evidence `proof`).
+`python tools/incremental_bench.py` runs the corpus in `tests/fixtures/incremental/` and reports counts per outcome; the scoreboard page has two rows (detection, evidence `executed`; proofs, evidence `proof`).
 
 | | cases | result |
 | --- | --- | --- |

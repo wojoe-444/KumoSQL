@@ -60,7 +60,7 @@ Every failure found is kept as a regression test: `tests/test_canonical.py`, `te
 
 ## Scores
 
-Numbers are in the README scoreboard (`benchmarks/results/duplicate-*.json`, `shared-refactors-*.json`) and are regenerated with the command above.
+Numbers are in the scoreboard page (`benchmarks/results/duplicate-*.json`, `shared-refactors-*.json`) and are regenerated with the command above.
 
 Seed 1, 3,000 models (450 families, 2,173 copies), measured 2026-10-02:
 

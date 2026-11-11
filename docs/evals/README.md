@@ -2,11 +2,11 @@
 
 [Plain-language version](../../docs_simple/evals/README.md)
 
-KumoSQL is scored on public benchmarks and on suites generated for its own features. None of them calls a language model at run time. This folder has one page per eval family: where the data comes from, how a case is scored, how to rerun it and what the limits are. The headline numbers are in the [README scoreboard](../../README.md#benchmark-scoreboard).
+KumoSQL is scored on public benchmarks and on suites generated for its own features. None of them calls a language model at run time. This folder has one page per eval family: where the data comes from, how a case is scored, how to rerun it and what the limits are. The headline numbers are in the [scoreboard page](../scoreboard.md).
 
 ## How the evals are organised
 
-- **Results.** Every eval owns one file, `benchmarks/results/<name>.json` ([format](../../benchmarks/README.md)). `python tools/scoreboard.py` turns those files into the README scoreboard; a score is never edited by hand. The tables below name the file for each eval.
+- **Results.** Every eval owns one file, `benchmarks/results/<name>.json` ([format](../../benchmarks/README.md)). `python tools/scoreboard.py` turns those files into the scoreboard page; a score is never edited by hand. The tables below name the file for each eval.
 - **Evidence level.** A score says how strong its positive answers are: an unbounded proof, bounded verification (no difference on any database up to a row limit) or agreement on executed datasets. A suite that mixes levels has one results file per level.
 - **Zero wrong.** An eval reports `X/Y, 0 wrong`. A false proof, an incorrect counterexample or a behaviour-changing rewrite is a bug; an unknown is allowed.
 - **Held-out cases.** Where a held-out split exists, the page and the results file say so. Cases a rule was developed against are marked `tuned on test`.

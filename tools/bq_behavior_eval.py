@@ -2,7 +2,7 @@
 
 For each case the KumoSQL rewrite pipeline runs, and when it changes the SQL both versions are
 executed in DuckDB (after sqlglot's BigQuery -> DuckDB transpile) and their results compared. Three
-scores are kept apart, as in the README scoreboard:
+scores are kept apart, as in the scoreboard page:
 
 * correctness: rewrites KumoSQL accepts (proven, or unchanged) whose results differ. Must be 0.
 * coverage: handled (rewritten and result-identical) / declined (left unchanged or unproven) /

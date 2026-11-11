@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/benchmarks/README.md)
 
-The README scoreboard is generated from the files here: one `results/<eval>.json` per eval, one object each. Edit your file, then run `python tools/scoreboard.py` (the tool fails on a missing required key or an unknown value). `python tools/scoreboard.py --check` is what the test suite runs.
+The scoreboard page is generated from the files here: one `results/<eval>.json` per eval, one object each. Edit your file, then run `python tools/scoreboard.py` (the tool fails on a missing required key or an unknown value). `python tools/scoreboard.py --check` is what the test suite runs.
 
 An eval script can write its file itself: `tools/bench_common.py` has `write_results(name, row)`, which writes `results/<name>.json` (adding an `environment` key with the Python, sqlglot, sqlglotc, DuckDB, z3 and SQLFluff versions and the git commit measured, `+changes` when the checkout had edits) and regenerates the scoreboard, plus `today()` for `date` and `quiet()` for command-line runs. The lineage, Dataform, schema-change and SQLLineage benches use it (`--write-results`).
 

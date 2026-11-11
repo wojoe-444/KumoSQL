@@ -58,7 +58,7 @@ The issue's "How to test" section names the targets and floors for that workstre
 - **DuckDB's optimizer has wrong-result bugs.** A counterexample found by running SQL on DuckDB counts only if
   `kumosql.duckdb_load.run_unoptimized` returns the same difference.
 - **Scores live in `benchmarks/results/<eval>.json`.** When a score moves, update that file (score, size, date,
-  caveats) and run `python tools/scoreboard.py`; never edit the README table by hand. Mention the new numbers on the
+  caveats) and run `python tools/scoreboard.py`; never edit the scoreboard page by hand. Mention the new numbers on the
   eval's page under `docs/evals/`.
 - **New normalization rules go in a new module** with one entry in `algebraic_equivalence.normalize`.
 - **sqlglot is pinned below 31** and tested on several versions; fix sqlglot gaps inside KumoSQL rather than waiting

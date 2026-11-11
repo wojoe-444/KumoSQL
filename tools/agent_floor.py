@@ -245,7 +245,7 @@ def results_row(result: dict) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--write-results", action="store_true", help="write benchmarks/results/agent-floor.json and regenerate the README scoreboard")
+    parser.add_argument("--write-results", action="store_true", help="write benchmarks/results/agent-floor.json and regenerate the scoreboard page")
     parser.add_argument("--json", action="store_true", help="print the full result as JSON")
     args = parser.parse_args(argv)
     from bench_common import quiet, write_results
