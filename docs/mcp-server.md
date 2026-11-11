@@ -6,6 +6,7 @@ One stdio [Model Context Protocol](https://modelcontextprotocol.io) server for a
 
 ```
 python -m kumosql mcp PROJECT [--source-schema FILE] [--assume-grain TABLE=COL[,COL]]... [--profiles DIR]
+                           [--cache-dir DIR | --no-cache] [--refresh-interval SECONDS] [--warm-wait SECONDS]
 python -m kumosql mcp --git URL [--branch B] [--refresh]
 python -m kumosql mcp                      # saved data profiles only, no project
 ```
@@ -110,6 +111,28 @@ A decided answer compared 62 other tables at the median. All 43 `found` answers 
 
 The 41 `source_without_grain` tables all read `_AllLogs`, a log table the project declares without any key, and the project declares no `uniqueKey` assertion anywhere, so nothing in the project can give them a grain. Declaring `--assume-grain` for that table (an event id, for instance) removes the reason, but the grain stays unknown on this project because none of those views keeps the id column in its output (`grain_not_in_output`: 32; the 17 that unnest an array say so: a join that can multiply rows), so the number of comparable tables stays at 54. The `cannot_tell` answers are the 49 tables with no known grain (31 of them with all meanings known) and 3 with a known grain but an unknown meaning.
 
+## Warm start
+
+An agent asks, edits, and asks again, so the server does not pay the whole analysis in front of every session's first answer. The analysis is nearly all column tracing (every output column of every model); that is what is saved and reused. The code is `kumosql/mcp_cache.py` (the saved file, the background build, edit detection) and `kumosql/trace_memo.py` (what the analysis replays).
+
+**Saved index.** After an analysis the trace of every model is written as JSON to one file per project path: a header (format, KumoSQL version, sqlglot version), a fingerprint of the project-wide facts, then one entry per model. Nothing is executed or unpickled; an entry holds names, strings and lists only. The folder is `--cache-dir`, else `kumosql/mcp-cache` in the platform's per-user cache folder (`$XDG_CACHE_HOME` or `~/.cache`, `~/Library/Caches`, `%LOCALAPPDATA%`), keyed by a hash of the project's path. The default is never inside the project (if the cache folder were pointed into it, the system temporary folder is used), because the server never writes a project file; only an explicit `--cache-dir` can put it there. The folder gets a `.gitignore` of `*`, so it is not committed wherever you put it. `--no-cache` neither reads nor writes it. Many servers can share one project (an agent session starts one each): a server writes a private temporary file and renames it over the saved one, so a reader sees the old file or the new one and never half of either, the last writer wins, and there is no lock for a killed process to leave behind.
+
+**What makes an entry valid.** Each model's key is a hash of its own definition (SQL, config, target, path) and of the keys of every model it reads, so it changes when the model or anything upstream of it changes, and for nothing else. The file as a whole is valid only for the same KumoSQL and sqlglot versions and the same project-wide facts: the set of table names, the declared sources and every table schema known before tracing (including columns looked up in the saved catalog, so a changed catalog traces again), the default project and dataset, the models that define procedures or table functions, and the lineage time limits. A project setting change, or a model added, removed or renamed, therefore traces every model again; an edit to the SQL of one model traces that model and the models downstream of it. A replayed entry is placed in the analysis exactly where tracing would have put it, so the analysis equals a cold start (the tests compare the records, their order and the diagnostics, not only the tool answers).
+
+**What is never reused.** A model on a dependency cycle; a model that a time limit cut short (`lineage_skipped`) and everything downstream of it; the whole project when a model writes into another model's table (`MERGE` or `INSERT` operations) or has an `INSERT` with no column list. These are traced on every start. A file that is missing, unreadable, corrupt, from another version, or whose entry does not decode is ignored (that entry only, for a bad entry) and written again; it never stops the server.
+
+**Background build.** `initialize` answers at once and the index is built in a thread. A tool call while it runs waits up to `--warm-wait` seconds (default 3; `0` never waits). If the index is still not ready, the call is answered, not failed:
+
+```json
+{"answer": "index warming, 41% done: no answer yet, ask again in about 6 s",
+ "index": {"state": "warming", "percent": 41, "stage": "tracing columns", "reason": "after the server started", "ask_again_in_seconds": 6},
+ "next": ["Ask the same question again in about 6 seconds. ..."]}
+```
+
+No tool answers from an unfinished analysis. The percent is 2 while loading, 5 to 90 while tracing (by models done), then 92 and 96 for profiles and roles, and 100 when ready; `reason` is `after an edit to the project` during a rebuild. When the build ends the server logs `index ready: N models analysed, M replayed from the saved index` on stderr. `describe_table` and the other tools answer as before once it is ready, and answers then carry no `index` field. Resources (saved data profiles) are not held back.
+
+**After an edit.** On each tool call the server compares the project's files (`.sqlx`, `.sql`, `.js`, `.json`, `.yaml`, `.yml`) with the last build: first by size and modification time, then by content hash, so touching or re-saving a file without changing it rebuilds nothing. `--refresh-interval SECONDS` bounds how often the files are looked at (default `0`: on every call, which for a few hundred files costs milliseconds because unchanged files are not read). There is no refresh tool or argument: a call made after an edit finds the edit. On a change the project is read again in the background, only the changed models and those downstream are traced again, and the new index replaces the old one when it is complete, so an answer never mixes the two. Calls during that time wait or answer `index warming` as above.
+
 ## Saved data profiles
 
 The server also serves the resources that [`profile-mcp`](data-profiling.md#agents-the-mcp-server) serves: two per saved profile, `kumosql://data-profile/<name>/summary.md` and `profile.json`, read-only, from the data folder or `--profiles DIR`. `python -m kumosql profile-mcp` keeps working unchanged (resources only, no tools). `describe_table` points at the saved profile of a table when one exists.
@@ -136,5 +159,6 @@ def find_tables(session, args):
 - `check_query` does not run the query or compare its rows with anything, and models have no stored column types, so a dry run is what returns real types. The fan-out check needs a known grain; on the public project 41 tables read tables the project does not define and have none.
 - `find_tables` matches words, not meanings: "revenue" does not find a table whose columns are called `sales`. On the public project the top candidate for each model's own name is that model, and a need such as "intermediary activity per day" finds the right table by its name and its `day` column, but 351 of 626 column meanings are unknown there, so a better table may hide behind a name the words do not match.
 - `compare_queries` proves what the prover can prove today; most real rewrites that change a join or an aggregate come back `unknown`. A counterexample is a small made-up database, not data from your tables.
+- The warm start saves the column trace, which is nearly all of the analysis, not the rest. Reading the project's files and parsing the models happen on every start and every rebuild, and table profiles, roles and the other per-session results are computed again from the replayed trace (on the 106-model public project: about a tenth of a second for the read and a third of a second for the rest, against about three seconds for a cold trace). A rebuild after an edit reads every file again; only the tracing is incremental. The speed-up is therefore largest on projects where tracing dominates, and is not measured on a project of several hundred models here.
 - Answers are measured in bytes of JSON, not tokens.
 - The server handles one request at a time on stdin, and does not support JSON-RPC batches or cancellation.
