@@ -589,7 +589,7 @@ Every command prints `--help`.
 
 | Command | Purpose |
 | --- | --- |
-| `python -m kumosql.ui` | Local browser UI (`--project DIR`, `--git URL`, `--branch`, `--refresh`, `--jobs FILE`, `--port`, `--no-browser`) |
+| `python -m kumosql.ui` | Local browser UI (`--project DIR`, `--git URL`, `--branch`, `--refresh`, `--jobs FILE`, `--port` (0 picks a free port), `--print-port`, `--exit-on-stdin-close`, `--no-browser`) |
 | `python -m kumosql rewrite-sql` | Apply rules with verification, optional idempotence, planner and synthetic checks |
 | `python -m kumosql lift-subqueries` | Lift `FROM`/`JOIN` subqueries into CTEs (`--report` prints a summary) |
 | `python -m kumosql prove-sql-equivalent` | Structural equivalence proof for two queries, then the SMT prover; unwraps `CREATE TABLE/VIEW AS`; `--conditional` lists the facts that would make an unproven pair equivalent (exit 3); `--explain-difference` prints "except when P" for a refuted pair |
