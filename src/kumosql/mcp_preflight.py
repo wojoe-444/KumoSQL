@@ -118,12 +118,6 @@ def _catalog(session: Session, draft: Draft):
             names = types.columns(key) or list(columns)
             if names:
                 catalog.add(key, [Column(name, types.type(key, name) or (parse_type(str(columns.get(name))) if columns.get(name) else None)) for name in names])
-    snapshot = types.snapshot
-    for spelled, key in draft.tables.items():
-        if key is None and snapshot is not None:  # a table the project does not define, but the snapshot lists
-            rows = snapshot.columns_of(spelled)
-            if rows:
-                catalog.add(spelled, [Column(c.column, parse_type(c.data_type)) for c in rows])
     return catalog
 
 
@@ -140,10 +134,7 @@ def _unknown_label(session: Session, draft: Draft, unknown) -> tuple[str, str] |
     key = draft.tables[spelled]
     pipeline = session.pipeline()
     if key is None:
-        snapshot = session.column_types().snapshot
-        if snapshot is None or snapshot.columns_of(spelled) is None:
-            return None  # "N tables not in the project" says it
-        return f"{table.name}.{column}", "the schema snapshot lists the table but not this column; refresh the snapshot"
+        return None  # "N tables not in the project" says it
     return f"{key.split('.')[-1]}.{column}", session.column_types().reason(key, column, key in pipeline.models)
 
 
@@ -490,11 +481,7 @@ def check_query(session: Session, args: dict) -> Answer:
 
     outside = sorted(spelled for spelled, key in draft.tables.items() if key is None)
     if outside:
-        snapshot = session.column_types().snapshot
-        typed_outside = [spelled for spelled in outside if snapshot is not None and snapshot.columns_of(spelled) is not None]
         reason = "their columns, types and grain are unknown, so checks that need them were skipped"
-        if len(typed_outside) == len(outside):
-            reason = "the project does not define them, so their grain is unknown (their column types come from the schema snapshot)"
         gaps.append((f"{len(outside)} table{'s' if len(outside) != 1 else ''} not in the project: {', '.join(outside[:3])}{', ...' if len(outside) > 3 else ''}", reason))
     from . import project_checks  # imported here so the tool list keeps the order of TOOL_MODULES
 

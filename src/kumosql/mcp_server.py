@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import mcp_answers, profile_mcp
 from .mcp_session import Session, load_project, parse_assumed_grain
-from .schema_snapshot import SchemaSnapshotError, load_schema_snapshot
+from .schema_snapshot import SchemaSnapshotError, check_schema_snapshot
 
 #: modules that register tools; each workstream adds its own here
 TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile", "kumosql.mcp_list", "kumosql.mcp_clean", "kumosql.project_checks")
@@ -140,10 +140,9 @@ def main(argv: list[str] | None = None) -> int:
         assumed = parse_assumed_grain(args.assume_grain)
     except ValueError as exc:
         parser.error(f"--assume-grain: {exc}")
-    snapshot = None
     if args.schema_snapshot:
         try:
-            snapshot = load_schema_snapshot(args.schema_snapshot)  # fail at start, not as a silent gap in every answer
+            snapshot = check_schema_snapshot(args.schema_snapshot)  # fail at start, not as a silent gap in every answer
         except SchemaSnapshotError as exc:
             parser.error(f"--schema-snapshot: {exc}")
     loader = (lambda: load_project(root, args.source_schema)) if root else None
@@ -152,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         profiles=args.profiles,
         root=(root.parent if root.is_file() else root) if root else None,
         assume_grain=assumed,
-        schema_snapshot=snapshot,
+        schema_snapshot=args.schema_snapshot,
     )
     server = AgentServer(session)
     if loader is not None:

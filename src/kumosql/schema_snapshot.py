@@ -35,6 +35,16 @@ Use::
 A row without a table, column or type is skipped and counted in ``skipped``; a second row for the same column of a
 table is skipped too (``INFORMATION_SCHEMA.COLUMNS`` has none). The loader never guesses a type and never contacts a
 warehouse. ``Session.schema_snapshot()`` gives the snapshot a server was started with.
+
+The file is **streamed**, one row at a time, and a row of a table the caller does not want is dropped on the spot
+(``keep``, see below), so a warehouse-wide export of hundreds of thousands of rows costs the memory of the tables the
+project uses, and about a second per 100,000 rows. A JSON *array* is parsed whole (use JSON lines for big files). Nothing is
+written anywhere: the loader keeps no cache file.
+
+    load_schema_snapshot("columns.csv", keep=lambda catalog, schema, table: table in project_tables)
+    snapshot.ignored    # rows dropped because ``keep`` said no (never stored)
+    snapshot.skipped    # rows dropped because they were unusable or repeated
+    snapshot.columns_of("sales.orders")[0].is_nullable   # True, False, or None when the file has no is_nullable
 """
 
 from __future__ import annotations
@@ -44,6 +54,7 @@ import io
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Iterable, Iterator
 
 #: a snapshot file larger than this is refused, not read (a column list of any real warehouse is far smaller)
 MAX_BYTES = 200_000_000
@@ -87,6 +98,8 @@ class SchemaSnapshot:
     columns: tuple[SnapshotColumn, ...] = ()
     #: rows that were not used: missing table, column or type, or a repeated column
     skipped: int = 0
+    #: rows of tables the caller did not want (``keep`` said no); they are counted and never stored
+    ignored: int = 0
     #: where it was read from, for messages
     source: str = "schema snapshot"
     _tables: dict[str, tuple[SnapshotColumn, ...]] = field(default_factory=dict, repr=False, compare=False)
@@ -122,8 +135,13 @@ class SchemaSnapshot:
         return {c.column: c.data_type for c in columns} if columns is not None else None
 
 
-def load_schema_snapshot(path: str | Path) -> SchemaSnapshot:
-    """Read a snapshot file (CSV, JSON lines or one JSON array); raises :class:`SchemaSnapshotError` when it cannot."""
+#: ``keep(catalog, schema, table)``: whether the rows of this table are wanted (parts the file lacks are ``""``)
+Keep = Callable[[str, str, str], bool]
+
+
+def load_schema_snapshot(path: str | Path, keep: Keep | None = None) -> SchemaSnapshot:
+    """Read a snapshot file (CSV, JSON lines or one JSON array), streaming it; raises :class:`SchemaSnapshotError` when it
+    cannot be read. ``keep`` drops the rows of unwanted tables as they are read."""
 
     path = Path(path)
     try:
@@ -132,25 +150,33 @@ def load_schema_snapshot(path: str | Path) -> SchemaSnapshot:
         raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it ({type(exc).__name__}: {exc.strerror or exc})") from exc
     if size > MAX_BYTES:
         raise SchemaSnapshotError(f"schema snapshot {path.name} is {size:,} bytes, over the {MAX_BYTES:,}-byte limit")
-    try:
-        text = path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError) as exc:
-        raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it as UTF-8 text ({type(exc).__name__})") from exc
     suffix = path.suffix.lower()
     fmt = "jsonl" if suffix in (".jsonl", ".ndjson", ".json") else "csv" if suffix in (".csv", ".tsv") else None
-    return parse_schema_snapshot(text, fmt, source=path.name)
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            return _read(handle, fmt, path.name, keep, None)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it as UTF-8 text ({type(exc).__name__})") from exc
 
 
-def parse_schema_snapshot(text: str, fmt: str | None = None, source: str = "schema snapshot") -> SchemaSnapshot:
+def check_schema_snapshot(path: str | Path, rows: int = 200) -> None:
+    """Fail fast on a file that is not a snapshot: read its header and the first ``rows`` rows, keep nothing. Raises
+    :class:`SchemaSnapshotError`; a server calls it at start so a wrong file is not a silent gap in every answer."""
+
+    path = Path(path)
+    suffix = path.suffix.lower()
+    fmt = "jsonl" if suffix in (".jsonl", ".ndjson", ".json") else "csv" if suffix in (".csv", ".tsv") else None
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as handle:
+            _read(handle, fmt, path.name, lambda *_: False, rows)
+    except (OSError, UnicodeDecodeError) as exc:
+        raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it ({type(exc).__name__})") from exc
+
+
+def parse_schema_snapshot(text: str, fmt: str | None = None, source: str = "schema snapshot", keep: Keep | None = None) -> SchemaSnapshot:
     """Parse snapshot text; ``fmt`` is ``"csv"`` or ``"jsonl"`` (decided from the first character when ``None``)."""
 
-    stripped = text.lstrip()
-    if not stripped:
-        raise SchemaSnapshotError(f"{source}: the file is empty; {_accepted()}")
-    if fmt is None or (fmt == "jsonl") != (stripped[0] in "{["):
-        fmt = "jsonl" if stripped[0] in "{[" else "csv"
-    rows = _json_rows(text, source) if fmt == "jsonl" else _csv_rows(text, source)
-    return _snapshot(rows, source)
+    return _read(io.StringIO(text, newline=""), fmt, source, keep, None)
 
 
 def _accepted() -> str:
@@ -158,43 +184,63 @@ def _accepted() -> str:
             "(catalog/schema/table/column/data_type also work)")
 
 
-def _csv_rows(text: str, source: str) -> list[dict]:
-    first = text.lstrip().splitlines()[0]
+def _read(handle, fmt: str | None, source: str, keep: Keep | None, limit: int | None) -> SchemaSnapshot:
+    first = handle.readline()
+    while first and not first.strip():
+        first = handle.readline()
+    if not first:
+        raise SchemaSnapshotError(f"{source}: the file is empty; {_accepted()}")
+    lead = first.lstrip()[0]
+    if fmt is None or (fmt == "jsonl") != (lead in "{["):
+        fmt = "jsonl" if lead in "{[" else "csv"
+    lines: Iterable[str] = _chain(first, handle)
+    rows = _json_rows(lines, source, lead) if fmt == "jsonl" else _csv_rows(lines, first, source)
+    return _collect(rows, source, keep, limit)
+
+
+def _chain(first: str, handle) -> Iterator[str]:
+    yield first
+    yield from handle
+
+
+def _csv_rows(lines: Iterable[str], first: str, source: str) -> Iterator[dict]:
     delimiter = "\t" if first.count("\t") > first.count(",") else ","
     try:
-        return [dict(row) for row in csv.DictReader(io.StringIO(text), delimiter=delimiter)]
+        reader = csv.reader(lines, delimiter=delimiter)
+        header = next(reader)
+        names = [str(h).strip().casefold() for h in header]
+        yield {"__header__": names}
+        for row in reader:
+            yield {"__row__": row}
     except csv.Error as exc:
         raise SchemaSnapshotError(f"{source}: not valid CSV ({exc})") from exc
 
 
-def _json_rows(text: str, source: str) -> list[dict]:
-    stripped = text.lstrip()
-    if stripped.startswith("["):
+def _json_rows(lines: Iterable[str], source: str, lead: str) -> Iterator[dict]:
+    if lead == "[":
+        text = "".join(lines)
         try:
-            data = json.loads(stripped)
+            items = json.loads(text)
         except json.JSONDecodeError as exc:
             raise SchemaSnapshotError(f"{source}: not valid JSON ({exc.msg} at line {exc.lineno})") from exc
-        items = data
+        if not isinstance(items, list):
+            raise SchemaSnapshotError(f"{source}: expected a JSON array of objects; {_accepted()}")
     else:
-        items = []
-        for number, line in enumerate(text.splitlines(), 1):
-            if not line.strip():
-                continue
-            try:
-                items.append(json.loads(line))
-            except json.JSONDecodeError as exc:
-                raise SchemaSnapshotError(f"{source}: line {number} is not valid JSON ({exc.msg})") from exc
-    if not all(isinstance(item, dict) for item in items):
-        raise SchemaSnapshotError(f"{source}: every JSON line must be an object with the column fields; {_accepted()}")
-    return items
+        items = _json_lines(lines, source)
+    for item in items:
+        if not isinstance(item, dict):
+            raise SchemaSnapshotError(f"{source}: every JSON line must be an object with the column fields; {_accepted()}")
+        yield {"__object__": item}
 
 
-def _lookup(row: dict, name: str):
-    folded = {str(key).strip().casefold(): value for key, value in row.items() if key is not None}
-    for alias in _FIELDS[name]:
-        if alias in folded:
-            return folded[alias]
-    return None
+def _json_lines(lines: Iterable[str], source: str) -> Iterator[object]:
+    for number, line in enumerate(lines, 1):
+        if not line.strip():
+            continue
+        try:
+            yield json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise SchemaSnapshotError(f"{source}: line {number} is not valid JSON ({exc.msg})") from exc
 
 
 def _text(value) -> str:
@@ -208,29 +254,67 @@ def _nullable(value) -> bool | None:
     return True if folded in ("yes", "true", "1", "nullable") else False if folded in ("no", "false", "0", "required") else None
 
 
-def _snapshot(rows: list[dict], source: str) -> SchemaSnapshot:
-    if not rows:
-        raise SchemaSnapshotError(f"{source}: it has a header but no rows; {_accepted()}")
-    present = {str(key).strip().casefold() for key in rows[0] if key is not None}
-    missing = [name for name in _REQUIRED if not any(alias in present for alias in _FIELDS[name])]
+def _positions(names: Iterable[str], source: str) -> dict[str, str]:
+    """``{field: the file's name for it}`` from the names the file has; raises when a required field is missing."""
+
+    present = set(names)
+    found = {}
+    for name, aliases in _FIELDS.items():
+        for alias in aliases:
+            if alias in present:
+                found[name] = alias
+                break
+    missing = [name for name in _REQUIRED if name not in found]
     if missing:
         raise SchemaSnapshotError(f"{source}: no column for {', '.join(missing)}; {_accepted()}")
-    seen: set[tuple[str, str]] = set()
+    return found
+
+
+def _collect(rows: Iterator[dict], source: str, keep: Keep | None, limit: int | None) -> SchemaSnapshot:
+    columns: list[str] | None = None  # CSV: the header; JSON: the first object's keys
+    index: dict[str, int] = {}
+    mapping: dict[str, str] = {}
+    seen: set[tuple[str, str, str, str]] = set()
+    wanted: dict[tuple[str, str, str], bool] = {}
     kept: list[tuple[int, int, SnapshotColumn]] = []
-    skipped = 0
-    for index, row in enumerate(rows):
-        column = SnapshotColumn(
-            _text(_lookup(row, "catalog")), _text(_lookup(row, "schema")), _text(_lookup(row, "table")),
-            _text(_lookup(row, "column")), _text(_lookup(row, "data_type")), _nullable(_lookup(row, "is_nullable")),
-        )
-        position = _text(_lookup(row, "ordinal_position"))
-        key = (column.table_name.casefold(), column.column.casefold())
-        if not (column.table and column.column and column.data_type) or key in seen:
+    skipped = ignored = count = 0
+    for count, row in enumerate(rows):
+        if "__header__" in row:
+            columns = row["__header__"]
+            mapping = _positions(columns, source)
+            index = {field_name: columns.index(alias) for field_name, alias in mapping.items()}
+            continue
+        if "__row__" in row:
+            values = row["__row__"]
+            get = lambda name, values=values: values[index[name]] if name in index and index[name] < len(values) else None  # noqa: E731
+        else:
+            item = {str(k).strip().casefold(): v for k, v in row["__object__"].items()}
+            if not mapping:
+                mapping = _positions(item, source)
+            get = lambda name, item=item: item.get(mapping.get(name, ""))  # noqa: E731
+        if limit is not None and count > limit:
+            break
+        catalog, schema, table = _text(get("catalog")), _text(get("schema")), _text(get("table"))
+        name = (catalog, schema, table)
+        if name not in wanted:
+            wanted[name] = bool(table) and (keep is None or bool(keep(catalog, schema, table)))
+        if not wanted[name]:
+            if table:
+                ignored += 1
+            else:
+                skipped += 1
+            continue
+        column, data_type = _text(get("column")), _text(get("data_type"))
+        key = (catalog.casefold(), schema.casefold(), table.casefold(), column.casefold())
+        if not column or not data_type or key in seen:
             skipped += 1
             continue
         seen.add(key)
-        kept.append((int(position) if position.isdigit() else index, index, column))
-    if not kept:
+        position = _text(get("ordinal_position"))
+        kept.append((int(position) if position.isdigit() else len(kept), len(kept), SnapshotColumn(catalog, schema, table, column, data_type, _nullable(get("is_nullable")))))
+    if not mapping:
+        raise SchemaSnapshotError(f"{source}: it has a header but no rows; {_accepted()}")
+    if not kept and keep is None and limit is None:
         raise SchemaSnapshotError(f"{source}: no row has a table, a column and a data type; {_accepted()}")
     kept.sort(key=lambda item: (item[2].table_name.casefold(), item[0], item[1]))
-    return SchemaSnapshot(tuple(item[2] for item in kept), skipped, source)
+    return SchemaSnapshot(tuple(item[2] for item in kept), skipped, ignored, source)

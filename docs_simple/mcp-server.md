@@ -58,6 +58,8 @@ my-project,sales,calendar,order_week,STRING,YES
 
 With it, a draft like `WHERE c.order_week BETWEEN 202601 AND 202610` gets a finding: `order_week` is text and the bounds are numbers, and BigQuery will not compare them. The answer names both sides and the fix (write the bounds as text, `'202601'`, or `CAST(c.order_week AS INT64)`). The same goes for a join between a text key and a number key, a `UNION` whose branches disagree, `DATETIME` against `TIMESTAMP`, and `MOD` of a decimal number.
 
+The file can be big (a whole warehouse export is fine): KumoSQL reads it line by line and throws away the rows of tables your project does not use. It never writes anything to your project.
+
 Tables built by your own models get types too: KumoSQL works them out from each model's query, starting from the snapshot, and where the snapshot lists a table it trusts the snapshot. A column it cannot work out stays "unknown" on its own.
 
 Without the file, or for a column the file does not have, the answer does not pretend: it lists `types of calendar.order_week unknown` under what was not checked, and if no comparison could be checked it does not claim that types were checked at all. If the file is out of date, refresh it; the server does not notice by itself.

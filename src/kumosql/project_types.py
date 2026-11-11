@@ -39,13 +39,18 @@ class ProjectTypes:
     snapshot_columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
     #: where each table's types came from: ``snapshot``, ``declared`` or ``derived``
     origin: dict[str, str] = field(default_factory=dict)
-    #: snapshot tables that match no table of the project (or several), as written in the snapshot
+    #: snapshot tables that match no table of the project (or several, or one already matched), as written in the snapshot
     unmatched: list[str] = field(default_factory=list)
     #: whether a snapshot was given (and could be read)
     has_snapshot: bool = False
     snapshot_problem: str | None = None
-    #: snapshot tables by project key, for tables outside the project's own definitions
+    #: the snapshot the types were read from (only the rows of tables the project uses are kept in it)
     snapshot: SchemaSnapshot | None = None
+    #: ``nullable[key][column.lower()]``: ``True`` may be NULL, ``False`` never NULL, absent when not known
+    nullability: dict[str, dict[str, bool]] = field(default_factory=dict)
+    #: how many models were typed from their own query, and how many could not be (a counter, for sizing a big project)
+    models_typed: int = 0
+    models_untyped: int = 0
 
     def type(self, key: str, column: str) -> "GType | None":
         return self.types.get(key, {}).get(column.casefold())
@@ -54,6 +59,12 @@ class ProjectTypes:
         """The columns this module knows of ``key`` (snapshot spelling), or ``[]``."""
 
         return list(self.snapshot_columns.get(key, ()))
+
+    def nullable(self, key: str, column: str) -> bool | None:
+        """``True`` when the column may be NULL, ``False`` when it never is (the snapshot's ``is_nullable``, or a column the
+        model's query makes non-null, such as a literal or ``COUNT``), ``None`` when that is not known."""
+
+        return self.nullability.get(key, {}).get(column.casefold())
 
     def known(self, key: str, column: str) -> bool:
         return self.type(key, column) is not None
@@ -86,11 +97,20 @@ def build(session: "Session") -> ProjectTypes:
     matched = _match(snapshot, list(session.tables()), result) if snapshot is not None else {}
     catalog = Catalog()
 
-    def record(key: str, origin: str, columns: list[tuple[str, "GType | None"]]) -> None:
+    def record(key: str, origin: str, columns: list[tuple[str, "GType | None"]], nulls: list[bool | None] | None = None) -> None:
         by_name: dict[str, "GType | None"] = {}
         for name, kind in columns:
             folded = name.casefold()
             by_name[folded] = None if folded in by_name else kind  # a name twice cannot be told apart
+        if nulls is not None:
+            seen: set[str] = set()
+            flags = {}
+            for (name, _), flag in zip(columns, nulls):
+                folded = name.casefold()
+                if flag is not None and folded not in seen:
+                    flags[folded] = flag
+                seen.add(folded)
+            result.nullability[key] = flags
         result.types[key] = by_name
         result.origin[key] = origin
         catalog.add(key, [Column(name, by_name[name.casefold()]) for name, _ in columns])
@@ -99,7 +119,7 @@ def build(session: "Session") -> ProjectTypes:
         rows = matched.get(key)
         if rows is None:
             return False
-        record(key, "snapshot", [(c.column, parse_type(c.data_type)) for c in rows])
+        record(key, "snapshot", [(c.column, parse_type(c.data_type)) for c in rows], [c.is_nullable for c in rows])
         result.snapshot_columns[key] = tuple(c.column for c in rows)
         return True
 
@@ -118,13 +138,36 @@ def build(session: "Session") -> ProjectTypes:
         try:
             typed = infer(model.sql, catalog)
         except Exception:  # noqa: BLE001 - a model the typer cannot read stays untyped; the rest is unaffected
+            result.models_untyped += 1
             continue
-        if typed.columns is None:
+        named = [c for c in (typed.columns or ()) if c.name]
+        if not named:
+            result.models_untyped += 1
             continue
-        named = [(c.name, c.type) for c in typed.columns if c.name]
-        if named:
-            record(key, "derived", named)
+        result.models_typed += 1
+        record(key, "derived", [(c.name, c.type) for c in named], [False if c.required else None for c in named])
     return result
+
+
+def snapshot_filter(keys):
+    """The ``keep`` argument of :func:`kumosql.schema_snapshot.load_schema_snapshot` for a project: ``True`` for the rows
+    of a table whose name fits one of ``keys`` (the same rule :func:`_match` uses), so rows of other tables are dropped
+    as the file is read."""
+
+    parts = {tuple(key.casefold().split(".")) for key in keys}
+    by_tail: dict[str, list[tuple[str, ...]]] = {}
+    for key_parts in parts:
+        by_tail.setdefault(key_parts[-1], []).append(key_parts)
+
+    def keep(catalog: str, schema: str, table: str) -> bool:
+        wanted = tuple(p.casefold() for p in (catalog, schema, table) if p)
+        for key_parts in by_tail.get(wanted[-1], ()):
+            depth = min(len(wanted), len(key_parts))
+            if key_parts[-depth:] == wanted[-depth:]:
+                return True
+        return False
+
+    return keep
 
 
 def _match(snapshot: SchemaSnapshot, keys: list[str], result: ProjectTypes) -> dict:

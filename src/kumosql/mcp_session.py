@@ -174,8 +174,11 @@ class Session:
         source = self._snapshot_source
         if isinstance(source, SchemaSnapshot):
             return source
+        from .project_types import snapshot_filter
+
         try:
-            return load_schema_snapshot(source)
+            # streamed; rows of tables the project does not use are dropped as they are read, never kept
+            return load_schema_snapshot(source, keep=snapshot_filter(self.tables()))
         except SchemaSnapshotError as exc:
             self.snapshot_error = str(exc)
             return None
@@ -187,6 +190,17 @@ class Session:
         from . import project_types
 
         return self._once("column_types", lambda: project_types.build(self))
+
+    def column_type(self, key: str, column: str):
+        """The :class:`~kumosql.googlesql_types.GType` of ``key.column`` (a table key of the project), or ``None``."""
+
+        return self.column_types().type(key, column)
+
+    def column_nullable(self, key: str, column: str) -> bool | None:
+        """``True`` when ``key.column`` may be NULL, ``False`` when it never is, ``None`` when not known (the schema
+        snapshot's ``is_nullable``, else what the model's query fixes)."""
+
+        return self.column_types().nullable(key, column)
 
     def roles(self) -> dict:
         from .table_roles import infer_roles

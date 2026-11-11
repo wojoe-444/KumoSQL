@@ -7,7 +7,8 @@ import pytest
 from kumosql import mcp_server
 from kumosql.mcp_session import Session
 from kumosql.pipeline_loading import load_sqlx_project
-from kumosql.schema_snapshot import SchemaSnapshotError, load_schema_snapshot, parse_schema_snapshot
+from kumosql.project_types import snapshot_filter
+from kumosql.schema_snapshot import SchemaSnapshotError, check_schema_snapshot, load_schema_snapshot, parse_schema_snapshot
 from test_mcp_server import ask, findings_of, no_network, write_project  # noqa: F401
 
 #: a tiny Dataform project: raw_dates is declared without types, calendar and orders read it
@@ -113,15 +114,22 @@ def test_a_using_join_between_text_and_integer_columns_is_found(tmp_path, no_net
     assert "USING (customer_id)" in found["what"] and "INT64" in found["what"] and "STRING" in found["what"] and "ON CAST" in found["fix"]
 
 
-def test_snapshot_types_win_over_derived_ones_and_cover_tables_the_project_does_not_define(tmp_path, no_network):
-    csv = SNAPSHOT_CSV + "p,ds,orders,customer_id,STRING,YES\np,other,elsewhere,k,INT64,YES\n"
+def test_snapshot_types_win_over_derived_ones_and_rows_of_tables_the_project_does_not_use_are_dropped_unread(tmp_path, no_network):
+    csv = SNAPSHOT_CSV + "p,ds,orders,customer_id,STRING,NO\np,other,elsewhere,k,INT64,YES\n"
     served = server(tmp_path, csv)
-    assert str(served.session.column_types().type("p.ds.orders", "customer_id")) == "STRING"
+    types = served.session.column_types()
+    assert str(served.session.column_type("p.ds.orders", "customer_id")) == "STRING"
+    assert served.session.column_nullable("p.ds.orders", "customer_id") is False and served.session.column_nullable("p.ds.calendar", "order_week") is True
+    assert served.session.schema_snapshot().ignored == 1 and "p.other.elsewhere" not in served.session.schema_snapshot().tables()
+    assert types.unmatched == []
     body, _, _ = ask(served, "check_query", sql="SELECT 1 FROM p.other.elsewhere e JOIN ${ref('orders')} o ON o.customer_id = e.k")
-    [found] = type_findings(body)
-    assert "o.customer_id (STRING)" in found["what"] and "e.k (INT64)" in found["what"]
-    [outside] = [g for g in body["unknown"] if "not in the project" in g["what"]]
-    assert "snapshot" in outside["reason"]
+    assert not type_findings(body) and any("not in the project" in g["what"] for g in body["unknown"])
+
+
+def test_nullability_comes_from_the_snapshot_or_from_what_a_models_query_guarantees(tmp_path):
+    served = server(tmp_path)
+    assert served.session.column_nullable("p.ds.orders", "order_id") is False  # a literal is never NULL
+    assert served.session.column_nullable("p.ds.calendar", "order_week") is None  # read from an undeclared source: not known
 
 
 def test_many_unknown_columns_are_one_line_with_a_count(tmp_path, no_network):
@@ -164,3 +172,37 @@ def test_a_bad_snapshot_stops_the_server_at_start(tmp_path, capsys):
     with pytest.raises(SystemExit):
         mcp_server.main([str(tmp_path), "--schema-snapshot", str(bad)])
     assert "--schema-snapshot" in capsys.readouterr().err
+
+
+def test_a_filter_drops_the_rows_of_other_tables_while_reading_and_counts_them(tmp_path):
+    rows = "table_catalog,table_schema,table_name,column_name,data_type,is_nullable\n" + "".join(
+        f"p,ds,t{i},c{j},INT64,YES\n" for i in range(50) for j in range(4))
+    path = tmp_path / "wide.csv"
+    path.write_text(rows)
+    snapshot = load_schema_snapshot(path, keep=snapshot_filter(["p.ds.t3", "ds.t7"]))
+    assert sorted(snapshot.tables()) == ["p.ds.t3", "p.ds.t7"] and len(snapshot.columns) == 8 and snapshot.ignored == 192
+    assert len(load_schema_snapshot(path).columns) == 200
+    check_schema_snapshot(path)
+    with pytest.raises(SchemaSnapshotError):
+        check_schema_snapshot(tmp_path / "missing.csv")
+
+
+def test_a_project_of_400_models_and_1000_declared_sources_is_typed_once_from_a_large_snapshot(tmp_path):
+    """Sizing, not a timing test: every model is typed once, rows of tables the project does not use are never kept."""
+
+    files = {f"src_{i}.sqlx": f'config {{ type: "declaration", schema: "src", name: "s{i}" }}\n' for i in range(1000)}
+    for i in range(400):
+        upstream = f'${{ref("src", "s{i}")}}' if i % 2 == 0 else f'${{ref("m{i - 1}")}}'
+        files[f"m{i}.sqlx"] = f'config {{ type: "table" }}\nSELECT id, total FROM {upstream}\n'
+    folder = write_project(tmp_path / "big", files)
+    lines = ["table_catalog,table_schema,table_name,column_name,data_type,is_nullable"]
+    lines += [f"p,src,s{i},{c},{kind},YES" for i in range(1000) for c, kind in (("id", "STRING"), ("total", "INT64"))]
+    lines += [f"p,archive,old{i},c{j},STRING,YES" for i in range(2000) for j in range(10)]  # 20,000 rows of tables nobody uses
+    path = tmp_path / "columns.csv"
+    path.write_text("\n".join(lines) + "\n")
+    session = Session(load_sqlx_project(folder), schema_snapshot=path)
+    types = session.column_types()
+    assert types.models_typed == 400 and types.models_untyped == 0
+    assert session.schema_snapshot().ignored == 20000 and len(session.schema_snapshot()) == 1000
+    assert str(session.column_type("p.ds.m399", "id")) == "STRING" and str(session.column_type("p.ds.m398", "total")) == "INT64"
+    assert session.column_types() is types  # computed once and cached in the session

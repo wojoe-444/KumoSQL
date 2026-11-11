@@ -128,11 +128,23 @@ CSV (with a header) and JSON lines (or one JSON array of objects) are read; the 
 
 How the types reach a query ([`kumosql.project_types`](../src/kumosql/project_types.py), cached once in the `Session`):
 
-1. A snapshot table is joined to a project table or declared source by name, case-insensitively: `project.dataset.table`, or the trailing parts when either side lacks the project. A name that fits several tables, or none, is not guessed (it is kept in `unmatched`). A snapshot table the project does not define still types a draft that reads it, and the answer's `not in the project` entry says its grain is unknown.
+1. A snapshot table is joined to a project table or declared source by name, case-insensitively: `project.dataset.table`, or the trailing parts when either side lacks the project. A name that fits several tables, or none, is not guessed (it is kept in `unmatched`). Rows of tables the project does not use are dropped while the file is read and never kept (`ignored` counts them), so an unscoped warehouse export of hundreds of thousands of rows is fine: the loader streams the file at about a second per 100,000 rows. A draft that reads a table the project does not define gets no types for it (it stays under `not in the project`).
 2. A **source** takes the snapshot's types, else those of its `--source-schema` declaration.
 3. A **model** takes the snapshot's types when the snapshot lists its table (the deployed table is what a query runs against), and otherwise the types [type inference](type-inference.md) derives from the model's own query, reading the types of the tables above it. Models are typed in dependency order, once. A model with a column it cannot type gets `None` for that column only, and a model it cannot read at all (a `${...}` expression other than `ref()`, a script) has no types.
 
-The loader is a library for other tools too: `Session.schema_snapshot()` returns the `SchemaSnapshot` (or `None`; `Session.snapshot_error` says why a file could not be read), and `kumosql.schema_snapshot.load_schema_snapshot(path)` reads one file. Its `tables()`, `columns_of(name)` and `types_of(name)` give the rows by table; `Session(schema_snapshot=path)` is the same option for code that builds a session. `Session.column_types()` returns the typed project (`type(key, column)`, `reason(key, column, is_model)`).
+The loader is a library for other tools too (for example the schema-drift checks); none of it writes a file:
+
+| Call | Returns |
+| --- | --- |
+| `Session.schema_snapshot()` | the `SchemaSnapshot` the server started with (only the rows of tables the project uses), or `None`; `Session.snapshot_error` says why a file could not be read |
+| `Session.column_types()` | the typed project, computed once and cached: `type(key, column)`, `nullable(key, column)`, `columns(key)`, `reason(key, column, is_model)`, `origin[key]` (`snapshot`, `declared` or `derived`), `unmatched`, `models_typed` / `models_untyped` |
+| `Session.column_type(key, column)` | the `GType` of a column of a project table, or `None` |
+| `Session.column_nullable(key, column)` | `True` (may be NULL), `False` (never; the snapshot's `is_nullable = NO`, or a literal or `COUNT` in a model's query) or `None` (not known) |
+| `Session(schema_snapshot=path_or_SchemaSnapshot)` | the same option for code that builds a session |
+| `kumosql.schema_snapshot.load_schema_snapshot(path, keep=None)` | reads one file, streaming; `keep(catalog, schema, table)` says which tables' rows to keep (`kumosql.project_types.snapshot_filter(keys)` is the project's); `SchemaSnapshot.tables()`, `columns_of(name)`, `types_of(name)`, `skipped`, `ignored` |
+| `check_schema_snapshot(path)` | reads the header and the first rows only and raises `SchemaSnapshotError` for a file that is not a snapshot (the server calls it at start) |
+
+Types for models are cached in the session, so a project of about 400 models and 1,000 declared sources is typed once (`tests/test_check_query_types.py` sizes it with a counter, not a clock). A JSON array file is parsed whole; use JSON lines for large files.
 
 ## Saved data profiles
 
