@@ -6,6 +6,8 @@ One call instead of four commands, on a draft ``SELECT`` written against the pro
 * **ties**: places where the result can change from run to run because rows tie
   (:mod:`kumosql.tie_determinism`), with the key that would pin them down;
 * **fan-out**: joins that can multiply rows, judged from the grain of the joined tables (the project's table profiles);
+* **static**: BigQuery-specific text checks (a reserved word as an alias, ``NOT IN`` with NULL, a CASE branch no row reaches, ...),
+  in :mod:`kumosql.bq_static_checks`;
 * **BigQuery dry run**: only when ``dry_run=true`` *and* a ``project`` is given. It plans the query without running it
   (free, no data read), reports the estimated bytes against the byte cap of Settings → Scopes and the column types BigQuery
   returns. It is the only part that reaches the network; without credentials it says ``not checked``.
@@ -21,6 +23,7 @@ import re
 import sqlglot
 from sqlglot import exp
 
+from .bq_static_checks import static_checks
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 from .mcp_tools import expand_refs, explain, leftover_expressions
@@ -349,7 +352,7 @@ def _dry_run(sql: str, project: str) -> tuple[list[dict], list[tuple[str, str]],
     "check_query",
     "Check a draft query",
     "Is this draft sound before I run it? One call: the output column types and any certain errors, places where ties make the "
-    "result change from run to run, joins that can multiply rows (judged from the grain of the joined tables), and, only when "
+    "result change from run to run, joins that can multiply rows (judged from the grain of the joined tables), BigQuery-specific static mistakes (a reserved word as an alias, NOT IN with NULL, an unreachable CASE branch, ...), and, only when "
     "dry_run=true and a project is given, BigQuery's free dry run (estimated bytes against the byte cap). Every finding names its "
     "fix; what could not be checked is listed with the reason. Without dry_run it never touches the network.",
     {
@@ -397,6 +400,9 @@ def check_query(session: Session, args: dict) -> Answer:
     findings: list[dict] = []
     gaps: list[tuple[str, str]] = []
     checked = []
+    static_found, static_gaps = static_checks(session, draft.tree, draft.sql, draft.tables)
+    findings += static_found
+    gaps += static_gaps
     type_findings, columns, type_gaps = _type_findings(session, draft)
     findings += type_findings
     gaps += type_gaps
@@ -409,6 +415,7 @@ def check_query(session: Session, args: dict) -> Answer:
     findings += fan_findings
     gaps += fan_gaps
     checked.append("fan_out")
+    checked.append("static")
 
     dry = None
     if want_dry:
