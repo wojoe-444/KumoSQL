@@ -13,7 +13,7 @@ The short version: the merge gate re-ran prover benchmarks for every change, so 
 | Split the prover into its own package | **Decided** by the repository owner on 2026-11-10. Target repository: [`wojoe-444/Kumo_SQL_Prover`](https://github.com/wojoe-444/Kumo_SQL_Prover). **Done in v0.1.0** ([issue 839](https://github.com/wojoe-444/KumoSQL/issues/839), [what moved and what did not](prover-split.md)): the prover, its tests, runners, results and docs are there, KumoSQL pins the tag, and what stays behind (the proof re-check and the evals that drive KumoSQL's rewrites) is listed on that page |
 | Make a fresh install pass again (DuckDB 2.0) | In progress as its own workstream |
 | Everything else on this page | Planned. Build it in the order below |
-| Changing a rule in `CLAUDE.md` (the twin docs rule, the scoreboard in the README, the test policy) | **Not decided.** Each needs the owner's word and its own pull request. Until then the current `CLAUDE.md` applies |
+| Changing a rule in `CLAUDE.md` (the twin docs rule, the scoreboard in the README, the test policy) | **Decided on 2026-11-11** by the owner, who asked for the choice to be made on the project's goals: the scoreboard moves to its own generated page (`docs/scoreboard.md`), plain-language companions are required only for the entry pages (`SIMPLE_REQUIRED` in `tests/test_docs.py`), and the test policy is the local gate plus a periodic full run with no CI through GitHub. `CLAUDE.md` says so |
 
 ## What the review found
 
@@ -72,9 +72,9 @@ Pin or bound every dependency (DuckDB, z3-solver, sqlfluff, pytest) and commit a
 
 ### 3. Stop hand-keeping generated things
 
-- Build the scoreboard into its own generated page instead of the README, from `benchmarks/results/*.json`, in the scheduled job. The README keeps a short summary and a link.
+- Build the scoreboard into its own generated page (`docs/scoreboard.md`, done 2026-11-11) instead of the README, from `benchmarks/results/*.json`. The README keeps a short summary and a link.
 - Discover eval test files, console commands and docs pages instead of registering them in lists (`EVAL_FILES` in `tests/conftest.py`, `COMMANDS` in `src/kumosql/__main__.py`, the docs indexes).
-- Proposed, not decided: one docs set written plainly, or a generated plain-language twin, instead of two hand-written sets.
+- Decided 2026-11-11: the hand-written plain-language twin is required only for the entry pages (`SIMPLE_REQUIRED` in `tests/test_docs.py`); other pages are written plainly in `docs/` and their older companions are kept as snapshots.
 
 **Done when** a pull request that adds a feature does not have to edit the README or a registration list.
 

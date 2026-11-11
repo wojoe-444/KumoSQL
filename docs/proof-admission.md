@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/proof-admission.md)
 
-An eval's results file (`benchmarks/results/<eval>.json`) holds a count of proven pairs, and the README scoreboard is generated from it. Until this check nothing recorded *which* pairs were counted, so a prover rule that newly proved a pair raised the count with no more evidence than the eval's own short random run. The admission check closes that gap: a proof is counted only after it has been through the heavy checks, and a gate test fails when a count moves without them.
+An eval's results file (`benchmarks/results/<eval>.json`) holds a count of proven pairs, and the scoreboard page is generated from it. Until this check nothing recorded *which* pairs were counted, so a prover rule that newly proved a pair raised the count with no more evidence than the eval's own short random run. The admission check closes that gap: a proof is counted only after it has been through the heavy checks, and a gate test fails when a count moves without them.
 
 It has three parts: a ledger of admitted proofs per eval, a tool that admits new proofs, and the near-miss probe that the tool runs on each of them.
 

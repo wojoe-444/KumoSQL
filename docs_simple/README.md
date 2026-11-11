@@ -10,6 +10,8 @@ It helps answer three everyday questions:
 
 Start with [Getting started](getting-started.md). It includes an example you can run without a Google Cloud account.
 
+The pages an analyst reads first are kept up to date with the product. Some other pages in this folder are older snapshots written when the feature was built; the full reference in `docs/` is the source of truth, and each page links to it.
+
 This folder is the plain-language companion to [the full documentation](../docs/README.md). It follows the same filenames and `evals/` structure. Each guide links to its full reference for API details and exceptions. The [project README](../README.md) has the command list and recorded benchmark scores.
 
 ## Choose a guide
@@ -75,4 +77,5 @@ A proof establishes equivalence within the prover's supported SQL and stated ass
 
 <!-- generated-pages:start (python tools/docs_index.py --write) -->
 - [The field trial, explained simply](field-trial.md): All simple guides · Full reference
+- [The scoreboard, explained simply](scoreboard.md): All simple guides · Full reference
 <!-- generated-pages:end -->

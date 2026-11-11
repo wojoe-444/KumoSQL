@@ -43,7 +43,7 @@ correctness rests on proof and on construction.
 
 ## Results
 
-See the README scoreboard row and `benchmarks/results/spider2-bigquery.json`. Dev found and fixed three real bugs:
+See the scoreboard row and `benchmarks/results/spider2-bigquery.json`. Dev found and fixed three real bugs:
 
 - the SMT prover compiled every outer join into twice the cases, so a query with many left joins exhausted memory in
   Python before Z3's timeout applied (killed after minutes); it now gives up past 256 cases and the rewrite stays unproven;

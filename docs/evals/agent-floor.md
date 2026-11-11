@@ -36,7 +36,7 @@ The run also measures the alternatives on the same project, for scale: the bytes
 ```
 python tools/agent_floor.py                  # print every task
 python tools/agent_floor.py --json           # the full result
-python tools/agent_floor.py --write-results  # write benchmarks/results/agent-floor.json and regenerate the README scoreboard
+python tools/agent_floor.py --write-results  # write benchmarks/results/agent-floor.json and regenerate the scoreboard page
 ```
 
 The result file is `agent-floor`. The test is `tests/test_agent_floor.py` (an eval floor, run nightly).

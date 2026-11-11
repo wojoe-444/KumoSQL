@@ -1,4 +1,4 @@
-"""Docs stay navigable: relative links point at files and headings that exist, and every page has a plain-language companion.
+"""Docs stay navigable: relative links point at files and headings that exist, and the user-facing entry pages have a plain-language companion.
 
 A page missing from an index is not a failure: ``tools/docs_index.py --write`` adds it to a generated block (see below)."""
 
@@ -70,10 +70,18 @@ def test_the_index_tool_adds_a_new_page_and_changes_nothing_else(tmp_path, monke
     assert "generated" not in (docs / "README.md").read_text(encoding="utf-8")
 
 
-def test_every_full_docs_page_has_a_simple_companion():
+# The pages an analyst reads first keep a hand-written plain-language companion (the owner decided on 2026-11-11 that other
+# pages need none; their older companions stay as snapshots and are not required to follow every change).
+SIMPLE_REQUIRED = {
+    "README.md", "getting-started.md", "mcp-server.md", "ui.md", "data-profiling.md", "pipeline-analysis.md",
+    "cost-and-change-reports.md", "dataform-repositories.md", "field-trial.md", "scoreboard.md", "evals/README.md",
+}
+
+
+def test_every_entry_page_has_a_simple_companion():
     expected = {p.relative_to(DOCS) for p in DOCS.rglob("*.md")}
     actual = {p.relative_to(SIMPLE_DOCS) for p in SIMPLE_DOCS.rglob("*.md") if "benchmarks" not in p.relative_to(SIMPLE_DOCS).parts}
-    missing = sorted(str(p) for p in expected - actual)
+    missing = sorted(name for name in SIMPLE_REQUIRED if Path(name) in expected and Path(name) not in actual)
     orphaned = sorted(str(p) for p in actual - expected)
     assert not missing, f"add simple companions: {', '.join(missing)}"
     assert not orphaned, f"simple pages without full references: {', '.join(orphaned)}"
@@ -83,6 +91,8 @@ def test_simple_companions_link_to_the_full_reference():
     for full in [*sorted(DOCS.rglob("*.md")), ROOT / "benchmarks" / "README.md"]:
         relative = full.relative_to(DOCS) if full.is_relative_to(DOCS) else full.relative_to(ROOT)
         simple = SIMPLE_DOCS / relative
+        if not simple.exists():
+            continue  # only the entry pages are required to have one (SIMPLE_REQUIRED)
         targets = [
             target.partition("#")[0]
             for _, line in _lines_outside_code(simple)

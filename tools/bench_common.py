@@ -68,7 +68,7 @@ def environment() -> dict:
 
 
 def write_results(name: str, row: dict, *, scoreboard: bool = True) -> Path:
-    """Write ``benchmarks/results/<name>.json`` (with :func:`environment`) and regenerate the README scoreboard."""
+    """Write ``benchmarks/results/<name>.json`` (with :func:`environment`) and regenerate the scoreboard page (docs/scoreboard.md)."""
 
     row = {**row, "environment": row.get("environment") or environment()}
     path = RESULTS_DIR / f"{name}.json"

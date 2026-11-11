@@ -8,7 +8,7 @@ The large scoreboard in the project README comes from JSON files in `benchmarks/
 
 1. Run the evaluation's recorded command.
 2. Update its results JSON with the measured counts, date, and limitations.
-3. Run `python tools/scoreboard.py` to regenerate the README table.
+3. Run `python tools/scoreboard.py` to regenerate the scoreboard page.
 4. Update the matching full evaluation guide and its index when needed.
 
 Do not edit the generated scoreboard table by hand. `python tools/scoreboard.py --check` checks that it matches the recorded files.

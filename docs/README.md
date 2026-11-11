@@ -4,7 +4,7 @@
 
 Working on KumoSQL itself? Read the [roadmap](roadmap.md) first: why work stalled in October 2026, what was decided, and what to build next, in order.
 
-Start with [Getting started](getting-started.md): install, a first verified rewrite, a pipeline impact report and the browser UI. The [README](../README.md) has the benchmark scoreboard, a summary of every feature and the CLI table.
+Start with [Getting started](getting-started.md): install, a first verified rewrite, a pipeline impact report and the browser UI. The [scoreboard page](scoreboard.md) has the benchmark scoreboard, and the [README](../README.md) has a summary of every feature and the CLI table.
 
 ## Using KumoSQL
 
@@ -43,7 +43,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 
 ## Evals
 
-The [evals folder](evals/README.md) has one page per eval family (the SQLSolver, VeriEQL, Logos' TPC-H, DSB and TPC-DS pairs, Singh and Bedathur, SQL-IQ and LLM-SQL-Solver equivalence suites, DLBench's cross-dialect translations, pairs from optimizer wrong-result bugs, Arcwise-Plat's corrections of BIRD's gold SQL, BigQuery number and error traps for the SMT prover, DB-GPT's rewrite examples, rewrites recommended by vendor docs, bounded verification, rewriting benchmarks, engine test suites, syntax and behaviour coverage, lineage and Dataform evals, fuzzing) and a table naming the `benchmarks/results/*.json` file behind every eval. Each eval's numbers are in the README scoreboard ([format](../benchmarks/README.md)).
+The [evals folder](evals/README.md) has one page per eval family (the SQLSolver, VeriEQL, Logos' TPC-H, DSB and TPC-DS pairs, Singh and Bedathur, SQL-IQ and LLM-SQL-Solver equivalence suites, DLBench's cross-dialect translations, pairs from optimizer wrong-result bugs, Arcwise-Plat's corrections of BIRD's gold SQL, BigQuery number and error traps for the SMT prover, DB-GPT's rewrite examples, rewrites recommended by vendor docs, bounded verification, rewriting benchmarks, engine test suites, syntax and behaviour coverage, lineage and Dataform evals, fuzzing) and a table naming the `benchmarks/results/*.json` file behind every eval. Each eval's numbers are in the scoreboard page ([format](../benchmarks/README.md)).
 
 ## More pages (generated)
 

@@ -13,7 +13,7 @@ python -m pytest tests/test_googlesql_types_eval.py     # the floors, in the tes
 
 ## Current score
 
-The only place on this page with the checker's numbers; `benchmarks/results/googlesql-types.json` holds the same figures for the README scoreboard. Update both together, then run `python tools/scoreboard.py`.
+The only place on this page with the checker's numbers; `benchmarks/results/googlesql-types.json` holds the same figures for the scoreboard page. Update both together, then run `python tools/scoreboard.py`.
 
 <!-- dev-score:begin (copy from `python tools/googlesql_types_eval.py`; keep in step with benchmarks/results/googlesql-types.json) -->
 
@@ -102,7 +102,7 @@ The command exits 1 when any column is wrong. `tests/test_googlesql_types_eval.p
 - a lower floor applies when sqlglot cannot parse `BY NAME` / `CORRESPONDING` set-operation modes, which is the case on sqlglot 26.0.0, the oldest the project allows (those queries are unknown there, and still never wrong), and a three-column allowance for the compiled sqlglot;
 - the number of held-out cases is pinned at 2,602. The test reads only that count.
 
-The scoreboard row is in `benchmarks/results/googlesql-types.json`. When the dev score moves, edit that file and the table above, then run `python tools/scoreboard.py`; never edit the README table by hand.
+The scoreboard row is in `benchmarks/results/googlesql-types.json`. When the dev score moves, edit that file and the table above, then run `python tools/scoreboard.py`; never edit the scoreboard page by hand.
 
 ## Held-out discipline
 
