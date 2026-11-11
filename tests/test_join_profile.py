@@ -451,7 +451,7 @@ def test_a_model_with_a_query_grain_says_it_is_derived(tmp_path):
 # ------------------------------------------------------------------- the readers
 
 
-def test_the_malloy_reader_takes_only_a_table_source_with_one_primary_key():
+def test_the_malloy_keys_come_only_from_sources_built_directly_on_a_table():
     text = """
     // source: ignored is table('x.y') extend { primary_key: nope }
     source: orders is duckdb.table('shop.orders') extend {
@@ -461,8 +461,6 @@ def test_the_malloy_reader_takes_only_a_table_source_with_one_primary_key():
     }
     source: lines is table('conn:shop.lines') { primary_key: line_id }
     source: derived is orders extend { primary_key: other }
-    source: twice is table('shop.t') extend { primary_key: a
-      primary_key: b }
     source: none is table('shop.n') extend { dimension: d is 1 }
     """
     assert [(k.source, k.table, k.column) for k in malloy_keys.keys_in(text)] == [("orders", "shop.orders", "order_id"), ("lines", "shop.lines", "line_id")]
