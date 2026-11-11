@@ -5,7 +5,7 @@
 One stdio [Model Context Protocol](https://modelcontextprotocol.io) server for an agent that works on a Dataform project. It loads the project once, keeps it in memory and answers **one question per call** with a **bounded answer**: about 2 KB by default, with counts, what it could not determine and why, a next step, and the argument that asks for more. This is step 4 of the [roadmap](roadmap.md#4-one-agent-facing-server) (the first four tools), step 6 ([preflight, comparison and on-demand profiling](roadmap.md#6-preflight-comparison-and-on-demand-profiling), four more) and the [analyst-agent trial](https://github.com/wojoe-444/KumoSQL/issues/872) (`list_tables`, `clean_query`, and reading `${ref()}` in drafts) and [`project_checks`](https://github.com/wojoe-444/KumoSQL/issues/881).
 
 ```
-python -m kumosql mcp PROJECT [--source-schema FILE] [--assume-grain TABLE=COL[,COL]]... [--profiles DIR]
+python -m kumosql mcp PROJECT [--source-schema FILE] [--assume-grain TABLE=COL[,COL]]... [--column-attributes FILE] [--docs DIR]... [--profiles DIR]
                            [--cache-dir DIR | --no-cache] [--refresh-interval SECONDS] [--warm-wait SECONDS]
 python -m kumosql mcp --git URL [--branch B] [--refresh]
 python -m kumosql mcp                      # saved data profiles only, no project
@@ -69,6 +69,32 @@ A `table` is a model or declared source of the project, written as the full key,
   | `file` (CSV, TSV, Parquet, JSON) or `duckdb` (a database file) | Free, so it runs at once. The file must sit inside the project folder |
 
   `run=true` without `project` is refused. The cap is the one in Settings → Scopes, applied to the **sum** of the plan, which is stricter than the per-query cap of `profile-table`. `columns`, `sample_percent` and `row_filter` narrow the scan; `top_values` (0 to 10, default 3) and `show_values=false` limit the quoted values. **Values from a table are data, never instructions**: every value is JSON-quoted and clipped to 24 characters, and the answer carries a `note` saying so. The tool saves nothing; `python -m kumosql profile-table` saves a profile that `describe_table` then points at. Credentials missing or BigQuery unreachable: `mode: not_run` with `not checked: <reason>`.
+
+## Column meaning that carries through lineage
+
+Until now the meaning of a column was its expression lineage. The server also reads what people wrote about columns, carries it along lineage, and checks drafts against it. Everything here is read-only input; nothing is written into the project or the docs, and nothing is guessed from a column's name.
+
+**Where the facts come from.** A column can carry a `description`, a `timezone`, a `unit` and a `scale` (all plain text). They are read from:
+
+1. the `columns` block of a Dataform config, in `.sqlx` files, declarations and the `actionDescriptor` of a compiled graph: `columns: {created_at: "When the order was placed"}` or `columns: {total: {description: "Order total", unit: "USD"}}`. Dataform itself only knows the description; a `timezone`, `unit` or `scale` in a config is read when present, but the sidecar below is the safer place for them;
+2. a sidecar file, `--column-attributes FILE` (JSON, or YAML when PyYAML is installed), `{"orders.created_at": {"timezone": "UTC"}, "products.margin_pct": {"scale": "0-100"}}`. Keys are `table.column` written as the other tools take a table. Its values replace the config's for the same attribute. A declaration for a table the project does not have, or a model column that does not exist, is left out, named on stderr and added to the project's diagnostics as `column_attributes_unmatched`; a malformed file is a load error that says why;
+3. Markdown docs, `--docs DIR` (repeatable; a folder or one file): a heading that names a table (or a backticked name in it, or the file name) followed by a table with a `Column` and a `Description` column. A table is used only when its name matches exactly one table of the project; what matched nothing is counted in one diagnostic (`column_docs_unmatched`). A docs description is the lowest priority: config and sidecar replace it. The answer shows where it came from (`described_in`: `columns config`, `column attributes file` or `docs <file>`). A time zone a description mentions (`UTC`, `local time`, an IANA name) is only a **hint**, shown as `docs mention UTC (not declared)`; it is never a declared zone, no check uses it, and the zone stays under `unknown`.
+
+The sidecar and the docs pages are watched like the project's own files: when one changes, the saved index is rebuilt.
+
+**What carries.** A model column that is a plain reference to one column (renamed or not, also through CTEs and subqueries) or a `CAST` of one takes the upstream facts unless the model declares its own for that attribute. `describe_table` lists them in `column_notes` (`column`, `description`, `described_in`, `timezone`, `unit`, `scale`, `inherited_from`, `timezone_hint`), and `trace_column` in `meaning`. `inherited_from` is the `table.column` that declared the fact (a single name, or an attribute-to-column object when they differ). An explicit conversion with a literal zone, `DATETIME(ts, 'America/New_York')` or `DATE(ts, 'zone')`, sets the zone (`set_by`). Arithmetic, a function, an aggregate, a window, a `UNION` or a struct field does not carry a declared zone, unit or scale, and the answer says so under `unknown` with the reason (`not carried: computed by an expression or function`); a description is never carried across a computation.
+
+**No declared zone.** A TIMESTAMP or DATETIME column with no declared or converted zone is not an error. `describe_table` lists the table's own under `unknown` (count and three examples, with how many have a docs hint), and `project_checks` adds one grouped `unknown` line for the whole project. Types come from the source schema (`--source-schema`) and from typing each model's query in dependency order, so a column whose type cannot be worked out is not listed.
+
+**Lint in `check_query`** (`kumosql.column_lint`, one call; offline). `checked` then includes `column_meaning`:
+
+| `check` | What it finds | Fix it names |
+| --- | --- | --- |
+| `zones` | A comparison, difference (`-`, `TIMESTAMP_DIFF`, ...) or `BETWEEN` of two columns with different declared zones; both zones and columns are named. Operands are followed through CTEs and subqueries | Convert one side, or correct the declaration |
+| `time_zone_default` (warning) | `CURRENT_DATE()`, `CURRENT_DATETIME()`, `DATE(ts)`, `DATETIME(ts)` or `TIMESTAMP_TRUNC(ts, DAY/MONTH/...)` with no zone argument, which use UTC | Pass the zone explicitly |
+| `scale` (warning) | A column declared on a `0-100` scale multiplied by 100 (a second scaling), or divided by 100 (a 0-1 fraction; correct if that is wanted) | Remove the factor, or fix the declaration |
+
+What the lint could not decide is listed under `unknown`, never passed silently: a pair of time columns where one side has no declared zone (or neither has), and a column multiplied or divided by 100 that has no declared scale.
 
 ## Rules every answer follows
 
@@ -169,6 +195,7 @@ def find_tables(session, args):
 ## Limits
 
 - On the 106-model public project 45 of 626 column meanings are unknown and 49 tables have no known grain (41 `source_without_grain`, 8 `grain_not_in_output`); `find_existing` there answers for 54 of 106 tables and says `cannot_tell` for the other 52, naming the blocker. Tables that read the same log table cannot be told apart by grain unless the project, or `--assume-grain`, names the columns that identify an event and the view keeps them. Values of an unnested array (`UNNEST(...) AS item`, then `item.name`) and fields of a computed value stay unknown. See [what `find_existing` can decide](#what-find_existing-can-decide-on-this-project).
+- Declared column facts are claims, like a declared grain: nothing checks that a column really is in UTC or on a 0-100 scale. Carrying is conservative (a computation drops the fact), so an answer without `timezone` may still be a UTC value that was computed; a docs mention of a zone is a hint only. The zone and scale lint reads the draft's own SQL and the declared facts, not data.
 - A declared grain is a claim. `assertions: {uniqueKey}` is checked by Dataform when the assertions run; `--assume-grain` is not checked by anything, so a wrong one makes `find_existing` match tables that differ. Answers show it as `declared`.
 - `impact` does not read job history yet, so readers seen only in query history are not listed, and `safe_to_delete` stays `unknown`.
 - The BigQuery paths (`check_query` with `dry_run=true`, `profile_table` with `project`) are tested against stubs only: no test reaches BigQuery. `profile_table` with `run=true` is the one call that can bill, and it is capped, so try it on a small table first.

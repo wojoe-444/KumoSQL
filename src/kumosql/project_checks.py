@@ -200,6 +200,9 @@ def project_checks(session: Session, args: dict) -> Answer:
     answer.fields["checked"] = list(CHECKS)
     answer.counts = {"findings": total, **{code: n for code, n in counts.items() if n}}
     answer.add_list("findings", rows[offset:], total=len(rows), offset=offset, primary=True, keep=1)
+    from . import column_meaning
+
+    column_meaning.zone_unknown(answer, session)  # TIMESTAMP/DATETIME columns with no declared zone: unknown, not a finding
     answer.unknown("whether the deployed tables match the repository", "the warehouse is not read: a table that was never built, is older than its model or has a different partitioning is not visible here")
     if total:
         parts = ", ".join(f"{n} {CHECKS[code][0]}" for code, n in counts.items() if n)

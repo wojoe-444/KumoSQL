@@ -20,15 +20,37 @@ from .pipeline_loading import load_compiled_graph, load_sqlx_project
 from .resilience import PipelineLoadError, parse_json_or_raise
 
 
-def load_project(root: Path, source_schema: Path | None = None) -> Pipeline:
+def load_project(root: Path, source_schema: Path | None = None, column_attributes: Path | None = None, docs: Sequence[Path] = ()) -> Pipeline:
     """The project the CLI's ``pipeline-report`` would load: a Dataform folder, a folder of ``.sql`` files or a compiled graph."""
 
     schema = parse_json_or_raise(source_schema, "source schema file") if source_schema else None
     if schema is not None and not isinstance(schema, dict):
         raise PipelineLoadError("source schema file must be a JSON object")
-    if root.is_file():
-        return load_compiled_graph(root, source_schema=schema)
-    return load_sqlx_project(root, source_schema=schema)
+    pipeline = load_compiled_graph(root, source_schema=schema) if root.is_file() else load_sqlx_project(root, source_schema=schema)
+    return with_column_meaning(pipeline, column_attributes, docs)
+
+
+def with_column_meaning(pipeline: Pipeline, column_attributes: Path | None = None, docs: Sequence[Path] = ()) -> Pipeline:
+    """Add the optional column files to a loaded project: a sidecar of declared attributes and Markdown docs (both read-only).
+
+    What cannot apply (a column the project does not have, a heading matching no table) is left out and named on stderr and
+    in the project's diagnostics: a declaration that does nothing must not pass for knowledge.
+    """
+
+    from . import column_docs, column_docs_files
+
+    notes: list[str] = []
+    if column_attributes is not None:
+        try:
+            declared = column_docs.read_attributes_file(column_attributes)
+        except ValueError as exc:
+            raise PipelineLoadError(str(exc)) from None
+        notes += column_docs.apply_attributes(pipeline, declared)
+    if docs:
+        notes += column_docs_files.apply_docs(pipeline, docs)
+    for note in notes:
+        print(f"kumosql mcp: {note}", file=sys.stderr)
+    return pipeline
 
 
 def parse_assumed_grain(values: Sequence[str] | None) -> dict[str, tuple[str, ...]]:

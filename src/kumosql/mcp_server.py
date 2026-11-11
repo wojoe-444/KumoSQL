@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 from . import mcp_answers, mcp_cache, profile_mcp
+from .column_docs_files import markdown_files
 from .mcp_session import Session, load_project, parse_assumed_grain
 
 #: modules that register tools; each workstream adds its own here
@@ -118,6 +119,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Declare which columns identify a row of a table the project does not define (or cannot derive), "
         "e.g. logs.events=insert_id. Repeatable. Answers show such a grain as declared, never as derived.",
     )
+    parser.add_argument(
+        "--column-attributes",
+        type=Path,
+        metavar="FILE",
+        help='JSON or YAML file of declared column facts, e.g. {"orders.created_at": {"timezone": "UTC"}, "products.margin_pct": {"scale": "0-100"}}. '
+        "Attributes: description, timezone, unit, scale. Read-only input; they carry along passthroughs and renames.",
+    )
+    parser.add_argument(
+        "--docs",
+        type=Path,
+        action="append",
+        metavar="DIR",
+        help="Folder (or file) of Markdown docs with a table of columns per table or view (Column | Description); "
+        "descriptions are read from it and shown with the file they came from. Repeatable. Read-only; a time zone it mentions is only a hint.",
+    )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
     parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: the per-user cache folder, outside the project)")
     parser.add_argument("--no-cache", action="store_true", help="do not save or read the analysed index")
@@ -140,7 +156,7 @@ def main(argv: list[str] | None = None) -> int:
         assumed = parse_assumed_grain(args.assume_grain)
     except ValueError as exc:
         parser.error(f"--assume-grain: {exc}")
-    loader = (lambda: load_project(root, args.source_schema)) if root else None
+    loader = (lambda: load_project(root, args.source_schema, args.column_attributes, args.docs or ())) if root else None
     session = Session(
         loader=loader,
         profiles=args.profiles,
@@ -152,11 +168,14 @@ def main(argv: list[str] | None = None) -> int:
         # Build the index in the background so `initialize` answers at once; a question waits a little, then says "index warming".
         cache = None if args.no_cache else mcp_cache.cache_file(args.cache_dir or mcp_cache.default_cache_dir(root), root)
         extra = [args.source_schema] if args.source_schema else []
+        if args.column_attributes:
+            extra.append(args.column_attributes)
+        docs = args.docs or []  # the sidecar and the docs pages are part of what the saved index was built from
         skip = [args.cache_dir] if args.cache_dir else []
         index = mcp_cache.Index(
             session,
             cache=cache,
-            watch=lambda: mcp_cache.project_files(root, extra, skip),
+            watch=lambda: mcp_cache.project_files(root, [*extra, *markdown_files(docs)], skip),
             refresh_interval=args.refresh_interval,
             wait_seconds=args.warm_wait,
         )

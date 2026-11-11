@@ -416,6 +416,12 @@ def check_query(session: Session, args: dict) -> Answer:
     gaps += fan_gaps
     checked.append("fan_out")
     checked.append("static")
+    from . import column_lint  # imported here so the tool list keeps the order of TOOL_MODULES
+
+    zone_findings, zone_gaps = column_lint.lint(session, draft.tree)  # time zones, default-zone functions, 0-100 scales
+    findings += zone_findings
+    gaps += zone_gaps
+    checked.append("column_meaning")
 
     dry = None
     if want_dry:

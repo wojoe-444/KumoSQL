@@ -10,7 +10,7 @@ An AI agent that helps with your Dataform project has a problem: the project is 
 python -m kumosql mcp path/to/your/dataform/project
 ```
 
-Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id`; KumoSQL then treats that as a stated fact, not something it worked out. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
+Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id` (and see [Column meaning](#column-meaning) for `--column-attributes` and `--docs`); KumoSQL then treats that as a stated fact, not something it worked out. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
 
 ## Faster the second time
 
@@ -57,6 +57,22 @@ Every answer follows the same habits:
 - **Read-only, and offline unless you ask.** It does not change your files. Nothing uses the network unless you ask for a BigQuery dry run (`check_query` with `dry_run=true`, `profile_table` with a project), and a paid profile needs `run=true` on top. Text from your project that shows up in an answer is data; an agent should never obey it as an instruction.
 
 It also serves the saved data profiles from [Data profiling](data-profiling.md), so one server covers both.
+
+## Column meaning
+
+People often know things about a column that the SQL does not say: what it holds, which **time zone** its times are in, its **unit**, whether a margin column is a percentage (0 to 100) or a fraction (0 to 1). The server can read that, pass it along to every column that is just a copy, and warn when a draft query ignores it.
+
+Where it reads it from (it only reads; it never writes into your project or docs):
+
+- the `columns: { ... }` part of a Dataform file (`columns: {created_at: "When the order was placed"}`);
+- a small file you give it, `--column-attributes facts.json`, for example `{"orders.created_at": {"timezone": "UTC"}, "products.margin_pct": {"scale": "0-100"}}`;
+- Markdown pages you already keep (`--docs docs/`): a heading with the table name, then a table with `Column` and `Description`. The answer says which file a description came from. If a page mentions "UTC", the answer shows "docs mention UTC (not declared)": a hint, not a fact, because nobody declared it.
+
+Example: `created_at` of a raw table is declared as UTC. A model renames it to `placed_at`, a second model calls it `order_time`. Asking `describe_table` about the second model shows the description and the zone UTC, with `inherited_from: raw.orders.created_at`. If a model computes something from it (adds an hour, say) the zone is **not** passed on, and the answer says why.
+
+Then `check_query` can warn about three things: comparing a column in one zone with a column in another (it names both zones), `CURRENT_DATE()` or `DATE(ts)` with no zone (they use UTC, so "today" and the start of a day or month can be off by a day), and multiplying a percentage column (already 0 to 100) by 100. A timestamp column whose zone nobody declared is listed as **unknown**, not as an error.
+
+Limits: a declared fact is only as good as the person who wrote it, and nothing checks it against data. When a column has no declared zone or scale, the answer says the check was not done instead of staying quiet. Details are in the [full reference](../docs/mcp-server.md#column-meaning-that-carries-through-lineage).
 
 ## Limits of the evidence
 

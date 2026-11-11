@@ -96,6 +96,9 @@ class Pipeline:
     default_project: str = ""
     default_dataset: str = ""
     default_location: str = ""
+    # Declared column descriptions and attributes (timezone, unit, scale): table key -> column -> attribute -> text.
+    # Read by the loaders from ``columns`` configs and the sidecar file (see kumosql.column_docs).
+    column_docs: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ graph
 

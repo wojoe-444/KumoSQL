@@ -1011,6 +1011,30 @@ def _parse_ref_args(
     raise ValueError("unsupported ref() arguments")
 
 
+def _keep_column_docs(column_docs: dict, key: str, config: str) -> None:
+    """Remember the descriptions and attributes of the config's ``columns`` block (never lose an asset over them)."""
+
+    from .column_docs import config_column_docs
+
+    try:
+        found = config_column_docs(config)
+    except Exception:  # noqa: BLE001 - column docs are optional
+        return
+    if found and key:
+        column_docs[key] = found
+
+
+def _keep_compiled_column_docs(column_docs: dict, key: str, item: object) -> None:
+    from .column_docs import compiled_column_docs
+
+    try:
+        found = compiled_column_docs(item)
+    except Exception:  # noqa: BLE001 - column docs are optional
+        return
+    if found and key:
+        column_docs[key] = found
+
+
 def load_sqlx_project(
     root: str | Path,
     *,
@@ -1050,6 +1074,7 @@ def load_sqlx_project(
     search_root = definitions if use_definitions else root
     models: dict[str, Model] = {}
     sources: dict[str, Target] = {}
+    column_docs: dict[str, dict[str, dict[str, str]]] = {}  # table key -> column -> declared description, timezone, unit, scale
 
     def unlistable(directory: Path, reason: str) -> None:
         try:
@@ -1145,6 +1170,7 @@ def load_sqlx_project(
         if kind == "declaration":
             if "name" not in computed_identity:
                 sources[target.key] = target
+                _keep_column_docs(column_docs, target.key, config)
             return None
         return relative, sections, config, kind, target
 
@@ -1246,6 +1272,7 @@ def load_sqlx_project(
             config_reads, config_reads_unread = _column_reads(config)
         except Exception:  # noqa: BLE001 - a config that cannot be read keeps every column of the model in use
             config_reads, config_reads_unread = (), ("config",)
+        _keep_column_docs(column_docs, target.key, config)
         add_model(Model(target, kind, body, relative, tuple(dependencies), masked, tags, non_null, unique_keys, tuple(operations),
                         config_reads=config_reads, config_reads_unread=config_reads_unread,
                         logical=renamed.get(target, ()), disabled=_config_flag(config, "disabled") is True,
@@ -1397,6 +1424,7 @@ def load_sqlx_project(
         default_project=database,
         default_dataset=dataset,
         default_location=naming.location,
+        column_docs=column_docs,
     )
 
 
@@ -1439,6 +1467,7 @@ def load_compiled_graph(
         diagnostics.append(PipelineDiagnostic("", "compilation_error", "the compiler reported graph errors that could not be read"))
 
     models: dict[str, Model] = {}
+    column_docs: dict[str, dict[str, dict[str, str]]] = {}
     for kind_key, default_kind in (("tables", "table"), ("assertions", "assertion"), ("operations", "operations")):
         for index, item in enumerate(list_of(kind_key)):
             label = f"{kind_key}[{index}]"
@@ -1464,6 +1493,7 @@ def load_compiled_graph(
                         if isinstance(columns, list):
                             unique.append(tuple(c for c in columns if isinstance(c, str)))
                 config_reads, config_reads_unread = _compiled_column_reads(item)
+                _keep_compiled_column_docs(column_docs, target.key, item)
                 model = Model(
                     target,
                     str(kind),
@@ -1511,6 +1541,7 @@ def load_compiled_graph(
             )
             continue
         sources[target.key] = target
+        _keep_compiled_column_docs(column_docs, target.key, item)
     project_config = graph.get("projectConfig") if isinstance(graph.get("projectConfig"), dict) else {}
 
     def defaults(*keys: str) -> str:
@@ -1532,6 +1563,7 @@ def load_compiled_graph(
         default_project=defaults("defaultDatabase", "defaultProject"),
         default_dataset=defaults("defaultSchema", "defaultDataset"),
         default_location=defaults("defaultLocation"),
+        column_docs=column_docs,
     )
 
 if TYPE_CHECKING:
