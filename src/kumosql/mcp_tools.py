@@ -13,6 +13,7 @@ from collections import Counter
 
 from . import column_meaning
 from . import boundary
+from . import mcp_cost_access
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 from .pipeline_types import ColumnRef
@@ -228,6 +229,8 @@ def describe_table(session: Session, args: dict) -> Answer:
     if grain.known and not grain.keys:
         answer.fields["grain"] = "single row"
     answer.fields["grain_status"] = grain.status
+    if (origin := session.grain_origin(key, grain)) is not None:
+        answer.fields["grain_origin"] = origin
     answer.fields["rows_comparable"] = profile.row_scope.comparable
     saved = session.saved_profile(key)
     if saved is not None:
@@ -259,6 +262,7 @@ def describe_table(session: Session, args: dict) -> Answer:
         answer.unknown("row filters", "the conditions of some columns could not be worked out")
     if saved is None:
         answer.unknown("value statistics", "no saved data profile; `python -m kumosql profile-table` reads the table to make one")
+    mcp_cost_access.describe_fields(session, key, answer)  # cached full-scan size and cached access denial
 
     column_meaning.describe_notes(answer, session, key, outputs)  # declared meaning, inherited; zones unknown
     answer.summary = _card_summary(key, model.kind, grain, len(columns), len(unknown_columns), len(reads), len(readers))
@@ -315,12 +319,25 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
     answer.add_list("columns", columns[offset:][:PAGE], total=len(columns), offset=offset, primary=True)
     answer.add_list("read_by", readers[:PAGE], total=len(readers))
     column_meaning.describe_notes(answer, session, key, list(pipeline.source_schema.get(key, {})))
-    answer.unknown("grain and row filters", "the project does not define this table, so they are not known")
+    from . import join_profile_store as joins
+
+    claim = session.grain_claim(key)
+    near = None if claim is not None else joins.best_candidate(session.key_observations(), [key])
+    if claim is not None:
+        answer.fields.update({"grain": list(claim.keys), "grain_status": "declared", "grain_origin": claim.origin})
+        answer.unknown("row filters", "the project does not define this table, so they are not known")
+    elif near is not None:
+        answer.fields["grain_assumed"] = clip(f"{'unique' if near.unique else 'near-key'} on ({', '.join(near.columns)}): {near.counts()}; from the saved {near.source.replace('_', ' ')} of {near.generated_at[:10]}, an assumption, not a declared grain", 220)
+        answer.unknown("grain", "no key is declared for this table; the saved measurement above is the nearest, not certain")
+        answer.unknown("row filters", "the project does not define this table, so they are not known")
+    else:
+        answer.unknown("grain and row filters", "the project does not define this table, so they are not known")
     if not columns:
         answer.unknown("columns", "no source schema was given (--source-schema)")
     if readers:
         answer.next(f"impact table={key} lists what a change to it breaks.")
     boundary.annotate_table(session, key, answer)
+    mcp_cost_access.describe_fields(session, key, answer)
     return answer
 
 
@@ -354,6 +371,7 @@ def trace_column(session: Session, args: dict) -> Answer:
     sources = sorted(str(ref_) for ref_ in trace.sources)
     hop = sorted(str(s) for s in record.sources) if record is not None else []
     groups = _filter_groups(trace)
+    touching = _touching_count(trace)
     filters_total = sum(len(g["filters"]) + g.get("more", 0) for g in groups)
 
     is_model = key in pipeline.models
@@ -366,10 +384,13 @@ def trace_column(session: Session, args: dict) -> Answer:
         answer.add_list("from", hop[:PAGE], total=len(hop))
     answer.counts = {
         "source_columns": len(sources), "models_passed": len(tables), "upstream_columns": len(trace.upstream),
-        "filters": filters_total, "read_by_columns": len(pipeline.downstream_columns(ref)),
+        "filters": filters_total, **({"filters_on_column": touching} if filters_total else {}), "read_by_columns": len(pipeline.downstream_columns(ref)),
     }
     answer.add_list("sources", sources[offset:][:PAGE], total=len(sources), offset=offset, primary=True)
-    answer.add_list("filters_by_model", groups[:PAGE], total=len(groups))
+    answer.add_list(
+        "filters_by_model", groups[:PAGE], total=len(groups),
+        unit=lambda group: (len(group["filters"]), len(group["filters"]) + group.get("more", 0)), unit_name="conditions",
+    )
     answer.add_list("via_models", tables[:PAGE], total=len(tables))
 
     column_meaning.trace_notes(answer, session, ref)
@@ -382,6 +403,8 @@ def trace_column(session: Session, args: dict) -> Answer:
     first_unknown = next((item for item, _ in trace.unknown if item.table in pipeline.models), None)
     if first_unknown is not None:
         answer.next(f"describe_table table={first_unknown.table} shows why it could not be followed.")
+    if filters_total > 3:
+        answer.next(f"rows_filtered table={key} column={name} lists every condition in path order; add predicate=... to check rows you expect.")
     if pipeline.downstream_columns(ref):
         answer.next(f"impact table={key} column={name} lists the models that read it.")
     if _file(session, key):
@@ -414,19 +437,35 @@ def _trace_summary(ref: ColumnRef, kind: str, sources: int, models: int, filters
 
 
 def _filter_groups(trace) -> list[dict]:
-    """The conditions that limit the rows reaching the column, grouped under the model that wrote them."""
+    """The conditions that limit the rows reaching the column, grouped under the model that wrote them.
 
-    grouped: dict[str, dict[str, str]] = {}
+    Conditions that read the column itself (or a column it is built from) come first, in their model and among the models,
+    so that a cut for size loses the conditions on other columns before them.
+    """
+
+    mine = set(trace.upstream) | {trace.column}
+    grouped: dict[str, dict[str, bool]] = {}
     for model, found in trace.filters:
-        grouped.setdefault(model, {}).setdefault(_filter_text(found), "")
+        texts = grouped.setdefault(model, {})
+        text = _filter_text(found)
+        texts[text] = texts.get(text, False) or any(column in mine for column in found.columns)
     groups = []
     for model, texts in grouped.items():
-        shown = list(texts)[:3]
+        ordered = sorted(texts, key=lambda text: not texts[text])
+        shown = ordered[:3]
         group: dict = {"model": model, "filters": shown}
-        if len(texts) > len(shown):
-            group["more"] = len(texts) - len(shown)
-        groups.append(group)
-    return groups
+        if len(ordered) > len(shown):
+            group["more"] = len(ordered) - len(shown)
+        groups.append((not any(texts.values()), group))
+    groups.sort(key=lambda pair: pair[0])
+    return [group for _, group in groups]
+
+
+def _touching_count(trace) -> int:
+    """How many distinct conditions read the traced column or a column it is built from."""
+
+    mine = set(trace.upstream) | {trace.column}
+    return len({(model, _filter_text(found)) for model, found in trace.filters if any(column in mine for column in found.columns)})
 
 
 # ------------------------------------------------------------------ impact

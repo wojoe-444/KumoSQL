@@ -99,6 +99,8 @@ class Pipeline:
     # Declared column descriptions and attributes (timezone, unit, scale): table key -> column -> attribute -> text.
     # Read by the loaders from ``columns`` configs and the sidecar file (see kumosql.column_docs).
     column_docs: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
+    #: unique keys a declaration states for a source (``assertions: {uniqueKey}`` or ``uniqueKey`` in ``declare({...})``), by source key
+    source_unique_keys: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ graph
 

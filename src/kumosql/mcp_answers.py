@@ -56,6 +56,9 @@ class Listing:
     primary: bool = False
     #: the fewest items kept when the answer must shrink (explicit unknowns and next steps keep one)
     keep: int = 0
+    #: ``item -> (shown, all)``: how many underlying things one item holds, so a cut can say how many of them it hid
+    unit: Callable[[Any], tuple[int, int]] | None = None
+    unit_name: str = "items"
 
     def __post_init__(self) -> None:
         if self.total is None:
@@ -69,9 +72,9 @@ class Answer:
     counts: dict[str, Any] = field(default_factory=dict)
     lists: dict[str, Listing] = field(default_factory=dict)
 
-    def add_list(self, name: str, items: list, *, total: int | None = None, offset: int = 0, primary: bool = False, keep: int = 0) -> None:
+    def add_list(self, name: str, items: list, *, total: int | None = None, offset: int = 0, primary: bool = False, keep: int = 0, unit: Callable[[Any], tuple[int, int]] | None = None, unit_name: str = "items") -> None:
         if items or total:
-            self.lists[name] = Listing(list(items), total, offset, primary, keep)
+            self.lists[name] = Listing(list(items), total, offset, primary, keep, unit, unit_name)
 
     def unknown(self, what: str, reason: str) -> None:
         """Something the tool could not determine. It stays in the answer, with its reason."""
@@ -151,7 +154,12 @@ def _put(out: dict, name: str, listing: Listing, count: int) -> None:
     complete = count == len(listing.items) and listing.total == listing.offset + len(listing.items) and not listing.offset
     if not complete:
         first = listing.offset + 1 if count else listing.offset
-        out[f"{name}_shown"] = f"{first}-{listing.offset + count} of {listing.total}" if count else f"0 of {listing.total}"
+        text = f"{first}-{listing.offset + count} of {listing.total}" if count else f"0 of {listing.total}"
+        if listing.unit is not None and count < len(listing.items):
+            seen = sum(listing.unit(item)[0] for item in listing.items[:count])
+            every = sum(listing.unit(item)[1] for item in listing.items)
+            text += f" ({seen} of {every} {listing.unit_name})"
+        out[f"{name}_shown"] = text
 
 
 def _more(answer: Answer, shown: dict[str, int], full: int, max_bytes: int) -> str:

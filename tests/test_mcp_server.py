@@ -82,11 +82,11 @@ def test_the_server_lists_its_read_only_tools_and_keeps_the_profile_resources(tm
 
     tools = rpc(server, "tools/list")["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
-        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables", "clean_query", "project_checks"]
+        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables", "clean_query", "project_checks", "join_profile", "rows_filtered"]
     for tool in tools:
         assert tool["annotations"]["readOnlyHint"]
-        # only the two tools that can ask BigQuery (a dry run, on request) say so
-        assert tool["annotations"]["openWorldHint"] == (tool["name"] in ("check_query", "profile_table"))
+        # only the tools that can ask BigQuery (a dry run, on request) say so
+        assert tool["annotations"]["openWorldHint"] == (tool["name"] in ("check_query", "profile_table", "join_profile"))
         assert {"max_bytes", "offset"} <= set(tool["inputSchema"]["properties"])
         assert tool["inputSchema"]["additionalProperties"] is False
 
@@ -865,8 +865,10 @@ def test_check_query_refuses_what_it_cannot_read_and_what_is_ambiguous(small):
         assert failed and "project" in body["error"] and body["next"]
 
 
-def test_check_query_dry_run_reports_bytes_against_the_cap_or_says_not_checked(small, monkeypatch):
+def test_check_query_dry_run_reports_bytes_against_the_cap_or_says_not_checked(tmp_path, monkeypatch):
     from kumosql import dryrun, mcp_preflight
+
+    small = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path, SMALL))))  # its own session: estimates are remembered per session
 
     calls = []
 
@@ -876,20 +878,21 @@ def test_check_query_dry_run_reports_bytes_against_the_cap_or_says_not_checked(s
 
     monkeypatch.setattr(mcp_preflight, "bigquery_dry_run", planned)
     body, _, _ = ask(small, "check_query", sql="SELECT id FROM p.ds.raw", dry_run=True, project="demo-project")
-    assert calls == ["demo-project"] and body["checked"][-1] == "dry_run" and body["columns"] == ["id INT64"] and body["column_types_from"] == "BigQuery dry run"
+    assert calls == ["demo-project"] * 2  # the plan, and the free SELECT * dry run that learns the source's full-scan size
+    assert body["checked"][-1] == "dry_run" and body["columns"] == ["id INT64"] and body["column_types_from"] == "BigQuery dry run"
     assert body["dry_run"]["estimated_bytes"] == 2_000_000_000_000
     [over] = findings_of(body, "dry_run")
     assert "over the" in over["what"] and "partition" in over["fix"]
 
     monkeypatch.setattr(mcp_preflight, "bigquery_dry_run", lambda sql, project: dryrun.DryRunResult(False, error_message="Unrecognized name: nope at [1:8]", error_location="query"))
-    body, _, _ = ask(small, "check_query", sql="SELECT id FROM p.ds.raw", dry_run=True, project="demo-project")
+    body, _, _ = ask(small, "check_query", sql="SELECT id FROM p.ds.raw", dry_run=True, project="demo-project", refresh=True)
     assert "Unrecognized name: nope" in findings_of(body, "dry_run")[0]["what"]
 
     def no_credentials(sql, project):
         raise RuntimeError("no BigQuery credentials found")
 
     monkeypatch.setattr(mcp_preflight, "bigquery_dry_run", no_credentials)
-    body, failed, _ = ask(small, "check_query", sql="SELECT id FROM p.ds.raw", dry_run=True, project="demo-project")
+    body, failed, _ = ask(small, "check_query", sql="SELECT id FROM p.ds.raw", dry_run=True, project="demo-project", refresh=True)
     assert not failed and "dry_run" not in body["checked"]
     assert {"what": "BigQuery dry run", "reason": "not checked: no BigQuery credentials found"} in body["unknown"]
     assert body["verdict"] == "no_problems_found"  # an unreachable dry run is a gap, not a finding
