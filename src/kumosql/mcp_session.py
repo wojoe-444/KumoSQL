@@ -196,7 +196,7 @@ class Session:
 
         return self.column_types().type(key, column)
 
-    def column_nullable(self, key: str, column: str) -> bool | None:
+    def column_is_nullable(self, key: str, column: str) -> bool | None:
         """``True`` when ``key.column`` may be NULL, ``False`` when it never is, ``None`` when not known (the schema
         snapshot's ``is_nullable``, else what the model's query fixes)."""
 

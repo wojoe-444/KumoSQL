@@ -119,7 +119,7 @@ def test_snapshot_types_win_over_derived_ones_and_rows_of_tables_the_project_doe
     served = server(tmp_path, csv)
     types = served.session.column_types()
     assert str(served.session.column_type("p.ds.orders", "customer_id")) == "STRING"
-    assert served.session.column_nullable("p.ds.orders", "customer_id") is False and served.session.column_nullable("p.ds.calendar", "order_week") is True
+    assert served.session.column_is_nullable("p.ds.orders", "customer_id") is False and served.session.column_is_nullable("p.ds.calendar", "order_week") is True
     assert served.session.schema_snapshot().ignored == 1 and "p.other.elsewhere" not in served.session.schema_snapshot().tables()
     assert types.unmatched == []
     body, _, _ = ask(served, "check_query", sql="SELECT 1 FROM p.other.elsewhere e JOIN ${ref('orders')} o ON o.customer_id = e.k")
@@ -128,8 +128,8 @@ def test_snapshot_types_win_over_derived_ones_and_rows_of_tables_the_project_doe
 
 def test_nullability_comes_from_the_snapshot_or_from_what_a_models_query_guarantees(tmp_path):
     served = server(tmp_path)
-    assert served.session.column_nullable("p.ds.orders", "order_id") is False  # a literal is never NULL
-    assert served.session.column_nullable("p.ds.calendar", "order_week") is None  # read from an undeclared source: not known
+    assert served.session.column_is_nullable("p.ds.orders", "order_id") is False  # a literal is never NULL
+    assert served.session.column_is_nullable("p.ds.calendar", "order_week") is None  # read from an undeclared source: not known
 
 
 def test_many_unknown_columns_are_one_line_with_a_count(tmp_path, no_network):

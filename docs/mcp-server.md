@@ -139,7 +139,7 @@ The loader is a library for other tools too (for example the schema-drift checks
 | `Session.schema_snapshot()` | the `SchemaSnapshot` the server started with (only the rows of tables the project uses), or `None`; `Session.snapshot_error` says why a file could not be read |
 | `Session.column_types()` | the typed project, computed once and cached: `type(key, column)`, `nullable(key, column)`, `columns(key)`, `reason(key, column, is_model)`, `origin[key]` (`snapshot`, `declared` or `derived`), `unmatched`, `models_typed` / `models_untyped` |
 | `Session.column_type(key, column)` | the `GType` of a column of a project table, or `None` |
-| `Session.column_nullable(key, column)` | `True` (may be NULL), `False` (never; the snapshot's `is_nullable = NO`, or a literal or `COUNT` in a model's query) or `None` (not known) |
+| `Session.column_is_nullable(key, column)` | `True` (may be NULL), `False` (never; the snapshot's `is_nullable = NO`, or a literal or `COUNT` in a model's query) or `None` (not known) |
 | `Session(schema_snapshot=path_or_SchemaSnapshot)` | the same option for code that builds a session |
 | `kumosql.schema_snapshot.load_schema_snapshot(path, keep=None)` | reads one file, streaming; `keep(catalog, schema, table)` says which tables' rows to keep (`kumosql.project_types.snapshot_filter(keys)` is the project's); `SchemaSnapshot.tables()`, `columns_of(name)`, `types_of(name)`, `skipped`, `ignored` |
 | `check_schema_snapshot(path)` | reads the header and the first rows only and raises `SchemaSnapshotError` for a file that is not a snapshot (the server calls it at start) |
