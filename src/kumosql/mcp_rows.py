@@ -60,11 +60,19 @@ class Entry:
     parse_error: str = ""
     result: str = ""
     why: str = ""
+    #: the model is switched off (``disabled: true``): Dataform never runs it
+    inactive: bool = False
+    #: the condition is written inside ``when(incremental(), ...)``: it applies on incremental runs only
+    incremental: bool = False
 
     def row(self, with_result: bool) -> dict:
         item: dict = {"model": _short(self.model), "kind": self.kind, "clause": clip(self.found.condition, CLAUSE_CLIP), "on": self.on}
         if self.found.scope != "main":
             item["in"] = clip(self.found.scope, 40)
+        if self.incremental:
+            item["incremental_only"] = True
+        if self.inactive:
+            item["inactive_model"] = True
         if with_result:
             item["result"] = self.result
             if self.why:
@@ -231,6 +239,8 @@ class _Compare:
         """``(result, why)``: can_remove, may_remove, keeps or unknown."""
 
         if entry.node is None:
+            if entry.incremental:
+                return "may_remove", "applies on incremental runs only"
             if entry.found.condition.startswith("USING ("):
                 return "may_remove", "a join on a key of another table"
             return "unknown", entry.parse_error or "unparsed"
@@ -322,6 +332,7 @@ def _gather(session: Session, refs: list[ColumnRef]) -> dict:
 
 def _entries(session: Session, gathered: dict) -> tuple[list[Entry], dict[str, int]]:
     order = session.order()
+    models = session.pipeline().models
     entries: list[Entry] = []
     skipped = {"outer_join_on": 0, "scalar_subquery": 0, "except": 0}
     for (model, item), seq in gathered["filters"].items():
@@ -334,7 +345,7 @@ def _entries(session: Session, gathered: dict) -> tuple[list[Entry], dict[str, i
         if item.effect == EXCLUDES:
             skipped["except"] += 1
             continue
-        entry = Entry(model, item, seq)
+        entry = Entry(model, item, seq, inactive=bool(getattr(models.get(model), "disabled", False)), incremental="incremental(" in item.condition)
         try:
             entry.node = parse_one(item.condition, read="bigquery")
         except SqlglotError:
@@ -419,9 +430,23 @@ def _answer(session, key, label, text, refs, gathered, entries, skipped, compare
         counts["joined"] = sum(e.on == "joined" for e in entries)
     if skipped:
         counts["not_listed"] = skipped
+    path_models = sorted({ref.table for ref in gathered["primary"] if ref.table in session.pipeline().models})
+    inactive = [m for m in path_models if session.pipeline().models[m].disabled]
+    incremental = [m for m in path_models if session.pipeline().models[m].kind == "incremental"]
+    if any(e.inactive for e in entries):
+        counts["in_inactive_models"] = sum(e.inactive for e in entries)
     summary = _summary(label, text, entries, counts, compare is not None)
+    nearest = next((e for e in entries if e.result == "can_remove"), None) if compare is not None else None
+    if nearest is not None:
+        summary += f" First removed at {_short(nearest.model)}."
     answer = Answer(summary)
     answer.fields["table"] = key
+    if compare is not None:
+        first = next((e for e in entries if e.result == "can_remove"), None)
+        if first is not None:
+            answer.fields["first_removed_at"] = f"{_short(first.model)} ({first.kind.replace('_', ' ')}{', in an inactive model' if first.inactive else ''})"
+        else:
+            answer.fields["first_removed_at"] = "none proven"
     answer.counts = counts
     answer.add_list("filters", [e.row(compare is not None) for e in shown][offset:][:PAGE], total=len(shown), offset=offset, primary=True)
 
@@ -433,6 +458,11 @@ def _answer(session, key, label, text, refs, gathered, entries, skipped, compare
             answer.unknown(f"{compare.skipped} condition{'s' if compare.skipped != 1 else ''} compared by reading only", f"the prover compares at most {MAX_PROOFS} conditions per answer; they are listed as may_remove")
     elif any(e.on == "unknown" for e in entries):
         answer.unknown("how some conditions relate to the column", "their columns could not be worked out, so on is unknown for them")
+    if inactive:
+        names = ", ".join(_short(m) for m in inactive[:3]) + (", ..." if len(inactive) > 3 else "")
+        answer.unknown(f"{len(inactive)} inactive model{'s' if len(inactive) != 1 else ''} on the path: {names}", "disabled: true, so Dataform never runs them: their tables may be missing or stale, and their conditions may not describe the rows that exist")
+    if incremental:
+        answer.unknown(f"{len(incremental)} incremental model{'s' if len(incremental) != 1 else ''} on the path", "they keep rows from earlier runs, so a condition changed since then does not describe the rows already stored; a condition marked incremental_only applies to incremental runs only")
     if gathered["limit_hit"]:
         answer.unknown("conditions of joined tables", f"more than {MAX_TRACES} joined columns; the tables beyond that were not followed")
     if gathered["sources"]:

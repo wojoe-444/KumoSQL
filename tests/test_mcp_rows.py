@@ -195,3 +195,53 @@ def test_rows_filtered_pages_a_long_chain_with_the_column_conditions_marked(tmp_
     assert rest["filters"][0] != body["filters"][0]
     body, _, _ = ask(server, "rows_filtered", table=f"m{MODELS - 1}", column="status", predicate="status = 99")
     assert body["counts"]["can_remove"] == 2 and body["filters"][0]["result"] == "can_remove"
+
+
+INACTIVE = {
+    "orders.sqlx": 'config { type: "table" }\nSELECT 1 AS order_id, "open" AS status, TIMESTAMP "2026-01-05" AS loaded_at\n',
+    "orders_clean.sqlx": 'config { type: "view", disabled: true }\nSELECT order_id, status, loaded_at FROM ${ref("orders")} WHERE status != \'archived\'\n',
+    "orders_kept.sqlx": 'config { type: "incremental" }\nSELECT order_id, status, loaded_at FROM ${ref("orders_clean")} WHERE status != \'void\' '
+    "${when(incremental(), `AND loaded_at > (SELECT MAX(loaded_at) FROM ${self()})`)}\n",
+    "orders_report.sqlx": 'config { type: "view" }\nSELECT order_id, status FROM ${ref("orders_kept")}\n',
+}
+
+
+def test_filters_in_inactive_and_incremental_models_are_labelled_and_the_first_removal_is_named(tmp_path):
+    server = serve(tmp_path, INACTIVE)
+    body, failed, used = ask(server, "rows_filtered", table="orders_report", column="status", predicate="status = 'archived'")
+    assert not failed and used <= BOUND
+    # the first model on the path (nearest the table) where the rows are removed is named, with its inactivity
+    assert body["first_removed_at"] == "ds.orders_clean (where, in an inactive model)"
+    assert "First removed at ds.orders_clean." in body["answer"]
+    removed = body["filters"][0]
+    assert removed["result"] == "can_remove" and removed["inactive_model"] is True
+    # the incremental-only part of a condition is labelled and never read as a plain filter
+    marked = [item for item in body["filters"] if item.get("incremental_only")]
+    assert marked and all(item["result"] == "may_remove" and "incremental runs only" in item["why"] for item in marked)
+    reasons = " ".join(item["what"] for item in body["unknown"])
+    assert "inactive model" in reasons and "incremental model" in reasons
+    assert body["counts"]["in_inactive_models"] >= 1
+    plain, _, _ = ask(server, "rows_filtered", table="orders_report", column="status")
+    assert any(item.get("inactive_model") for item in plain["filters"])
+
+
+def test_no_proof_says_so_instead_of_naming_a_model(chain):
+    body, _, _ = ask(chain, "rows_filtered", table="orders_report", column="status", predicate="status = 'open'")
+    assert body["first_removed_at"] == "none proven"
+
+
+def test_rows_filtered_answers_every_model_of_the_106_model_public_project_inside_the_bound():
+    from test_mcp_server import load_big
+
+    server = load_big()
+    pipeline = server.session.pipeline()
+    asked = 0
+    for key in pipeline.models:
+        columns = list(pipeline.output_columns(key))
+        if not columns:
+            continue
+        for extra in ({}, {"predicate": f"{columns[0]} IS NULL"}):
+            body, failed, used = ask(server, "rows_filtered", table=key, column=columns[0], **extra)
+            assert not failed and used <= BOUND, (key, body.get("error"), used)
+            asked += 1
+    assert asked > 100
