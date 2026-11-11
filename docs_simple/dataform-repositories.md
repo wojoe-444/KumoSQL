@@ -51,7 +51,7 @@ For example, say one action has `type: dataform.projectConfig.vars.kind` and ano
 
 Three more things it handles the way Dataform does:
 
-- A `${ref("base")}` written inside a `--` or `/* */` comment is only text. It is not a dependency. (A `#` comment is different: Dataform still evaluates it.)
+- A `${ref("base")}` written inside a `--` or `/* */` comment is only text. It is not a dependency. (A `#` comment is different: Dataform still evaluates it.) Other `${...}` expressions inside a comment are text too: they are no longer counted as "unresolved templates" and never turn into SQL.
 - Built-in assertions such as `rowConditions: ["status > 0"]`, and a table's `partitionBy` and `clusterBy`, use that table's columns. A column named there is never reported as unused, even when no query reads it. If the setting is computed by JavaScript and cannot be read, KumoSQL reports no unused columns for that table.
 - A table with such settings and nothing reading it is still treated as a final output.
 

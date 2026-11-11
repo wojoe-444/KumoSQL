@@ -154,6 +154,15 @@ def group_unknown(answer: Answer, pairs: list[tuple[str, str]], what: str) -> No
         answer.unknown(f"{len(items)} {what}{'s' if len(items) != 1 else ''}: {examples}", explain(reason))
 
 
+def _project_check(session: Session, key: str) -> str | None:
+    """One line from the static project checks about ``key`` (declared and built, disabled), or ``None``."""
+
+    from . import project_checks  # imported here so the tool list keeps the order of TOOL_MODULES
+
+    notes = project_checks.table_notes(session, key)
+    return clip("; ".join(notes[:2]), 260) if notes else None
+
+
 def _file(session: Session, key: str) -> str | None:
     model = session.pipeline().models.get(key)
     return model.path if model is not None else None
@@ -226,6 +235,8 @@ def describe_table(session: Session, args: dict) -> Answer:
         }
     else:
         answer.fields["data_profile"] = "none saved"
+    if (note := _project_check(session, key)) is not None:
+        answer.fields["project_check"] = note
     answer.counts = {
         "columns": len(columns), "meaning_unknown": len(unknown_columns), "reads": len(reads), "read_by": len(readers),
         "own_filters": len(own_filters), "unused_columns": len(unused),
@@ -294,6 +305,8 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
     columns = [f"{name} {kind}" for name, kind in pipeline.source_schema.get(key, {}).items()]
     answer = Answer(f"{key.split('.')[-1]} is a source: the project reads it but does not build it; {len(columns) or 'no'} columns known, read by {len(readers)}.")
     answer.fields.update({"table": key, "kind": "source"})
+    if (note := _project_check(session, key)) is not None:
+        answer.fields["project_check"] = note
     answer.counts = {"columns": len(columns), "read_by": len(readers)}
     answer.add_list("columns", columns[offset:][:PAGE], total=len(columns), offset=offset, primary=True)
     answer.add_list("read_by", readers[:PAGE], total=len(readers))

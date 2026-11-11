@@ -82,7 +82,7 @@ def test_the_server_lists_its_read_only_tools_and_keeps_the_profile_resources(tm
 
     tools = rpc(server, "tools/list")["result"]["tools"]
     assert [tool["name"] for tool in tools] == [
-        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables", "clean_query"]
+        "describe_table", "trace_column", "impact", "find_existing", "find_tables", "compare_queries", "check_query", "profile_table", "list_tables", "clean_query", "project_checks"]
     for tool in tools:
         assert tool["annotations"]["readOnlyHint"]
         # only the two tools that can ask BigQuery (a dry run, on request) say so

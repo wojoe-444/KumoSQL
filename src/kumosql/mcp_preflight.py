@@ -425,6 +425,9 @@ def check_query(session: Session, args: dict) -> Answer:
     outside = sorted(spelled for spelled, key in draft.tables.items() if key is None)
     if outside:
         gaps.append((f"{len(outside)} table{'s' if len(outside) != 1 else ''} not in the project: {', '.join(outside[:3])}{', ...' if len(outside) > 3 else ''}", "their columns, types and grain are unknown, so checks that need them were skipped"))
+    from . import project_checks  # imported here so the tool list keeps the order of TOOL_MODULES
+
+    gaps += project_checks.draft_notes(session, draft.keys())  # disabled, declared and built, declared-only: the repository cannot vouch for them
     if facts:
         answer.fields["ties_judged_assuming"] = "; ".join(facts)
 
