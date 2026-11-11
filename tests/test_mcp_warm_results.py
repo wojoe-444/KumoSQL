@@ -13,7 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from kumosql import expression_search, googlesql_types, load_memo, mcp_cache, mcp_server, pipeline_loading, table_profile
+from kumosql import (
+    expression_search,
+    googlesql_types,
+    load_memo,
+    mcp_cache,
+    mcp_server,
+    pipeline_loading,
+    table_profile,
+)
 from kumosql.mcp_session import Session, load_project
 
 COUNT = 14  # a binary tree of models below ``raw``: node_1 reads raw, node_i reads node_(i // 2)
@@ -157,7 +165,7 @@ def test_cold_warm_and_incrementally_updated_sessions_answer_identically_and_red
     project, cache = write_project(tmp_path / "proj", definitions()), tmp_path / "cache"
     work = Work(monkeypatch)
 
-    cold, cold_index = start(project, None)
+    cold, _ = start(project, None)
     cold_answers = answers(cold)
     total = len(cold.session.pipeline().models)  # raw, the tree and plain.sql; the two sources are declarations
     assert total == COUNT + 2
@@ -204,7 +212,6 @@ def test_cold_warm_and_incrementally_updated_sessions_answer_identically_and_red
     work.reset()
     assert live_index.check_for_edits()
     assert live_index.wait_ready(60)
-    live.session  # the server adopts the rebuilt project on the next call
     assert answers(live) == expected
     assert done_again(live_index) == {"traced": len(below), "files_read": 1, "files_parsed": 1, "assets_resolved": 1, "profiles": len(below), "types": len(below), "expressions": len(below)}
 
@@ -376,7 +383,7 @@ def test_a_second_unchanged_start_does_not_rewrite_the_saved_file(tmp_path):
 
 def view(pipeline):
     return (pipeline.models, pipeline.sources, pipeline.source_schema, pipeline.diagnostics, pipeline.default_project,
-            pipeline.default_dataset, pipeline.default_location, pipeline.column_docs, pipeline.source_unique_keys)
+            pipeline.default_dataset, pipeline.default_location, pipeline.column_docs, pipeline.column_doc_sources, pipeline.column_doc_unread, pipeline.source_unique_keys)
 
 
 def test_a_project_loaded_from_saved_effects_equals_a_cold_load_including_diagnostics_and_declarations(tmp_path):
@@ -386,6 +393,7 @@ def test_a_project_loaded_from_saved_effects_equals_a_cold_load_including_diagno
     files["dup_a.sqlx"] = 'config { type: "table", name: "dup" }\nSELECT 1 AS a\n'
     files["dup_b.sqlx"] = 'config { type: "table", name: "dup" }\nSELECT 2 AS a\n'
     files["computed.sqlx"] = 'config { type: "table", name: dynamic_name }\nSELECT 3 AS a\n'
+    files["docs_src.sqlx"] = 'config { type: "declaration", schema: "raw", name: "docs_src", columns: { id: { description: some_var }, amount: "ok" } }\n'
     files["bad_config.sqlx"] = 'config { type: "banana" }\nSELECT 1\n'
     files["publish.js"] = 'publish("from_js", { type: "table" }).query(ctx => `SELECT 5 AS v`)\n'
     project = write_project(tmp_path / "proj", files)
@@ -407,6 +415,7 @@ def test_a_project_loaded_from_saved_effects_equals_a_cold_load_including_diagno
     assert view(recorded) == view(cold) == view(replayed)
     assert again.read == [] and again.parsed == [] and again.resolved == []
     assert len(again.replayed) == len(first.parsed) and "definitions/publish.js#from_js" in again.replayed
+    assert cold.column_doc_unread and cold.column_docs  # what could not be read about a declaration's columns is replayed too
     assert {"unsupported_ref", "duplicate_model", "invalid_config", "dynamic_config"} <= {d.code for d in cold.diagnostics}
 
 
@@ -493,8 +502,7 @@ def test_replaying_every_saved_result_of_the_106_model_public_project_equals_a_c
         assert expression_index(server.session).parts == expression_index(cold.session).parts
     for table in sorted(cold.session.pipeline().models)[::20]:
         for tool in ("describe_table", "impact"):
-            args = {"table": table} if tool == "describe_table" else {"table": table}
-            assert ask(second, tool, **args) == ask(cold, tool, **args)
+            assert ask(second, tool, table=table) == ask(cold, tool, table=table)
 
 
 @pytest.mark.slow
