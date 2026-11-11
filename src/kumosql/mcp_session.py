@@ -65,6 +65,9 @@ class Session:
         self._cache: dict[str, object] = {}
         self.profiles_directory = profiles
         self.load_error: str | None = None
+        #: the warm-start controller (:class:`kumosql.mcp_cache.Index`) and the factory of the trace memo each loaded project gets
+        self.index = None
+        self.trace_memo_factory: Callable[[], object] | None = None
 
     # ------------------------------------------------------------- the project
 
@@ -85,24 +88,40 @@ class Session:
             if self._pipeline is None and self._loader is not None and self.load_error is None:
                 try:
                     self._pipeline = self._loader()
+                    if self.trace_memo_factory is not None:
+                        self._pipeline.trace_memo = self.trace_memo_factory()  # saved column traces of unchanged models are reused
                 except PipelineLoadError as exc:
                     self.load_error = str(exc)
                 except Exception as exc:  # noqa: BLE001 - a bad project must not stop the server
                     self.load_error = f"the project could not be loaded ({type(exc).__name__})"
             return self._pipeline
 
-    def warm(self) -> None:
-        """Do the slow work now (parse, trace columns, profile tables), so the first question is fast."""
+    def warm(self, stage: Callable[[str], None] | None = None) -> None:
+        """Do the slow work now (parse, trace columns, profile tables), so the first question is fast.
 
+        ``stage`` is told what is starting (``loading project``, ``tracing columns``, ``profiling tables``, ``inferring roles``).
+        """
+
+        stage = stage or (lambda _name: None)
+        stage("loading project")
         pipeline = self.pipeline()
         if pipeline is None:
             return
         try:
+            stage("tracing columns")
             self.records()
+            stage("profiling tables")
             self.profiles()
+            stage("inferring roles")
             self.roles()
         except Exception as exc:  # noqa: BLE001 - the first question computes it again and reports what failed
             print(f"kumosql mcp: warm-up stopped ({type(exc).__name__})", file=sys.stderr)
+
+    def adopt(self, other: "Session") -> None:
+        """Take over the project and everything computed for it from ``other`` (a session built for the edited project)."""
+
+        with self._lock:
+            self._pipeline, self._cache, self.load_error = other._pipeline, other._cache, other.load_error
 
     def _once(self, key: str, compute: Callable[[], object]):
         with self._lock:
