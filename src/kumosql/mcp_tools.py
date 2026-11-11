@@ -12,6 +12,7 @@ import re
 from collections import Counter
 
 from . import boundary
+from . import mcp_cost_access
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 from .pipeline_types import ColumnRef
@@ -260,6 +261,7 @@ def describe_table(session: Session, args: dict) -> Answer:
         answer.unknown("row filters", "the conditions of some columns could not be worked out")
     if saved is None:
         answer.unknown("value statistics", "no saved data profile; `python -m kumosql profile-table` reads the table to make one")
+    mcp_cost_access.describe_fields(session, key, answer)  # cached full-scan size and cached access denial
 
     answer.summary = _card_summary(key, model.kind, grain, len(columns), len(unknown_columns), len(reads), len(readers))
     if unknown_columns:
@@ -332,6 +334,7 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
     if readers:
         answer.next(f"impact table={key} lists what a change to it breaks.")
     boundary.annotate_table(session, key, answer)
+    mcp_cost_access.describe_fields(session, key, answer)
     return answer
 
 
