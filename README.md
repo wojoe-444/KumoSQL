@@ -797,7 +797,7 @@ python tools/transformation_bench.py tpch tpcds job --json results.json
 
 ## Agent-facing server
 
-`python -m kumosql mcp PROJECT` is one stdio MCP server that loads a Dataform project once and answers one question per call, in about 2 KB with counts, explicit unknowns and a next step: describe a table, trace a column, assess a change, find an existing table, find the table to use, compare two queries, check a draft query, profile a table (BigQuery only on request, a dry run first). It is read-only and also serves the saved data profiles. See [docs/mcp-server.md](docs/mcp-server.md).
+`python -m kumosql mcp PROJECT` is one stdio MCP server that loads a Dataform project once and answers one question per call, in about 2 KB with counts, explicit unknowns and a next step: describe a table, trace a column, assess a change, find an existing table, find the table to use, compare two queries, check a draft query, profile a table (BigQuery only on request, a dry run first), and find where rows are dropped on the way to a column. It is read-only and also serves the saved data profiles. See [docs/mcp-server.md](docs/mcp-server.md).
 
 ## BigQuery test bed
 
@@ -824,7 +824,7 @@ Every command prints `--help`.
 | `python -m kumosql shared-model DIR [ID]` | List CTEs repeated across Dataform models, or write the patch that moves one into a shared model, checked by the prover |
 | `python -m kumosql profile-table TABLE` | Profile a table's values (BigQuery `project.dataset.table`, `--file`, or `--duckdb`): nulls, distinct, min, max, quartiles, top values; `--dry-run`, `--sample-percent`, `--no-values` |
 | `python -m kumosql profile-mcp` | Serve saved data profiles to agents as read-only MCP resources over stdio |
-| `python -m kumosql mcp PROJECT` | One read-only MCP server for agents: loads the project once and answers one question per call in about 2 KB (`describe_table`, `trace_column`, `impact`, `find_existing`, `find_tables`, `compare_queries`, `check_query`, `profile_table`), plus the saved data profiles |
+| `python -m kumosql mcp PROJECT` | One read-only MCP server for agents: loads the project once and answers one question per call in about 2 KB (`describe_table`, `trace_column`, `impact`, `find_existing`, `find_tables`, `compare_queries`, `check_query`, `profile_table`, `list_tables`, `clean_query`, `rows_filtered`), plus the saved data profiles |
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |
 | `python -m kumosql equivalence list\|add\|remove` | Saved "column X of table A is column Y of table B" declarations |
 | `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate |
