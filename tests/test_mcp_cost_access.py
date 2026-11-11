@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from kumosql import dryrun, mcp_cost_access, mcp_preflight, mcp_server
+from kumosql import dryrun, mcp_cost_access, mcp_server
 from kumosql.mcp_session import Session
 from kumosql.pipeline_loading import load_sqlx_project
 from test_dryrun import FakeBigQuery, failure, ok
@@ -39,6 +39,8 @@ class Clock:
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     """A server on its own session, a fake BigQuery that records requests, and a clock the cache obeys."""
+
+    from kumosql import mcp_preflight  # not at module level: importing it registers check_query before the server lists its tools in order
 
     server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path / "project", SMALL))))
     fake = FakeBigQuery({})
@@ -253,6 +255,8 @@ def test_a_cache_file_inside_the_project_folder_is_refused_and_user_means_the_us
 
 
 def test_a_dry_run_is_billed_to_the_given_project_and_never_to_a_source_project(world, monkeypatch):
+    from kumosql import mcp_preflight
+
     projects = []
     real = mcp_preflight.bigquery_dry_run
     world.fake.responses.update({PLAN: ok(ID, "5"), STAR_RAW: ok(ID, "5")})
