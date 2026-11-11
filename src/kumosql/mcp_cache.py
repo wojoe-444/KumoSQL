@@ -369,6 +369,7 @@ class Index:
                 profiles=self.session.profiles_directory,
                 assume_grain=self.session._assume_grain,
                 root=self.session.root,
+                boundary=self.session._boundary_source,
             )
             fresh.trace_memo_factory = self.new_memo
             threading.Thread(target=self._build, args=(fresh, True), name="kumosql-mcp-refresh", daemon=True).start()
