@@ -630,7 +630,7 @@ def test_check_query_finds_ties_unknown_columns_and_says_what_it_did_not_check(s
     # a clean query is "no problems found", never "correct", and the dry run, which nobody asked for, is a next step and not a gap
     body, failed, used = ask(small, "check_query", sql="SELECT id, total FROM p.ds.totals WHERE total > 1")
     assert not failed and used <= BOUND and body["verdict"] == "no_problems_found" and "not a guarantee" in body["answer"]
-    assert body["checked"] == ["types", "ties", "fan_out"]
+    assert body["checked"] == ["types", "ties", "fan_out", "static"]
     assert not any(item["what"] == "BigQuery dry run" for item in body.get("unknown", [])) and "dry_run=true" in body["next"][0]
     # a table the project does not define is a named gap, not a silent pass
     body, _, _ = ask(small, "check_query", sql="SELECT 1 FROM p.other.elsewhere e JOIN p.ds.raw r ON r.id = e.id")
@@ -689,7 +689,7 @@ def check_check_query_and_profile_table_answers_fit_the_bound_on_the_big_project
     assert max(sizes) <= BOUND
     body, _, used = ask(big, "check_query", sql="SELECT a.day FROM csa.csa_3_11_intermediary_stats a JOIN csa.csa_1_30_summary_daily b ON a.day = b.day")
     # the project stores no column types and nothing here fixes them: the type check says so instead of claiming a pass
-    assert used <= BOUND and body["checked"] == ["ties", "fan_out"]
+    assert used <= BOUND and body["checked"] == ["ties", "fan_out", "static"]
     assert any(item["what"] == "types of csa_3_11_intermediary_stats.day unknown" for item in body["unknown"])
     [found] = [item for item in body["findings"] if item["check"] == "fan_out"]
     assert "one row per (day, ip, user, user_agent)" in found["what"] and "ip, user, user_agent are not matched" in found["what"]

@@ -132,7 +132,7 @@ class Pipeline:
         """Everything except locks and per-run memos, so a parsed project can be saved and reopened."""
 
         state = self.__dict__.copy()
-        for key in ("_memo", "_memo_locks", "_memo_guard", "_analysis_lock"):
+        for key in ("_memo", "_memo_locks", "_memo_guard", "_analysis_lock", "trace_memo"):
             state.pop(key, None)
         return state
 
@@ -1541,8 +1541,23 @@ class _Analysis:
             units[key] = ([(key, own, key in partial_outputs)] if own is not None else []) + [
                 (writer, written_query, True) for writer, written_query in writes_into.get(key, ())
             ]
+        replay = None
+        memo = getattr(pipeline, "trace_memo", None)
+        if memo is not None:
+            from .trace_memo import TraceState
+
+            replay = memo.start(
+                TraceState(
+                    pipeline, order, upstream, records, direct, outputs, schema, consumed, conditions, star_branch_tables,
+                    template_reads, diagnostics, opaque_readers_of, sqlglot_schema, spellings, _add_table,
+                ),
+                [text for model in pipeline.models.values() for text in (model.sql, *model.scripts) if _PROCEDURE_WORD.search(text) or _TABLE_FUNCTION_WORD.search(text)],
+                eligible=not writes_into and not positional,
+            )
         for key in order:
             tracing.step(key)
+            if replay is not None and replay.enter(key, traceable=bool(units[key])):
+                continue  # a saved trace of this model was replayed: its inputs are unchanged (kumosql.trace_memo)
             if not units[key]:
                 opaque_readers_of.update(upstream.get(key, ()))
                 continue
@@ -1840,6 +1855,8 @@ class _Analysis:
                         )
                     )
 
+        if replay is not None:
+            replay.leave()
         tracing.finish()
         reverse: dict[ColumnRef, set[ColumnRef]] = defaultdict(set)
         for column, parents in direct.items():

@@ -14,6 +14,9 @@ Tools: ``describe_table``, ``trace_column``, ``impact``, ``find_existing`` (:mod
 ``profile_table`` (:mod:`kumosql.mcp_profile`) and ``list_tables`` (:mod:`kumosql.mcp_list`), ``clean_query`` (:mod:`kumosql.mcp_clean`) and ``project_checks`` (:mod:`kumosql.project_checks`). A new tool is one
 function registered with :func:`kumosql.mcp_answers.tool` in a module listed in ``TOOL_MODULES``.
 
+The index is built in a background thread and saved (:mod:`kumosql.mcp_cache`): a second start replays it, a call while it is
+not ready answers ``index warming, N% done``, and an edit to the project re-analyses only the changed models and those downstream.
+
 Register it with an MCP client as the command ``python -m kumosql mcp PROJECT``. Messages are JSON-RPC 2.0, one per
 line; logs go to stderr, never stdout.
 """
@@ -23,10 +26,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import sys
-import threading
 from pathlib import Path
 
-from . import mcp_answers, profile_mcp
+from . import mcp_answers, mcp_cache, profile_mcp
 from .mcp_session import Session, load_project, parse_assumed_grain
 from .schema_snapshot import SchemaSnapshotError, check_schema_snapshot
 
@@ -88,6 +90,10 @@ class AgentServer(profile_mcp.Server):
         tool = self.tools.get(name) if isinstance(name, str) else None
         if tool is None:
             raise profile_mcp._Error(profile_mcp.INVALID_PARAMS, "unknown tool")
+        index = self.session.index
+        if index is not None and (warming := index.before_call()) is not None:
+            # the index is still being built (or rebuilt after an edit): say so, with progress, instead of a guess
+            return {"content": [{"type": "text", "text": mcp_answers.dump(warming)}], "isError": False}
         if self.session.pipeline() is None:
             body: dict = {"error": self.session.load_error or "no project is loaded"}
             body["next"] = ["Start the server with a project: python -m kumosql mcp PROJECT_FOLDER (a Dataform folder, a folder of .sql files or a compiled graph JSON)."]
@@ -123,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
         "check_query uses it to compare column types and carries them through the models.",
     )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
+    parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: the per-user cache folder, outside the project)")
+    parser.add_argument("--no-cache", action="store_true", help="do not save or read the analysed index")
+    parser.add_argument("--refresh-interval", type=float, default=0.0, metavar="SECONDS", help="look for edited project files at most this often (default 0: on every call)")
+    parser.add_argument("--warm-wait", type=float, default=mcp_cache.DEFAULT_WAIT_SECONDS, metavar="SECONDS", help="how long a call waits for the index before answering 'index warming' (default %(default)s)")
     args = parser.parse_args(argv)
     if args.root and args.git:
         parser.error("give either a project folder or --git URL, not both")
@@ -155,8 +165,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     server = AgentServer(session)
     if loader is not None:
-        # Parse and analyse in the background so `initialize` answers at once; the first question waits for it.
-        threading.Thread(target=session.warm, name="kumosql-mcp-warm", daemon=True).start()
+        # Build the index in the background so `initialize` answers at once; a question waits a little, then says "index warming".
+        cache = None if args.no_cache else mcp_cache.cache_file(args.cache_dir or mcp_cache.default_cache_dir(root), root)
+        extra = [args.source_schema] if args.source_schema else []
+        skip = [args.cache_dir] if args.cache_dir else []
+        index = mcp_cache.Index(
+            session,
+            cache=cache,
+            watch=lambda: mcp_cache.project_files(root, extra, skip),
+            refresh_interval=args.refresh_interval,
+            wait_seconds=args.warm_wait,
+        )
+        index.start()
     profile_mcp.serve(server, sys.stdin, sys.stdout)
     return 0
 

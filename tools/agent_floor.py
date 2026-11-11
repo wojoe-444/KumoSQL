@@ -137,6 +137,8 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
         ("Do the columns my draft compares have types that can be compared?", ("check_query",), lambda ask: ask("check_query", sql=c["typed_draft"])),
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
+        ("Does my draft use a word BigQuery reserves as an alias?", ("check_query",),
+         lambda ask: ask("check_query", sql=f"SELECT {c['most_read_column']} AS new FROM `{c['most_read']}`")),
         ("Is my rewrite of a draft query equivalent to the original?", ("compare_queries",),
          lambda ask: ask("compare_queries", left=c["draft"], right=f"SELECT * FROM (SELECT {c['draft'][len('SELECT '):]}) AS t")),
         ("Can my messy draft be tidied, and what exactly changes?", ("clean_query",),
