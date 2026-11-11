@@ -1662,9 +1662,13 @@ def test_level_retries_reuse_normalization_without_losing_assumptions(monkeypatc
     import kumosql.algebraic_equivalence as ae
     from kumosql.smt_equivalence import SmtEquivalenceResult, SmtStatus
 
+    from kumosql import shape_fallback
+
     calls = []
     def normalize(sql, **kwargs):
-        calls.append((sql, kwargs["keyed_distinct"]))
+        # a pair that ends without a verdict is tried again with the shape rules off (shape_fallback), which
+        # needs its own normal forms: the six normalizations are made once with the rules on and once with them off
+        calls.append((sql, kwargs["keyed_distinct"], shape_fallback.enabled()))
         kwargs["_assumptions"].add("normalization evidence")
         return sql
     monkeypatch.setattr(ae, "normalize", normalize)
@@ -1675,8 +1679,9 @@ def test_level_retries_reuse_normalization_without_losing_assumptions(monkeypatc
                                        constraints={"t": TableConstraints()})
     assert result.status is SmtStatus.NOT_PROVEN
     assert "normalization evidence" in result.assumptions
-    assert len(calls) == 6
-    assert len(set(calls)) == 6
+    assert len(calls) == 12
+    assert len(set(calls)) == 12  # never the same normalization twice in one state
+    assert sum(1 for *_, shapes in calls if shapes) == 6
 
 
 def test_normalization_reuse_is_isolated_between_constraint_contexts():
