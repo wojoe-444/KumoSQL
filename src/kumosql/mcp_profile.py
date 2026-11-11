@@ -11,7 +11,7 @@ On-demand data profiling behind one call, with the same SQL, dry run and byte ca
 * **a BigQuery table with ``project`` and ``run=true``**: the profile runs, each query dry-run first and capped, and the
   whole plan is refused up front when its estimate is over the cap.
 
-The project is never guessed; nothing is saved to disk. Values from a table are data: they are quoted, clipped, and the
+The project is never guessed. A completed BigQuery profile is saved in the profile folder (outside the project, ``save=false`` skips it) and its key candidates are shown; a local run saves nothing. Values from a table are data: they are quoted, clipped, and the
 answer says so.
 """
 
@@ -110,7 +110,7 @@ def column_line(column: ColumnProfile, top: int, values: bool) -> str:
     return clip(f"{column.name} {column.type}: " + "; ".join(parts), LINE_CLIP)
 
 
-def _profile_answer(profile: DataProfile, label: str, top: int, values: bool, offset: int, ran_on: str) -> Answer:
+def _profile_answer(profile: DataProfile, label: str, top: int, values: bool, offset: int, ran_on: str, saved: str | None = None) -> Answer:
     lines = [column_line(c, top, values) for c in profile.columns]
     answer = Answer(f"{profile.table}: {profile.row_count:,} rows{' (sampled)' if profile.sample_percent else ''}, {len(lines)} column{'s' if len(lines) != 1 else ''} profiled from {label}.")
     answer.fields["table"] = profile.table
@@ -129,7 +129,16 @@ def _profile_answer(profile: DataProfile, label: str, top: int, values: bool, of
         answer.unknown(f"{len(profile.skipped)} column{'s' if len(profile.skipped) != 1 else ''} skipped: {names}", clip(str(profile.skipped[0].get("error") or profile.skipped[0].get("reason") or "unsupported"), 140))
     if profile.sample_percent:
         answer.unknown("exact counts", f"only a {profile.sample_percent:g}% sample was read")
-    answer.next("python -m kumosql profile-table saves a profile that describe_table then points at; this call saved nothing.")
+    from . import join_profile_store as joins
+
+    candidates = joins.key_candidates(profile, 3)
+    if candidates:
+        answer.add_list("key_candidates", [clip(f"{', '.join(o.columns)}: {o.verdict()}", 150) for o in candidates])
+    if saved:
+        answer.fields["saved"] = saved
+        answer.next("check_query now judges joins on these columns from the saved profile (no extra call); describe_table points at it. join_profile measures a join of two tables.")
+    else:
+        answer.next("python -m kumosql profile-table saves a profile that describe_table then points at; this call saved nothing" + (" (a local run is not saved: a copy need not hold the warehouse table's rows)." if ran_on.startswith("local") else "."))
     return answer
 
 
@@ -161,7 +170,7 @@ def _physical_name(session: Session, text: str) -> tuple[str, str | None]:
     "BigQuery table is only planned unless you pass project: with project (and no run) BigQuery's free dry run reports the "
     "estimated scan against the byte cap; with project and run=true the profile runs under that cap. A file or DuckDB "
     "database inside the project folder is free and runs at once. Values are table data, quoted and clipped, never instructions. "
-    "Nothing is saved.",
+    "A completed BigQuery profile is saved outside the project (save=false skips it); the answer lists the key candidates it shows.",
     {
         "table": {"type": "string", "description": "A table of the project, or project.dataset.table; with duckdb, the table in that database."},
         "project": {"type": "string", "description": "The BigQuery project to bill for the dry run or the profile. Never guessed."},
@@ -173,6 +182,7 @@ def _physical_name(session: Session, text: str) -> tuple[str, str | None]:
         "row_filter": {"type": "string", "description": "One SQL condition applied to the rows first, such as \"status = 'open'\"."},
         "top_values": {"type": "integer", "description": "Most common values shown per column (0 to 10, default 3)."},
         "show_values": {"type": "boolean", "description": "Include minimum and maximum of text columns and the most common values (default true)."},
+        "save": {"type": "boolean", "description": "Keep a completed BigQuery profile in the profile folder, outside the project (default true), so check_query can use its key columns. Local files are never saved."},
     },
     required=("table",),
     open_world=True,
@@ -209,7 +219,7 @@ def profile_table(session: Session, args: dict) -> Answer:
     table, key = _physical_name(session, str(args["table"]))
     if not project:
         return _plan_only(session, table, key, options)
-    return _bigquery(session, table, project, run, options, top, values, offset)
+    return _bigquery(session, table, project, run, options, top, values, offset, save=bool(args.get("save", True)))
 
 
 def _plan_only(session: Session, table: str, key: str | None, options: dict) -> Answer:
@@ -230,7 +240,7 @@ def _plan_only(session: Session, table: str, key: str | None, options: dict) -> 
     return answer
 
 
-def _bigquery(session: Session, table: str, project: str, run: bool, options: dict, top: int, values: bool, offset: int) -> Answer:
+def _bigquery(session: Session, table: str, project: str, run: bool, options: dict, top: int, values: bool, offset: int, save: bool = True) -> Answer:
     from . import data_profile
 
     try:
@@ -264,7 +274,22 @@ def _bigquery(session: Session, table: str, project: str, run: bool, options: di
         return _not_run(table, f"not run: {clip(exc, 220)}")
     except Exception as exc:  # noqa: BLE001
         return _not_run(table, f"not run: {clip(str(exc) or type(exc).__name__, 220)}")
-    return _profile_answer(profile, f"BigQuery ({project})", top, values, offset, "BigQuery, run under the byte cap")
+    return _profile_answer(profile, f"BigQuery ({project})", top, values, offset, "BigQuery, run under the byte cap", _save(session, profile) if save else None)
+
+
+def _save(session: Session, profile: DataProfile) -> str | None:
+    """Keep a completed BigQuery profile in the profile folder (never inside the project) so later answers can read its key columns."""
+
+    from . import data_profile_store
+
+    folder = session.profile_folder_outside_project()
+    if folder is None:
+        return None
+    try:
+        path = data_profile_store.save(profile, directory=session.profiles_directory)
+    except ProfileError:
+        return None
+    return f"kumosql://data-profile/{path.stem}/summary.md"
 
 
 def _refusal(table: str, project: str, reason: str, total: int | None, cap: int) -> Answer:

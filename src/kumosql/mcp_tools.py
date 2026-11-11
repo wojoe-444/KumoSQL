@@ -227,6 +227,8 @@ def describe_table(session: Session, args: dict) -> Answer:
     if grain.known and not grain.keys:
         answer.fields["grain"] = "single row"
     answer.fields["grain_status"] = grain.status
+    if (origin := session.grain_origin(key, grain)) is not None:
+        answer.fields["grain_origin"] = origin
     answer.fields["rows_comparable"] = profile.row_scope.comparable
     saved = session.saved_profile(key)
     if saved is not None:
@@ -312,7 +314,19 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
     answer.counts = {"columns": len(columns), "read_by": len(readers)}
     answer.add_list("columns", columns[offset:][:PAGE], total=len(columns), offset=offset, primary=True)
     answer.add_list("read_by", readers[:PAGE], total=len(readers))
-    answer.unknown("grain and row filters", "the project does not define this table, so they are not known")
+    from . import join_profile_store as joins
+
+    claim = session.grain_claim(key)
+    near = None if claim is not None else joins.best_candidate(session.key_observations(), [key])
+    if claim is not None:
+        answer.fields.update({"grain": list(claim.keys), "grain_status": "declared", "grain_origin": claim.origin})
+        answer.unknown("row filters", "the project does not define this table, so they are not known")
+    elif near is not None:
+        answer.fields["grain_assumed"] = clip(f"{'unique' if near.unique else 'near-key'} on ({', '.join(near.columns)}): {near.counts()}; from the saved {near.source.replace('_', ' ')} of {near.generated_at[:10]}, an assumption, not a declared grain", 220)
+        answer.unknown("grain", "no key is declared for this table; the saved measurement above is the nearest, not certain")
+        answer.unknown("row filters", "the project does not define this table, so they are not known")
+    else:
+        answer.unknown("grain and row filters", "the project does not define this table, so they are not known")
     if not columns:
         answer.unknown("columns", "no source schema was given (--source-schema)")
     if readers:

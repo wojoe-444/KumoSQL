@@ -441,17 +441,37 @@ def _config_assertions(config: str) -> tuple[tuple[str, ...], tuple[tuple[str, .
         return (), ()
     block = _braced(config, match.end() - 1)
     non_null: tuple[str, ...] = ()
-    keys: list[tuple[str, ...]] = []
     found = re.search(r"\bnonNull\s*:\s*(\[[^\]]*\]|['\"`][^'\"`]*['\"`])", block)
     if found:
         non_null = _name_list(found.group(1))
-    found = re.search(r"\buniqueKey\s*:\s*(\[[^\]]*\]|['\"`][^'\"`]*['\"`])", block)
+    return non_null, _unique_keys_in(block)
+
+
+def _unique_keys_in(text: str) -> tuple[tuple[str, ...], ...]:
+    """The literal ``uniqueKey: [...]`` and ``uniqueKeys: [[...], ...]`` lists in ``text``."""
+
+    keys: list[tuple[str, ...]] = []
+    found = re.search(r"\buniqueKey\s*:\s*(\[[^\]]*\]|['\"`][^'\"`]*['\"`])", text)
     if found and _name_list(found.group(1)):
         keys.append(_name_list(found.group(1)))
-    found = re.search(r"\buniqueKeys\s*:\s*\[((?:\s*\[[^\]]*\]\s*,?)+)\]", block)
+    found = re.search(r"\buniqueKeys\s*:\s*\[((?:\s*\[[^\]]*\]\s*,?)+)\]", text)
     if found:
         keys.extend(_name_list(group) for group in re.findall(r"\[([^\]]*)\]", found.group(1)) if _name_list(group))
-    return non_null, tuple(dict.fromkeys(keys))
+    return tuple(dict.fromkeys(keys))
+
+
+def declared_unique_keys(config: str) -> tuple[tuple[str, ...], ...]:
+    """The unique keys a declaration's config states: ``assertions: {uniqueKey, uniqueKeys}`` and a top-level ``uniqueKey``.
+
+    A declaration names a table the project does not build, so these are the project's claim about it, not something
+    it checks. Only literal lists of names are read.
+    """
+
+    keys = list(_config_assertions(config)[1])
+    match = re.search(r"\bassertions\s*:\s*\{", config)
+    outside = config if not match else config[:match.start()] + config[match.end() - 1 + len(_braced(config, match.end() - 1)):]
+    keys.extend(_unique_keys_in(outside))
+    return tuple(dict.fromkeys(keys))
 
 
 def _config_dependencies(config: str) -> tuple[str, ...]:
@@ -724,6 +744,7 @@ def js_declared_targets(
     modules: Mapping[str, Mapping[str, object]] | None = None,
     path: str = "",
     placeholders: Callable[[str], str | None] | None = None,
+    unique_keys: dict | None = None,
 ) -> tuple[list[Target], list[Target], bool]:
     """Declarations and named actions found in one Dataform JavaScript file.
 
@@ -734,6 +755,7 @@ def js_declared_targets(
     of tables, in this file or in a module it ``require``s (``modules``: exports by project path), is expanded.
     A schema or database written as an includes module's member called with literals (``functions.baseSchema("ga4")``) is read as the
     placeholder ``placeholders`` gives for it (see :func:`_placeholder`), so such an action is listed, not unknown.
+    ``unique_keys``, when given, receives each declared target's literal unique keys (see :func:`declared_unique_keys`).
     """
 
     from . import js_literals
@@ -801,7 +823,14 @@ def js_declared_targets(
                 complete = False
                 continue
         for name, database, schema in found:
-            (declared if kind == "declare" else actions).append(Target(database, schema, name))
+            target = Target(database, schema, name)
+            (declared if kind == "declare" else actions).append(target)
+            if unique_keys is not None and kind == "declare" and config.startswith("{"):
+                try:
+                    if keys := declared_unique_keys(config):
+                        unique_keys[target] = keys
+                except Exception:  # noqa: BLE001 - a key claim is optional evidence
+                    pass
     return declared, actions, complete
 
 
@@ -1050,6 +1079,7 @@ def load_sqlx_project(
     search_root = definitions if use_definitions else root
     models: dict[str, Model] = {}
     sources: dict[str, Target] = {}
+    source_keys: dict[str, tuple[tuple[str, ...], ...]] = {}
 
     def unlistable(directory: Path, reason: str) -> None:
         try:
@@ -1145,6 +1175,11 @@ def load_sqlx_project(
         if kind == "declaration":
             if "name" not in computed_identity:
                 sources[target.key] = target
+                try:
+                    if keys := declared_unique_keys(config):
+                        source_keys[target.key] = keys
+                except Exception:  # noqa: BLE001 - a key claim is optional evidence
+                    pass
             return None
         return relative, sections, config, kind, target
 
@@ -1296,12 +1331,16 @@ def load_sqlx_project(
             continue
         if use_definitions and relative_js.split("/", 1)[0] not in ("definitions", "includes"):
             continue  # Dataform runs definitions/ and what it requires; other folders are not part of the project's actions
+        declared_keys: dict[Target, tuple[tuple[str, ...], ...]] = {}
         declared, actions, complete = js_declared_targets(
-            text, Target(database, dataset, ""), modules=modules, path=relative_js, placeholders=placeholders)
+            text, Target(database, dataset, ""), modules=modules, path=relative_js, placeholders=placeholders,
+            unique_keys=declared_keys)
         for target in declared:
             if target not in known.setdefault(target.name, []):  # an identical declaration repeated is one table
                 known[target.name].append(target)
             sources[target.key] = target
+            if declared_keys.get(target):
+                source_keys[target.key] = declared_keys[target]
         for target in actions:
             final = naming.apply(target)
             if final not in known.setdefault(target.name, []):
@@ -1397,6 +1436,7 @@ def load_sqlx_project(
         default_project=database,
         default_dataset=dataset,
         default_location=naming.location,
+        source_unique_keys=source_keys,
     )
 
 

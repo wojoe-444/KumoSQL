@@ -43,7 +43,7 @@ The result file is `agent-floor`. The test is `tests/test_agent_floor.py` (an ev
 
 ## Results
 
-With all eleven tools: 35 of 35 questions inside their bounds, largest answer 1,965 bytes, median task 1,001 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes; three `list_tables` and two `clean_query` questions took it from 26, one `project_checks` question made it 32 and one `check_query` question about a reserved word used as an alias, added with the static checks, 33, and the expression and link-table questions 35). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
+With all twelve tools: 36 of 36 questions inside their bounds, largest answer 1,989 bytes, median task 1,006 bytes in total, at most 3 calls, median latency under 7 ms per task after a 9 s load (on a busy machine) (the first run, with four tools, was 20 of 20, median 1,036 bytes; three `list_tables` and two `clean_query` questions took it from 26, one `project_checks` question made it 32 and one `check_query` question about a reserved word used as an alias, added with the static checks, 33, the expression and link-table questions 35, and one plan-only `join_profile` question 36). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
 
 ## Limits of the evidence
 
