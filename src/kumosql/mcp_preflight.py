@@ -2,7 +2,11 @@
 
 One call instead of four commands, on a draft ``SELECT`` written against the project's tables:
 
-* **types**: the output columns and their types (:mod:`kumosql.googlesql_types`), and the errors the query certainly has;
+* **types**: the output columns and their types (:mod:`kumosql.googlesql_types`), the errors the query certainly has, and
+  operands with no common type (``STRING`` against ``INT64`` in a join key, ``BETWEEN`` or ``IN``, a ``UNION`` branch,
+  ``MOD(FLOAT64, INT64)``; :mod:`kumosql.type_operands`). Column types come from the schema snapshot
+  (``--schema-snapshot``) and are carried through the models (:mod:`kumosql.project_types`); a column whose type is
+  unknown is listed under ``not checked`` and never passes silently;
 * **ties**: places where the result can change from run to run because rows tie
   (:mod:`kumosql.tie_determinism`), with the key that would pin them down;
 * **fan-out**: joins that can multiply rows, judged from the grain of the joined tables (the project's table profiles);
@@ -39,7 +43,7 @@ TYPE_FIXES = {
     "unknown_table": "Use a table of the project (find_tables looks for one).",
     "ambiguous_column": "Qualify the column with its table alias (alias.column).",
     "set_operation_width": "Make every branch of the UNION/INTERSECT/EXCEPT select the same number of columns.",
-    "set_operation_type": "CAST the columns of the branches to one common type.",
+    "set_operation_type": "CAST the columns of the branches to one common type, e.g. CAST(branch_column AS STRING) in the branch that differs.",
     "invalid_field_access": "Check that the column is a STRUCT with that field; describe_table shows the columns.",
     "star_except_missing": "Remove that name from EXCEPT/REPLACE, or correct its spelling.",
 }
@@ -104,33 +108,63 @@ def _catalog(session: Session, draft: Draft):
     from .googlesql_types import Catalog, Column, parse_type
 
     pipeline = session.pipeline()
+    types = session.column_types()
     catalog = Catalog()
     for key in sorted(draft.keys()):
         if key in pipeline.models:
             profile = session.profiles().get(key)
             outputs = list(pipeline.output_columns(key))
             trusted = profile is not None and outputs and not any((a.reason or "").split(":")[0] in _FAILED_META for a in profile.attributes)
-            if trusted:
-                catalog.add(key, [Column(name, None) for name in outputs])
+            names = list(outputs) if trusted else []
+            # the deployed table may have columns the project's query does not (yet) output: never call those unknown
+            have = {n.casefold() for n in names}
+            names += [n for n in types.columns(key) if n.casefold() not in have]
+            if names:
+                catalog.add(key, [Column(name, types.type(key, name)) for name in names])
         else:
             columns = pipeline.source_schema.get(key) or {}
-            if columns:
-                catalog.add(key, [Column(name, parse_type(str(kind)) if kind else None) for name, kind in columns.items()])
+            names = types.columns(key) or list(columns)
+            if names:
+                catalog.add(key, [Column(name, types.type(key, name) or (parse_type(str(columns.get(name))) if columns.get(name) else None)) for name in names])
     return catalog
 
 
-def _type_findings(session: Session, draft: Draft) -> tuple[list[dict], list[str], list[tuple[str, str]]]:
-    """Errors the query certainly has, its output columns (``name TYPE``), and what could not be typed."""
+def _unknown_label(session: Session, draft: Draft, unknown) -> tuple[str, str] | None:
+    """``("schedule.batch_code", reason)`` for a column of unknown type, or ``None`` when another gap already says it."""
+
+    column = unknown.column.name
+    table = unknown.table
+    if table is None:
+        return column, "which table it belongs to could not be told, so its type was not looked up"
+    spelled = ".".join(p.name for p in (table.args.get("catalog"), table.args.get("db"), table.this) if p is not None and p.name).casefold()
+    if spelled not in draft.tables:  # a CTE or subquery of the draft: its column types come from its own query
+        return f"{table.alias_or_name or table.name}.{column}", "the draft's own subquery does not fix it (it reads a column of unknown type)"
+    key = draft.tables[spelled]
+    pipeline = session.pipeline()
+    if key is None:
+        return None  # "N tables not in the project" says it
+    return f"{key.split('.')[-1]}.{column}", session.column_types().reason(key, column, key in pipeline.models)
+
+
+def _type_findings(session: Session, draft: Draft) -> tuple[list[dict], list[str], list[tuple[str, str]], bool]:
+    """Errors the query certainly has, its output columns (``name TYPE``), what could not be typed, and whether
+    types were checked at all (at least one operand pair was compared, or none needed a type that is missing)."""
 
     from .googlesql_types import infer
+    from .type_operands import check_operands
 
     typed = infer(draft.tree, _catalog(session, draft))
-    findings = [{"check": "types", "what": clip(f.message, 160), "fix": TYPE_FIXES.get(f.code, "Correct the expression it names.")} for f in typed.findings]
+    findings = [{"check": "types", "what": clip(f.message, 160), "fix": clip(TYPE_FIXES.get(f.code, "Correct the expression it names."), 200)} for f in typed.findings]
     columns: list[str] = []
     gaps: list[tuple[str, str]] = []
+    operands = None
+    if typed.columns is not None:
+        operands = check_operands(draft.tree, typed)
+        findings += [{"check": "types", "what": clip(f.what, 260), "fix": clip(f.fix, 220)} for f in operands.findings]
+        gaps += _operand_gaps(session, draft, operands)
     if typed.columns is None:
         gaps.append(("output column types", clip(typed.error or "the query could not be typed", 160)))
-        return findings, columns, gaps
+        return findings, columns, gaps, False
     unknown_types = 0
     for column in typed.columns:
         name = column.name or "(unnamed)"
@@ -140,8 +174,30 @@ def _type_findings(session: Session, draft: Draft) -> tuple[list[dict], list[str
         else:
             columns.append(f"{name} {column.type.sql()}")
     if unknown_types:
-        gaps.append((f"{unknown_types} of {len(columns)} output column types", "they read columns whose types the project does not declare (models have no stored types); a dry run returns them"))
-    return findings, [clip(c, 90) for c in columns], gaps
+        gaps.append((f"{unknown_types} of {len(columns)} output column types", "they read columns without a known type (a schema snapshot or a dry run gives them)"))
+    # types count as checked unless every operand check that needed a type lacked it
+    checked = not (operands.undecided and not operands.decided and not typed.findings)
+    return findings, [clip(c, 90) for c in columns], gaps, checked
+
+
+def _operand_gaps(session: Session, draft: Draft, operands) -> list[tuple[str, str]]:
+    """The type checks that needed a column type the project does not give, one line per column (or one for many)."""
+
+    labelled: dict[str, str] = {}
+    for unknown in operands.unknown:
+        found = _unknown_label(session, draft, unknown)
+        if found is not None:
+            labelled.setdefault(found[0], found[1])
+    gaps: list[tuple[str, str]] = []
+    if 0 < len(labelled) <= 3:
+        gaps = [(f"types of {name} unknown", reason) for name, reason in labelled.items()]
+    elif labelled:
+        reasons = sorted(set(labelled.values()))
+        names = ", ".join(list(labelled)[:3])
+        gaps = [(f"types of {len(labelled)} columns unknown ({names}, ...)", clip(reasons[0] + ("; others differ" if len(reasons) > 1 else ""), 160))]
+    if operands.unnamed:
+        gaps.append((f"{operands.unnamed} comparison{'s' if operands.unnamed != 1 else ''} or calls on values of unknown type", "an operand is computed from something whose type is not known, so it was not compared"))
+    return gaps
 
 
 # -------------------------------------------------------------------------- ties
@@ -395,10 +451,11 @@ def check_query(session: Session, args: dict) -> Answer:
     static_found, static_gaps = static_checks(session, draft.tree, draft.sql, draft.tables)
     findings += static_found
     gaps += static_gaps
-    type_findings, columns, type_gaps = _type_findings(session, draft)
+    type_findings, columns, type_gaps, types_checked = _type_findings(session, draft)
     findings += type_findings
     gaps += type_gaps
-    checked.append("types")
+    if types_checked:
+        checked.append("types")
     tie_findings, tie_gaps, facts = _tie_findings(session, draft)
     findings += tie_findings
     gaps += tie_gaps
@@ -424,7 +481,8 @@ def check_query(session: Session, args: dict) -> Answer:
 
     outside = sorted(spelled for spelled, key in draft.tables.items() if key is None)
     if outside:
-        gaps.append((f"{len(outside)} table{'s' if len(outside) != 1 else ''} not in the project: {', '.join(outside[:3])}{', ...' if len(outside) > 3 else ''}", "their columns, types and grain are unknown, so checks that need them were skipped"))
+        reason = "their columns, types and grain are unknown, so checks that need them were skipped"
+        gaps.append((f"{len(outside)} table{'s' if len(outside) != 1 else ''} not in the project: {', '.join(outside[:3])}{', ...' if len(outside) > 3 else ''}", reason))
     from . import project_checks  # imported here so the tool list keeps the order of TOOL_MODULES
 
     gaps += project_checks.draft_notes(session, draft.keys())  # disabled, declared and built, declared-only: the repository cannot vouch for them
@@ -450,7 +508,8 @@ def check_query(session: Session, args: dict) -> Answer:
         answer.summary = f"{len(findings)} problem{'s' if len(findings) != 1 else ''} found ({', '.join(f'{n} {c}' for c, n in counts.items())}); each names its fix."
         answer.next(f"Apply the fix of the first finding ({findings[0]['check']}), then run check_query again.")
     else:
-        answer.summary = f"No problems found by the checks that ran ({', '.join(checked)}); {len(gaps)} thing{'s' if len(gaps) != 1 else ''} not checked. This is not a guarantee the query is correct."
+        ran = ", ".join(checked) + ("" if "types" in checked else "; types could NOT be checked, their columns have no known type")
+        answer.summary = f"No problems found by the checks that ran ({ran}); {len(gaps)} thing{'s' if len(gaps) != 1 else ''} not checked. This is not a guarantee the query is correct."
         if dry is not None and dry.get("ok"):
             answer.next("Run the query once the estimate is acceptable; compare_queries tells whether a rewrite of it is the same query.")
         else:

@@ -379,7 +379,8 @@ def server(tmp_path):
     (folder / "definitions").mkdir(parents=True)
     (folder / "workflow_settings.yaml").write_text("defaultProject: p\ndefaultDataset: ds\n")
     (folder / "definitions" / "t.sqlx").write_text('config { type: "table" }\nSELECT 1 AS x, 2 AS y\n')
-    (folder / "definitions" / "u.sqlx").write_text('config { type: "table" }\nSELECT 1 AS x, 3 AS z\n')
+    # x is read from a table the project does not define, so nothing says whether it can be NULL
+    (folder / "definitions" / "u.sqlx").write_text('config { type: "table" }\nSELECT raw.id AS x, 3 AS z FROM src.raw_u raw\n')
     return mcp_server.AgentServer(Session(load_sqlx_project(folder)))
 
 
@@ -406,6 +407,9 @@ def test_check_query_uses_project_columns_for_stars_and_reports_what_it_could_no
     body, _ = ask(server, sql="SELECT x FROM t WHERE x NOT IN (SELECT x FROM u)")
     assert body["verdict"] == "no_problems_found"
     assert any(item["what"] == "NOT IN subqueries not checked" and "nullability unknown" in item["reason"] for item in body["unknown"])
+    # a column the model's own query makes non-null (a literal) needs no snapshot: nothing is left unchecked
+    body, _ = ask(server, sql="SELECT x FROM t WHERE x NOT IN (SELECT y FROM t)")
+    assert body["verdict"] == "no_problems_found" and not any(item["what"] == "NOT IN subqueries not checked" for item in body.get("unknown", []))
 
 
 def test_check_query_asks_the_session_for_nullability_when_it_can(server):

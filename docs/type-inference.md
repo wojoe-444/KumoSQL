@@ -4,13 +4,15 @@
 
 `kumosql.googlesql_types` works out the output schema of a BigQuery query, STRUCT and ARRAY included, without running it or asking BigQuery: which columns the query returns, with which names and which types. It is a conservative type checker: it gives a type only when GoogleSQL's own rules fix one, and answers **unknown** for everything else. A wrong type would be worse than no type, because a caller (a schema-change check, a prover's column model, a lineage view) would build on it.
 
-The checker is a library. Nothing else in KumoSQL calls it yet; the hooks planned for it are [at the end](#planned-hooks). How well it does is scored by the [GoogleSQL type inference eval](evals/googlesql-types.md); the numbers are on that page and in `benchmarks/results/googlesql-types.json`, not here.
+The checker is a library. The agent server's `check_query` is its first caller ([operand checks](#operand-checks-in-check_query)); the other hooks planned for it are [at the end](#planned-hooks). How well it does is scored by the [GoogleSQL type inference eval](evals/googlesql-types.md); the numbers are on that page and in `benchmarks/results/googlesql-types.json`, not here.
 
 | Module | What it holds |
 | --- | --- |
 | `kumosql/googlesql_types.py` | `GType`, `parse_type`, `Catalog`, `infer`, `TypedQuery`; name resolution, `FROM` items, set operations, coercion and supertypes |
 | `kumosql/googlesql_signatures.py` | The result type of each operator and built-in function, from the GoogleSQL function reference |
 | `kumosql/googlesql_pipe_types.py` | Pipe syntax (`FROM t \|> WHERE ... \|> SELECT ...`), operator by operator |
+| `kumosql/type_operands.py` | The comparison, `BETWEEN`, `IN`, join, `UNION` and signature checks that `check_query` runs on a typed query (not part of `infer`) |
+| `kumosql/project_types.py`, `kumosql/schema_snapshot.py` | Column types for a whole project: from a schema snapshot, carried through the models in dependency order |
 | `tools/googlesql_types_eval.py` | The labelled eval against the GoogleSQL compliance tests |
 | `tools/googlesql_types_scan.py` | The unlabelled scan over real BigQuery SQL: findings must stay at zero |
 
@@ -155,6 +157,10 @@ A `Finding(code, message, node)` is a claim that the query is **certainly invali
 | `no_matching_signature` | **declared but not emitted yet** |
 
 `incompatible_operands` and `no_matching_signature` are in the list so callers can already handle them; today an operator or function whose operands no signature accepts (`INT64 + STRING`, `SUBSTR(int_col, 1)`) simply gets an unknown type and no finding. The tests pin this: such a type must stay unknown whether or not the finding is later reported.
+
+### Operand checks in `check_query`
+
+`incompatible_operands` and `no_matching_signature` are still not emitted by `infer`. The agent server's `check_query` finds them itself from the types `infer` gives (`kumosql/type_operands.py`), so the library, its scan and its eval are unchanged. The checks run only when both operands have a known scalar type: a comparison, `BETWEEN` or `IN` between families that have no common type (a number, `STRING`, `BYTES`, `BOOL`, `DATE`, `DATETIME`, `TIMESTAMP`, `TIME`; `DATE` with `DATETIME` is allowed, and a quoted text literal may become a date or time), a number literal against a non-number column, a numeric operator or function whose argument types appear in no row of the signature tables (`MOD(FLOAT64, INT64)`, `STRING + INT64`, `SUM(STRING)`). Two different numeric types are never reported, and an operand of unknown type is returned to the caller as unknown rather than guessed. `USING` joins compare the two columns' types, and `UNION` branches that disagree are the `set_operation_type` finding above. A scan of every model of the fixture projects (with the types carried through the models) and of the Spider 2.0 gold queries gave no operand finding, which is the bar for any new check here: a finding on SQL that runs is a bug in the check.
 
 ## Dataform masks stay untyped
 
