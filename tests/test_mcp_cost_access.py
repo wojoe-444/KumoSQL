@@ -40,9 +40,9 @@ class Clock:
 def world(tmp_path, monkeypatch):
     """A server on its own session, a fake BigQuery that records requests, and a clock the cache obeys."""
 
-    from kumosql import mcp_preflight  # not at module level: importing it registers check_query before the server lists its tools in order
-
     server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path / "project", SMALL))))
+    from kumosql import mcp_preflight  # only after the server has loaded its tools: importing it earlier registers check_query out of order
+
     fake = FakeBigQuery({})
     clock = Clock()
     cache = mcp_cost_access.cache_for(server.session)
