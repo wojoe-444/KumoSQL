@@ -118,6 +118,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Declare which columns identify a row of a table the project does not define (or cannot derive), "
         "e.g. logs.events=insert_id. Repeatable. Answers show such a grain as declared, never as derived.",
     )
+    parser.add_argument(
+        "--boundary",
+        type=Path,
+        metavar="FILE",
+        help="YAML or JSON file naming the jobs outside the repository that build sources (producers) and the semantic models and "
+        "dashboards that read outputs (consumers). Traces continue through the producers' SQL and impact lists the consumers, labelled as outside the project.",
+    )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
     parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: the per-user cache folder, outside the project)")
     parser.add_argument("--no-cache", action="store_true", help="do not save or read the analysed index")
@@ -140,12 +147,21 @@ def main(argv: list[str] | None = None) -> int:
         assumed = parse_assumed_grain(args.assume_grain)
     except ValueError as exc:
         parser.error(f"--assume-grain: {exc}")
+    boundary = None
+    if args.boundary:
+        from .boundary import BoundaryError, read_file
+
+        try:
+            boundary = read_file(args.boundary)
+        except BoundaryError as exc:
+            parser.error(f"--boundary: {exc}")
     loader = (lambda: load_project(root, args.source_schema)) if root else None
     session = Session(
         loader=loader,
         profiles=args.profiles,
         root=(root.parent if root.is_file() else root) if root else None,
         assume_grain=assumed,
+        boundary=boundary,
     )
     server = AgentServer(session)
     if loader is not None:
