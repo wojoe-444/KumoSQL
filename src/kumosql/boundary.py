@@ -336,7 +336,7 @@ class Readers:
     problem: str | None = None
 
 
-#: how a consumer's files fail to be read, as plain reasons (one line each, so hundreds of consumers group)
+#: how a consumer's files fail to be read, as plain reasons (one line each, so many consumers group)
 _FILE_REASONS = {
     "none": "no file matches the path",
     "not_text": "a file is not text",
@@ -418,7 +418,7 @@ class Boundary:
         )
 
     def warm(self) -> None:
-        """Analyse the outside SQL now, so the first question is not the one that pays for hundreds of files."""
+        """Analyse the outside SQL now, so the first question is not the one that pays for many files."""
 
         outside = self.outside()
         if outside is not None:

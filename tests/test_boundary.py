@@ -302,12 +302,12 @@ def test_many_outside_readers_are_counted_grouped_by_kind_and_paged_inside_the_b
         lines.append(f"  - {{name: report_{i:03d}, kind: {'semantic' if i % 3 else 'dashboard'}, path: bi/m{i}.malloy}}")
     for i in range(30):
         files[f"bi/d{i}.sql"] = "SELECT order_id, amount FROM ds.orders\n"
-        lines.append(f"  - {{name: sheet_{i:03d}, kind: workbook, sql: bi/d{i}.sql}}")
+        lines.append(f"  - {{name: sheet_{i:03d}, kind: sheet, sql: bi/d{i}.sql}}")
     server, _, _ = make(tmp_path, "\n".join(lines) + "\n", files)
     first, failed, size = ask(server, "impact", table="orders", column="amount")
     assert not failed and size <= 2000
     assert first["counts"]["outside_readers"] == 150
-    assert first["counts"]["outside_by_kind"] == {"semantic": 80, "dashboard": 40, "workbook": 30}
+    assert first["counts"]["outside_by_kind"] == {"semantic": 80, "dashboard": 40, "sheet": 30}
     assert first["readers_outside_project_shown"].endswith("of 150") and "offset=" in first["more"]
     shown = len(first["readers_outside_project"])
     assert 3 <= shown < 150

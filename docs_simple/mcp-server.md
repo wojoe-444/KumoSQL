@@ -75,7 +75,7 @@ consumers:
 - Asking where a column comes from now goes past the source: "built by scheduled query 1234, which reads these columns", and on through that query's own sources, marked as outside the project.
 - Asking what breaks if you drop a column now also lists the dashboards and models that use it, marked as outside the project. For a consumer with an `sql` file KumoSQL reads the query, so the columns are exact. For Malloy files (`.malloy`) it reads each source: which table it reads and which columns it mentions. For any other file in a `path` it only searches for the table name and the column name. Those last two are approximations, and the answer says so: they can be wrong both ways.
 - A producer can be a notebook whose code was never exported. Write `sql_unavailable: the reason` instead of `sql:` and a trace says "built outside the project by notebook nb-7; its SQL is not available" instead of simply stopping.
-- With hundreds of dashboards the answer gives the count, a count per kind, and as many examples as fit; ask again with `offset` for the next page.
+- With many dashboards the answer gives the count, a count per kind, and as many examples as fit; ask again with `offset` for the next page.
 - A file KumoSQL cannot read (nothing matches the path, it is not text, or it is too big) is reported as **unknown**, never as "nobody reads it".
 - A mistake in the file (a table the project does not have, SQL that does not parse) is explained in a line or two before the server starts, or, for a table name, in every answer.
 
