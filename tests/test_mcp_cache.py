@@ -447,3 +447,66 @@ def test_replaying_the_saved_trace_of_the_106_model_public_project_equals_a_cold
     for table in sorted(cold.session.pipeline().models)[::20]:
         answer = ask(cold, "describe_table", table=table)
         assert not answer[1] and ask(second, "describe_table", table=table) == answer
+
+
+# ------------------------------------------------------------------ where the file goes, and many servers at once
+
+
+def test_the_default_cache_folder_is_outside_the_project_even_when_the_platform_cache_points_into_it(tmp_path, monkeypatch):
+    project = write_project(tmp_path / "proj", definitions(2))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "usercache"))
+    monkeypatch.setattr(mcp_cache.sys, "platform", "linux")
+    assert mcp_cache.default_cache_dir(project) == tmp_path / "usercache" / "kumosql" / "mcp-cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(project / ".cache"))  # a cache location pointed into the checkout
+    chosen = mcp_cache.default_cache_dir(project)
+    assert not mcp_cache._inside(chosen, project) and str(project) not in str(chosen)
+
+
+def test_concurrent_saves_and_loads_never_show_a_half_written_file(tmp_path):
+    project = write_project(tmp_path / "proj", definitions(2))
+    path = mcp_cache.cache_file(tmp_path / "cache", project)
+    entry = {"closure": "c", "delta": {"records": []}}
+    errors, stop = [], threading.Event()
+
+    def writer(number):
+        for round_ in range(40):
+            try:
+                mcp_cache.save_cache(path, f"fp{number}", {f"k{i}": entry for i in range(200 + round_)})
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+    def reader():
+        while not stop.is_set():
+            found = mcp_cache.load_cache(path)  # None before the first save; otherwise a whole, valid file
+            if found is not None and not (found[0].startswith("fp") and len(found[1]) >= 200):
+                errors.append(AssertionError("a partial file was read"))
+
+    readers = [threading.Thread(target=reader) for _ in range(2)]
+    writers = [threading.Thread(target=writer, args=(n,)) for n in range(3)]
+    for thread in (*readers, *writers):
+        thread.start()
+    for thread in writers:
+        thread.join()
+    stop.set()
+    for thread in readers:
+        thread.join()
+    assert errors == [] and mcp_cache.load_cache(path) is not None
+    assert [p.name for p in path.parent.iterdir() if p.name.endswith(".tmp")] == []  # no temporary file is left behind
+
+
+def test_servers_started_at_once_on_one_project_all_answer_and_leave_a_valid_cache(tmp_path):
+    import subprocess
+    import sys
+
+    project = write_project(tmp_path / "proj", definitions(6))
+    cache = tmp_path / "cache"
+    request = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "describe_table", "arguments": {"table": "node_3"}}}) + "\n"
+    command = [sys.executable, "-m", "kumosql", "mcp", str(project), "--cache-dir", str(cache), "--warm-wait", "120"]
+    processes = [subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(3)]
+    outputs = [p.communicate(request, timeout=180) for p in processes]
+    for process, (out, _err) in zip(processes, outputs):
+        assert process.returncode == 0
+        assert json.loads(json.loads(out)["result"]["content"][0]["text"])["table"] == "p.ds.node_3"
+    assert mcp_cache.load_cache(mcp_cache.cache_file(cache, project)) is not None
+    assert not [p for p in cache.iterdir() if p.name.endswith(".tmp")]

@@ -5,7 +5,7 @@ things change that, all in this module (the analysis itself reuses traces throug
 
 * **A saved trace.** After an analysis the trace of every model is saved as JSON (a version header, then one entry per
   model keyed by a hash of the model and everything upstream of it) in a cache folder: ``--cache-dir``, else
-  ``mcp-cache`` in the KumoSQL data folder, never in the project. The next start replays the entries whose hash still
+  ``kumosql/mcp-cache`` in the platform's per-user cache folder, never in the project. The next start replays the entries whose hash still
   matches and traces only the rest. A file that is missing, corrupt, from another KumoSQL or sqlglot version, or in
   another format is ignored and written again. Nothing in it is executed or trusted for more than a hash and names.
 * **A background build.** The server answers ``initialize`` at once and builds the index in a thread. While it runs, a
@@ -24,6 +24,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -48,12 +49,32 @@ _LOAD, _TRACE_FROM, _TRACE_SPAN, _PROFILES, _ROLES = 2, 5, 85, 92, 96
 # ------------------------------------------------------------------ the saved file
 
 
-def default_cache_dir() -> Path:
-    """``mcp-cache`` in the KumoSQL data folder (the folder is created only when something is saved)."""
+def default_cache_dir(root: Path | None = None) -> Path:
+    """The platform's per-user cache folder (``~/.cache``, ``~/Library/Caches`` or ``%LOCALAPPDATA%``), then ``kumosql/mcp-cache``.
 
-    from . import state
+    It is never inside the project: when the platform folder happens to sit under ``root`` (a cache location
+    pointed into the checkout), the system temporary folder is used instead. The file inside is named by a hash
+    of the project's path (:func:`cache_file`), so projects do not meet. The folder is created only when a file is saved.
+    """
 
-    return state.data_dir() / "mcp-cache"
+    if sys.platform == "win32":
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Caches"
+    else:
+        base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
+    folder = base / "kumosql" / "mcp-cache"
+    if root is not None and _inside(folder, Path(root)):
+        folder = Path(tempfile.gettempdir()) / f"kumosql-mcp-cache-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
+    return folder
+
+
+def _inside(path: Path, folder: Path) -> bool:
+    try:
+        path.resolve().relative_to((folder if folder.is_dir() else folder.parent).resolve())
+        return True
+    except (ValueError, OSError):
+        return False
 
 
 def cache_file(directory: Path, root: Path) -> Path:
@@ -93,19 +114,36 @@ def load_cache(path: Path) -> tuple[str, dict] | None:
 
 
 def save_cache(path: Path, fingerprint: str, entries: dict) -> None:
-    """Replace the saved file atomically. The folder gets a ``.gitignore`` of ``*``, so it is never committed wherever it sits."""
+    """Replace the saved file atomically. The folder gets a ``.gitignore`` of ``*``, so it is never committed wherever it sits.
+
+    Safe for several servers on one project at once: each writes its own private temporary file and renames it over the
+    saved one, so a reader sees the old file or the new one, never half of either; the last writer wins and no lock exists
+    that a killed process could leave behind. Temporary files a killed process left are removed once they are a day old.
+    """
 
     path.parent.mkdir(parents=True, exist_ok=True)
     ignore = path.parent / ".gitignore"
     if not ignore.exists():
-        ignore.write_text("*\n", encoding="utf-8")
+        try:
+            ignore.write_text("*\n", encoding="utf-8")
+        except OSError:
+            pass  # another server wrote it at the same moment
     body = {"header": {"format": CACHE_NAME, "version": FORMAT, **_versions()}, "fingerprint": fingerprint, "entries": entries}
-    temp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
+    temp = Path(name)
     try:
-        temp.write_text(json.dumps(body, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(body, handle, separators=(",", ":"), allow_nan=False)
         os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
+    cutoff = time.time() - 86400
+    for old in path.parent.glob(".*.tmp"):
+        try:
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+        except OSError:
+            pass
 
 
 # ------------------------------------------------------------------ watching the project's files

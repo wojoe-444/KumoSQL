@@ -119,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
         "e.g. logs.events=insert_id. Repeatable. Answers show such a grain as declared, never as derived.",
     )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
-    parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: mcp-cache in the KumoSQL data folder, never the project)")
+    parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: the per-user cache folder, outside the project)")
     parser.add_argument("--no-cache", action="store_true", help="do not save or read the analysed index")
     parser.add_argument("--refresh-interval", type=float, default=0.0, metavar="SECONDS", help="look for edited project files at most this often (default 0: on every call)")
     parser.add_argument("--warm-wait", type=float, default=mcp_cache.DEFAULT_WAIT_SECONDS, metavar="SECONDS", help="how long a call waits for the index before answering 'index warming' (default %(default)s)")
@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     server = AgentServer(session)
     if loader is not None:
         # Build the index in the background so `initialize` answers at once; a question waits a little, then says "index warming".
-        cache = None if args.no_cache else mcp_cache.cache_file(args.cache_dir or mcp_cache.default_cache_dir(), root)
+        cache = None if args.no_cache else mcp_cache.cache_file(args.cache_dir or mcp_cache.default_cache_dir(root), root)
         extra = [args.source_schema] if args.source_schema else []
         skip = [args.cache_dir] if args.cache_dir else []
         index = mcp_cache.Index(
