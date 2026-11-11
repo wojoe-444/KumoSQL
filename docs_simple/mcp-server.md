@@ -129,6 +129,10 @@ Tables built by your own models get types too: KumoSQL works them out from each 
 
 Without the file, or for a column the file does not have, the answer does not pretend: it lists `types of schedule.batch_code unknown` under what was not checked, and if no comparison could be checked it does not claim that types were checked at all. If the file is out of date, refresh it; the server does not notice by itself.
 
+## File paths
+
+Every file the server names (a model's file, the file in a diff header, the page a column description came from, a file read outside the project) is written with forward slashes and relative to the project folder, on every system, for example `definitions/orders.sqlx`. On Windows that is not how the system itself writes it, but it is the only form a diff or a `folder=` filter understands. A test checks this by feeding the server Windows-style text; it is not a run on Windows, so the laptop-replica smoke test is still the real check. See the [reference](../docs/mcp-server.md#rules-every-answer-follows).
+
 ## Limits of the evidence
 
 - The formula search only finds copies that read the same column names, and it ignores which table a name came from. It searches each model's main query, not its extra before or after steps. Models it could not read are listed, not skipped silently. A link-table match "by name only" is a hint, not proof that the two columns mean the same thing.

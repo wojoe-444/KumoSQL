@@ -14,6 +14,7 @@ from collections import Counter
 
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
+from .paths import posix_path
 
 SORTS = ("name", "readers", "reads", "depth")
 INTEGERS = ("min_reads", "max_reads", "min_readers", "max_readers", "min_depth")
@@ -24,7 +25,7 @@ class Row:
     __slots__ = ("key", "kind", "tags", "path", "reads", "sources", "readers", "depth")
 
     def __init__(self, key: str, kind: str, tags: tuple, path: str | None, reads: int, sources: int, readers: int, depth: int) -> None:
-        self.key, self.kind, self.tags, self.path = key, kind, tags, path or ""
+        self.key, self.kind, self.tags, self.path = key, kind, tags, posix_path(path)
         self.reads, self.sources, self.readers, self.depth = reads, sources, readers, depth
 
     @property
@@ -112,7 +113,7 @@ def list_tables(session: Session, args: dict) -> Answer:
     rows = session._once("list_tables_rows", lambda: build_rows(session))
     kind = str(args.get("kind") or "").strip().casefold()
     tag = str(args.get("tag") or "").strip().casefold()
-    folder = str(args.get("folder") or "").strip().casefold()
+    folder = posix_path(str(args.get("folder") or "").strip()).casefold()  # paths are shown with /, so a pasted \ still matches
     word = str(args.get("name_contains") or "").strip().casefold()
     limits = {name: args[name] for name in INTEGERS if name in args}
     sort = args.get("sort", "name")

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .malloy_reader import read_malloy
+from .paths import relative_posix
 
 MAX_FILE = 1_000_000
 MAX_FILES = 500
@@ -44,7 +45,7 @@ def read_folder(folder: Path) -> list[MalloyKey]:
         try:
             if path.stat().st_size > MAX_FILE:
                 continue
-            found += keys_in(path.read_text(encoding="utf-8"), str(path.relative_to(folder)))
+            found += keys_in(path.read_text(encoding="utf-8"), relative_posix(path, folder))
         except (OSError, ValueError):
             continue
     return found

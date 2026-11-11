@@ -24,6 +24,7 @@ from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_compare import MAX_SECONDS, run_capped
 from .mcp_session import Session
 from .mcp_tools import need_table
+from .paths import posix_path
 
 MAX_TEXT = 100_000
 DEFAULT_SECONDS = 20
@@ -72,7 +73,7 @@ def clean_text(text: str, rules: tuple[str, ...]) -> dict:
 
 
 def unified(before: str, after: str, name: str) -> list[str]:
-    return list(difflib.unified_diff(before.splitlines(), after.splitlines(), f"a/{name}", f"b/{name}", n=1, lineterm=""))
+    return list(difflib.unified_diff(before.splitlines(), after.splitlines(), f"a/{posix_path(name)}", f"b/{posix_path(name)}", n=1, lineterm=""))
 
 
 def model_text(session: Session, key: str) -> tuple[str, str]:
@@ -84,10 +85,10 @@ def model_text(session: Session, key: str) -> tuple[str, str]:
     if not model.path or session.root is None:
         raise ToolError("this project's files are not available to read", ["Pass the query as sql=... instead."])
     root = Path(session.root).resolve()
-    path = (root / model.path).resolve()
+    path = (root / posix_path(model.path)).resolve()
     if not path.is_relative_to(root) or not path.is_file():
         raise ToolError(f"cannot read {clip(model.path, 80)} from the project folder", ["Pass the query as sql=... instead."])
-    return path.read_text(encoding="utf-8", errors="replace"), model.path
+    return path.read_text(encoding="utf-8", errors="replace"), posix_path(model.path)
 
 
 @tool(

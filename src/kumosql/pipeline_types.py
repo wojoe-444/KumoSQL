@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .identity import NodeIdentity
+from .paths import posix_path
 
 
 @dataclass(frozen=True, order=True)
@@ -191,6 +192,10 @@ class Model:
     # Compiled incremental tables: the query that runs after the first run, and its pre and post operations. The loaded
     # ``sql`` is the full-refresh query; these read tables and columns too.
     incremental_sql: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.path:
+            self.path = posix_path(self.path)  # shown to agents and in diffs: forward slashes on every platform
 
     @property
     def key(self) -> str:

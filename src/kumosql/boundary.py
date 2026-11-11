@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable
 
 from .mcp_answers import clip
+from .paths import posix_path
 from .pipeline_types import ColumnRef, Model, Target
 
 if TYPE_CHECKING:
@@ -75,8 +76,11 @@ class BoundaryError(ValueError):
 
 @dataclass(frozen=True)
 class SqlFile:
-    path: str  # as written in the file, relative to it
+    path: str  # as written in the file, relative to it; shown with forward slashes on every platform
     text: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "path", posix_path(self.path))
 
 
 @dataclass(frozen=True)
@@ -503,7 +507,7 @@ class Boundary:
         base = str(self.spec.base)
         for pattern in consumer.patterns:
             try:
-                names = sorted(name for name in glob.glob(pattern, root_dir=base, recursive=True) if (self.spec.base / name).is_file())
+                names = sorted(name for name in map(posix_path, glob.glob(pattern, root_dir=base, recursive=True)) if (self.spec.base / name).is_file())
             except (OSError, ValueError):
                 names = []
             if not names:

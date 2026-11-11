@@ -16,6 +16,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .paths import relative_posix
+
 MAX_FILE = 1_000_000
 MAX_FILES = 500
 _LINE = re.compile(r"^\s*(?:[-*+]\s+)?(?:\*\*|__)?\s*(?:primary|unique)\s+keys?\s*(?:\*\*|__)?\s*[:\-–]\s*(?:\*\*|__)?\s*(.+?)\s*$", re.I)
@@ -96,7 +98,7 @@ def read_folder(folder: Path) -> list[DocKey]:
         try:
             if path.stat().st_size > MAX_FILE:
                 continue
-            found += keys_in(path.read_text(encoding="utf-8"), path.stem, str(path.relative_to(folder)))
+            found += keys_in(path.read_text(encoding="utf-8"), path.stem, relative_posix(path, folder))
         except (OSError, ValueError):
             continue
     return found
