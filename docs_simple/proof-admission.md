@@ -15,7 +15,7 @@ Only a proof that passes both is added to the list, and only then does the quick
 
 ## Where the lists are kept
 
-The prover now has [its own repository](https://github.com/wojoe-444/Kumo_SQL_Prover). The benchmark counts live there, so the lists live there too, right next to the counts, and the quick test runs there on every pull request. The command that puts a proof through the two harder tests stays in KumoSQL, because the test machinery is here. You tell it where your copy of the prover repository is, and it stops with an error if you do not.
+The prover now has [its own repository](https://github.com/wojoe-444/Kumo_SQL_Prover). The benchmark counts live there, so the lists live there too, right next to the counts, and the quick test runs there on every pull request. The command that puts a proof through the two harder tests stays in KumoSQL, because the test machinery is here. You tell it where your copy of the prover repository is, and it stops with an error if you do not. For the two benchmarks whose query pairs are generated in the prover repository (QED and the mined Calcite tests), it also reads the pairs from that copy. For example, when a change there translates 32 more QED tests, the command checks the proofs of those 32 as well; reading KumoSQL's older copy of the pairs, it would never have seen them.
 
 That last part matters. For a few hours after the prover moved, the quick test in KumoSQL was looking for counts that were no longer there, found nothing to compare, and passed. A list with no count to compare against is now a failure, never a pass.
 

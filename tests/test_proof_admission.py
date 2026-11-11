@@ -67,6 +67,67 @@ def test_admit_refuses_a_prover_other_than_the_checkout(tmp_path, capsys):
     assert not list((root / "benchmarks" / "admitted").iterdir())
 
 
+def test_converted_pairs_are_read_from_the_named_prover_checkout(tmp_path, monkeypatch):
+    from recheck import calcite_family as F
+
+    root = tmp_path / "prover"
+    qed, mined = root / "tests" / "fixtures" / "qed", root / "tests" / "fixtures" / "calcite_mined"
+    qed.mkdir(parents=True)
+    mined.mkdir(parents=True)
+    row = {"sql_a": "SELECT 1", "sql_b": "SELECT 1"}
+    (qed / "qed_calcite_pairs.jsonl").write_text(json.dumps({"name": "onlyThere", "ddl": "", **row}) + "\n", encoding="utf-8")
+    (mined / "schemas.json").write_text(json.dumps({"s0": {"ddl": ""}}), encoding="utf-8")
+    (mined / "pairs.jsonl").write_text(json.dumps({"name": "minedThere", "schema_id": "s0", "new": True, **row}) + "\n", encoding="utf-8")
+
+    assert F.PROVER_ENV == A.PROVER_ENV
+    assert F.converted_fixtures({F.PROVER_ENV: str(root)}) == root / "tests" / "fixtures"
+    assert F.converted_fixtures({}) == F.FIXTURES
+    monkeypatch.setenv(F.PROVER_ENV, str(root))
+    assert [item["pair"] for item in F.Qed().items()] == ["onlyThere"]
+    assert [(item["pair"], item["held_out"]) for item in F.Mined().items()] == [("minedThere", True)]
+    monkeypatch.setenv(F.PROVER_ENV, str(tmp_path / "nowhere"))
+    with pytest.raises(FileNotFoundError):  # a named checkout is never replaced by this repository's copy
+        F.Qed().items()
+    monkeypatch.delenv(F.PROVER_ENV)
+    assert len(F.Qed().items()) > 300 and len(F.Mined().items()) > 400  # this repository's copy
+
+
+def test_admit_tells_the_adapters_which_checkout_it_was_given(tmp_path, monkeypatch, capsys):
+    import os
+
+    root = _checkout(tmp_path / "prover")
+    seen = []
+
+    class Demo:
+        def items(self):
+            seen.append(os.environ.get(A.PROVER_ENV))
+            return []
+
+    monkeypatch.setenv(A.PROVER_ENV, str(tmp_path / "elsewhere"))  # the option wins, and the test restores the variable
+    monkeypatch.setattr(A, "installed_prover_is", lambda root: (True, str(root)))
+    monkeypatch.setattr(A, "_adapters", lambda: {"demo": Demo()})
+
+    class InProcess:  # no fork from the test process
+        imap_unordered = staticmethod(map)
+
+        def get_context(self, _method):
+            return self
+
+        def Pool(self, *_args, **_kwargs):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    monkeypatch.setattr(A, "multiprocessing", InProcess())
+    assert A.main(["admit", "demo", "--prover", str(root), "--dry-run", "--jobs", "1"]) == 0
+    assert seen == [str(root.resolve())]
+    assert "demo: 0 kept" in capsys.readouterr().out
+
+
 def test_the_ledgers_are_not_kept_in_this_repository():
     here = Path(__file__).resolve().parent.parent / "benchmarks"
     assert not (here / "admitted").exists(), "the ledgers live in the prover repository, next to the results files they are compared with"

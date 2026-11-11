@@ -347,6 +347,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"unknown eval {name} (python tools/proof_recheck.py --list)")
         if args.baseline and read_ledger(name, folder):
             parser.error(f"{name} already has a ledger; --baseline only starts one")
+        os.environ[PROVER_ENV] = str(root)  # adapters that read pairs from the prover checkout read this one
         items = adapters[name].items()
         with multiprocessing.get_context("fork").Pool(args.jobs, maxtasksperchild=20) as pool:
             report = admit(name, items, options, folder, pool_map=pool.imap_unordered)
