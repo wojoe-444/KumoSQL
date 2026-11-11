@@ -431,6 +431,224 @@ def check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound
     assert body["unknown"] and body["next"]  # tables whose meanings are not tracked are named as a gap
 
 
+# ----------------------------------------------------- find_existing expression
+
+
+def _ladder_models() -> dict[str, str]:
+    """The same code-to-number CASE ladder in five models, written five ways; two of them differ in one value."""
+
+    def view(select):
+        return 'config { type: "view" }\n' + select + "\n"
+
+    src = ' FROM ${ref("src", "events")}'
+    return {
+        "events.sqlx": 'config { type: "declaration", schema: "src", name: "events" }\n',
+        "a.sqlx": view("SELECT id, CASE WHEN code = 'A26' THEN 26 WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 ELSE NULL END AS n" + src),
+        "b.sqlx": view("SELECT id, CASE e.code WHEN 'C1' THEN 1 WHEN 'B7' THEN 7 WHEN 'A26' THEN 26 END AS num FROM ${ref(\"src\", \"events\")} AS e"),
+        "c.sqlx": view("select id,\n   case\n     when e.code in ('B7') then 7\n     when ('A26' = e.code) then 26\n     when code = 'C1' then 1\n   end as parsed\n FROM ${ref(\"src\", \"events\")} e"),
+        "d.sqlx": view("SELECT id, CASE WHEN code = 'A26' THEN NULL WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END AS n" + src),
+        "e.sqlx": view("SELECT id, COALESCE(CASE code WHEN 'A26' THEN NULL WHEN 'B7' THEN 7 WHEN 'C1' THEN 1 END, 0) AS n2" + src),
+        "short.sqlx": view("SELECT id, CASE WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END AS n" + src),
+        "other.sqlx": view("SELECT id, CASE WHEN code = 'Z' THEN 1 END AS n" + src),
+    }
+
+
+@pytest.fixture(scope="module")
+def ladders(tmp_path_factory):
+    return mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path_factory.mktemp("ladders"), _ladder_models()))))
+
+
+LADDER = "CASE WHEN x.code = 'A26' THEN 26 WHEN x.code = 'B7' THEN 7 WHEN x.code = 'C1' THEN 1 END"
+
+
+def test_find_existing_expression_counts_copies_of_a_case_ladder_and_names_the_variants(ladders):
+    body, failed, used = ask(ladders, "find_existing", expression=LADDER)
+    assert not failed and used <= BOUND
+    assert body["counts"]["copies"] == 5 and body["counts"]["variants"] == 2 and body["counts"]["models"] == 5
+    assert body["answer"].startswith("5 copies, 2 variants in 5 models")
+    assert "'A26' maps to NULL" in body["answer"] or "'A26' maps to 26" in body["answer"]
+    # spelling, aliases, qualifiers and branch order do not make a new variant: three copies are one variant
+    by_size = sorted(body["variants"], key=lambda v: -v["copies"])
+    assert [v["copies"] for v in by_size] == [3, 2]
+    listed = {m.split(" ")[0] for v in body["variants"] for m in v["models"]}
+    assert listed == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e"}
+    assert {m.split(" ")[0] for m in by_size[0]["models"]} == {"p.ds.a", "p.ds.b", "p.ds.c"} and by_size[0]["same_as_yours"]
+    # the difference is named, against the closest variant, in both directions
+    assert "'A26' maps to NULL (26 in variant" in by_size[1]["differs"] and "'A26' maps to 26 (NULL in variant" in by_size[0]["differs"]
+    assert "(column n)" in json.dumps(body["variants"]) and "(column n2)" in json.dumps(body["variants"])  # where each one sits
+    assert body["next"] and body["unknown"]
+
+
+def test_find_existing_expression_reports_a_shorter_ladder_as_partial_not_equal(ladders):
+    body, _, _ = ask(ladders, "find_existing", expression=LADDER)
+    partial = body["partial"]
+    assert [p["kind"] for p in partial] == ["partial"] and partial[0]["models"] == ["p.ds.short (column n)"]
+    assert "lacks 'A26'" in partial[0]["differs"]
+    assert "p.ds.short" not in json.dumps(body["variants"])
+    # asked the other way round, the long ladders are 'extends'
+    body, _, _ = ask(ladders, "find_existing", expression="CASE WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END")
+    assert body["counts"]["copies"] == 1 and body["variants"][0]["models"] == ["p.ds.short (column n)"]
+    assert {p["kind"] for p in body["partial"]} == {"extends"} and body["counts"]["partial_or_related_copies"] == 5
+
+
+def test_find_existing_expression_treats_branch_order_as_meaningful_when_conditions_overlap(tmp_path):
+    def view(select):
+        return 'config { type: "view" }\nSELECT ' + select + ' AS band FROM ${ref("src", "t")}\n'
+
+    files = {
+        "t.sqlx": 'config { type: "declaration", schema: "src", name: "t" }\n',
+        "one.sqlx": view("CASE WHEN amount > 100 THEN 'big' WHEN amount > 10 THEN 'mid' ELSE 'small' END"),
+        "two.sqlx": view("CASE WHEN amount > 10 THEN 'mid' WHEN amount > 100 THEN 'big' ELSE 'small' END"),
+        "three.sqlx": view("case when amount>100 then 'big' when amount>10 then 'mid' else 'small' end"),
+    }
+    server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path, files))))
+    body, failed, _ = ask(server, "find_existing", expression="CASE WHEN amount > 100 THEN 'big' WHEN amount > 10 THEN 'mid' ELSE 'small' END")
+    assert not failed and body["counts"]["copies"] == 3 and body["counts"]["variants"] == 2
+    assert "branch order differs and it matters" in json.dumps(body)
+
+
+def test_find_existing_expression_finds_other_computations_in_where_joins_and_aggregates(tmp_path):
+    files = {
+        "t.sqlx": 'config { type: "declaration", schema: "src", name: "t" }\n',
+        "u.sqlx": 'config { type: "declaration", schema: "src", name: "u" }\n',
+        "f1.sqlx": 'config { type: "view" }\nSELECT SUM(IF(status = "paid", amount, 0)) AS paid FROM ${ref("src", "t")} GROUP BY region\n',
+        "f2.sqlx": 'config { type: "view" }\nSELECT region, SUM(IF(a.status = "refunded", a.amount, 0)) AS r, SUM(IF(a.status = "paid", a.amount, 0)) AS paid2 FROM ${ref("src", "t")} AS a GROUP BY region\n',
+        "f3.sqlx": 'config { type: "view" }\nSELECT 1 AS k FROM ${ref("src", "t")} AS a JOIN ${ref("src", "u")} AS b ON LOWER(a.email) = LOWER(b.email) WHERE SAFE_CAST(a.n AS INT64) > 5\n',
+        "f4.sqlx": 'config { type: "view" }\nSELECT 1 AS k FROM ${ref("src", "t")} WHERE SAFE_CAST(n AS INT64) > 7 AND LOWER(email) = LOWER(email)\n',
+    }
+    server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path, files))))
+    body, _, _ = ask(server, "find_existing", expression="IF(t.status = 'paid', t.amount, 0)")
+    assert body["counts"]["copies"] == 3 and body["counts"]["variants"] == 2  # two the same, one with 'refunded' instead of 'paid'
+    assert "literal 'refunded' ('paid' in variant 1)" in body["answer"] and [v["copies"] for v in body["variants"]] == [2, 1]
+    body, _, _ = ask(server, "find_existing", expression="SAFE_CAST(a.n AS INT64) > 5")
+    assert body["counts"]["copies"] == 2 and body["counts"]["variants"] == 2  # same expression, one literal differs
+    assert "literal 7 (5 in variant" in json.dumps(body) or "literal 5 (7 in variant" in json.dumps(body)
+    assert any("WHERE" in m for v in body["variants"] for m in v["models"])
+    body, _, _ = ask(server, "find_existing", expression="LOWER(x.email) = LOWER(y.email)")
+    assert body["counts"]["copies"] >= 1 and any("JOIN ON" in m for v in body["variants"] for m in v["models"])
+
+
+def test_find_existing_expression_says_when_nothing_matches_and_what_it_did_not_see(ladders):
+    body, failed, _ = ask(ladders, "find_existing", expression="CASE WHEN code = 'Q' THEN 1 WHEN code = 'R' THEN 2 END")
+    assert not failed and body["counts"]["copies"] == 0 and "variants" not in body and body["answer"].startswith("No model computes")
+    assert body["unknown"] and body["next"]
+
+
+def test_find_existing_expression_lists_models_it_could_not_read_as_unknown(tmp_path):
+    files = {"ok.sqlx": 'config { type: "view" }\nSELECT UPPER(TRIM(name)) AS n FROM ${ref("src", "t")}\n', "t.sqlx": 'config { type: "declaration", schema: "src", name: "t" }\n',
+             "bad.sqlx": 'config { type: "view" }\nSELECT FROM WHERE ((\n'}
+    server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path, files))))
+    body, failed, _ = ask(server, "find_existing", expression="UPPER(TRIM(name))")
+    assert not failed and body["counts"]["copies"] == 1 and body["counts"]["unreadable_models"] == 1
+    assert any("p.ds.bad" in u["what"] and "could not be read" in u["reason"] for u in body["unknown"])
+
+
+def test_find_existing_expression_refuses_what_it_cannot_search(ladders):
+    for bad in ("SELECT 1", "customer_id", "42", "CASE WHEN ((", "x" * 6000):
+        body, failed, _ = ask(ladders, "find_existing", expression=bad)
+        assert failed and body["error"] and body["next"], bad
+    assert ask(ladders, "find_existing", expression=LADDER, table="a")[1]
+    assert "expression" in ask(ladders, "find_existing")[0]["next"][0]
+
+
+def test_find_existing_expression_builds_its_index_once_per_session(tmp_path, monkeypatch):
+    from kumosql import expression_search
+
+    server = mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path, _ladder_models()))))
+    built = []
+    real = expression_search.build_index
+    monkeypatch.setattr(expression_search, "build_index", lambda pipeline: built.append(1) or real(pipeline))
+    for _ in range(3):
+        ask(server, "find_existing", expression=LADDER)
+    assert built == [1]
+
+
+def test_the_expression_index_is_plain_json_keyed_by_model_content_and_reused_when_a_model_is_unchanged(tmp_path):
+    from kumosql import expression_search as es
+
+    models = _ladder_models()
+    pipeline = load_sqlx_project(write_project(tmp_path / "one", models))
+    index = es.build_index(pipeline)
+    saved = json.loads(json.dumps(index.to_json()))  # plain data: it survives a JSON round trip
+    assert saved["format"] == es.FORMAT and set(saved["models"]) == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e", "p.ds.short", "p.ds.other"}
+    assert all(part["hash"] and part["rows"] for part in saved["models"].values())
+
+    # a new load of the same project reuses every saved part; the answers are the same
+    again = load_sqlx_project(write_project(tmp_path / "two", models))
+    built = []
+    real = es.model_part
+    es.model_part = lambda model, tree, memo=None: built.append(model.target.key) or real(model, tree, memo)
+    try:
+        reused = es.build_index(again, saved)
+        assert built == [] and reused.to_json() == saved
+        # one model changed: only that model is normalized again, and a saved part for another format is ignored
+        changed = dict(models, **{"d.sqlx": models["d.sqlx"].replace("THEN NULL", "THEN 27")})
+        edited = es.build_index(load_sqlx_project(write_project(tmp_path / "three", changed)), saved)
+        assert built == ["p.ds.d"] and edited.parts["p.ds.d"]["hash"] != saved["models"]["p.ds.d"]["hash"]
+        built.clear()
+        es.build_index(again, {"format": "older", "models": saved["models"]})
+        assert len(built) == 7
+    finally:
+        es.model_part = real
+    query = es.prepare(reused, LADDER)
+    assert [len(g.copies) for g in es.search(reused, query).variants] == [3, 2]
+
+
+# --------------------------------------------------- find_tables has_columns (link tables)
+
+
+LINKS = {
+    "orders_src.sqlx": 'config { type: "declaration", schema: "src", name: "orders" }\n',
+    "customers_src.sqlx": 'config { type: "declaration", schema: "src", name: "customers" }\n',
+    "orders.sqlx": 'config { type: "table" }\nSELECT order_id, customer_id, amount FROM ${ref("src", "orders")}\n',
+    "customers.sqlx": 'config { type: "table" }\nSELECT customer_id, name FROM ${ref("src", "customers")}\n',
+    "order_customer.sqlx": 'config { type: "view" }\nSELECT order_id AS ord, customer_id AS cust FROM ${ref("src", "orders")}\n',
+    "same_names.sqlx": 'config { type: "table" }\nSELECT 1 AS order_id, 2 AS customer_id\n',
+}
+SCHEMA = {"p.src.orders": {"order_id": "INT64", "customer_id": "INT64", "amount": "INT64"}, "p.src.customers": {"customer_id": "INT64", "name": "STRING"}}
+
+
+@pytest.fixture(scope="module")
+def links(tmp_path_factory):
+    root = write_project(tmp_path_factory.mktemp("links"), LINKS)
+    return mcp_server.AgentServer(Session(load_sqlx_project(root, source_schema=SCHEMA)))
+
+
+def test_find_tables_has_columns_finds_the_view_that_carries_both_keys(links):
+    body, failed, used = ask(links, "find_tables", has_columns=["order_id", "customer_id"])
+    assert not failed and used <= BOUND
+    tables = {c["table"]: c for c in body["candidates"]}
+    assert tables["p.ds.order_customer"]["kind"] == "view"  # a view over a table counts, and so do renamed keys
+    assert tables["p.ds.order_customer"]["matched"] == ["order_id: ord (meaning only: the column is renamed)", "customer_id: cust (meaning only: the column is renamed)"]
+    assert tables["p.ds.orders"]["matched"][0] == "order_id: order_id (name and meaning)"
+    assert "p.ds.customers" not in tables  # it has only one of the keys
+    assert "p.src.orders" in tables and body["counts"]["tables_with_all_keys"] == 4 and "is a view" in body["answer"]
+
+
+def test_find_tables_has_columns_says_which_matched_by_name_only(links):
+    body, _, _ = ask(links, "find_tables", has_columns=["order_id", "customer_id"])
+    same = next(c for c in body["candidates"] if c["table"] == "p.ds.same_names")
+    assert all("name only" in m for m in same["matched"])
+    assert any("name only" in u["reason"] for u in body["unknown"])
+    assert [c["table"] for c in body["candidates"]].index("p.ds.same_names") > [c["table"] for c in body["candidates"]].index("p.ds.orders")
+
+
+def test_find_tables_has_columns_pins_a_key_to_one_tables_column_and_filters_by_kind(links):
+    body, _, _ = ask(links, "find_tables", has_columns=["orders.order_id", "orders.customer_id"], kind="view")
+    assert [c["table"] for c in body["candidates"]] == ["p.ds.order_customer"]
+    body, _, _ = ask(links, "find_tables", has_columns=["orders.order_id", "customers.customer_id"], kind="view")  # the view does not carry customers' key
+    assert body["counts"]["tables_with_all_keys"] == 0
+    body, _, _ = ask(links, "find_tables", has_columns=["order_id", "no_such_key"])
+    assert body["counts"]["tables_with_all_keys"] == 0 and body["unknown"] and body["next"]
+
+
+def test_find_tables_has_columns_refuses_bad_arguments(links):
+    for bad in (["only_one"], "order_id,customer_id", [1, 2], ["a", "b", "c", "d", "e"]):
+        assert ask(links, "find_tables", has_columns=bad)[1], bad
+    assert ask(links, "find_tables", has_columns=["a", "b"], need="orders")[1]
+    assert ask(links, "find_tables")[1]
+
+
 # ------------------------------------------------------------ list_tables
 
 
@@ -907,7 +1125,9 @@ def test_the_tools_neither_write_files_nor_open_connections(tmp_path, monkeypatc
     server = mcp_server.AgentServer(Session(load_sqlx_project(project)))
     for name, arguments in [("describe_table", {"table": "totals"}), ("trace_column", {"table": "report", "column": "total"}),
                             ("impact", {"table": "raw", "column": "amount"}), ("find_existing", {"table": "totals"}),
-                            ("find_tables", {"need": "totals"}), ("compare_queries", {"left": "SELECT id FROM p.ds.raw", "right": "SELECT id FROM p.ds.raw WHERE TRUE"}),
+                            ("find_tables", {"need": "totals"}),
+                            ("find_existing", {"expression": "CASE WHEN id > 1 THEN 1 WHEN id > 2 THEN 2 END"}), ("find_tables", {"has_columns": ["id", "total"]}),
+                            ("compare_queries", {"left": "SELECT id FROM p.ds.raw", "right": "SELECT id FROM p.ds.raw WHERE TRUE"}),
                             ("check_query", {"sql": "SELECT id FROM p.ds.raw r JOIN p.ds.totals t USING (id)"}), ("profile_table", {"table": "totals"})]:
         assert not ask(server, name, **arguments)[1]
     assert sorted(str(p) for p in (tmp_path / "proj").rglob("*")) == before  # the project is untouched

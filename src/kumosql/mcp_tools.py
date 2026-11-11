@@ -516,10 +516,16 @@ def _impact_summary(change: str, label: str, effects: Counter, unknown: int, res
     "Find an existing table",
     "Does a table for this already exist, or one I can roll up? Compares what a table of the project (or a proposed query) "
     "means, at which grain and over which rows, with every other table. When nothing can be compared it says so in a few "
-    "lines and names what blocks the comparison.",
+    "lines and names what blocks the comparison. With expression=... it instead finds every model that computes a SQL "
+    "expression or CASE ladder, as copies grouped into variants with what differs.",
     {
         "table": {"type": "string", "description": "A table of the project to look for duplicates and roll-up sources of."},
         "sql": {"type": "string", "description": "Or a proposed SELECT query, written against the project's tables."},
+        "expression": {
+            "type": "string",
+            "description": "Or one SQL expression or CASE ladder: which models compute it, grouped into variants with what differs "
+            "(alias, qualifier, spacing and, where order cannot matter, branch order are ignored).",
+        },
     },
     required=(),
 )
@@ -529,8 +535,14 @@ def find_existing(session: Session, args: dict) -> Answer:
 
     pipeline = session.pipeline()
     table, sql = args.get("table"), args.get("sql")
+    if args.get("expression"):
+        if table or sql:
+            raise ToolError("give exactly one of table, sql and expression", ["expression: a SQL expression or CASE ladder to look for in every model."])
+        from .mcp_expression import find_expression
+
+        return find_expression(session, args)
     if bool(table) == bool(sql):
-        raise ToolError("give exactly one of table and sql", ["table: a table of the project; sql: a proposed query."])
+        raise ToolError("give exactly one of table, sql and expression", ["table: a table of the project; sql: a proposed query; expression: a SQL expression or CASE ladder."])
     if sql and len(sql) > 50_000:
         raise ToolError("the query is too long (50,000 characters at most)")
     roles = session.roles()

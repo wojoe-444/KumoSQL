@@ -90,7 +90,16 @@ def choose(server) -> dict[str, object]:
     widest = max(names, key=lambda k: (count(k, "columns"), k))
     with_nested = next((k for k in names if count(k, "meaning_unknown") and column_names(k)), most_read)
     reads_most = max(names, key=lambda k: (count(k, "reads"), k))
+    from kumosql.mcp_expression import expression_index
+
+    index = expression_index(server.session)
+    copied = max(
+        (group for group in index.exact.values() if group[0].text and "${" not in group[0].text),
+        key=lambda group: (len({o.model for o in group}), len(group[0].text), group[0].text),
+    )
+    widest_columns = column_names(widest)
     return {
+        "copied_expression": copied[0].text, "link_columns": [widest_columns[0], widest_columns[1]],
         "most_read": most_read, "mid_read": mid_read, "leaf": leaf, "incremental": incremental, "widest": widest,
         "nested": with_nested, "reads_most": reads_most,
         "most_read_column": column_names(most_read)[0], "mid_read_column": column_names(mid_read)[0], "leaf_column": column_names(leaf)[0],
@@ -126,6 +135,8 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Is a column nothing reads used anywhere?", ("impact",), lambda ask: ask("impact", table=c["leaf"], column=c["leaf_column"])),
         ("Does a table like the most-read one already exist?", ("find_existing",), lambda ask: ask("find_existing", table=c["most_read"])),
         ("Does a table for this draft query already exist?", ("find_existing",), lambda ask: ask("find_existing", sql=c["draft"])),
+        ("Is a computation that appears in several models copied, and do the copies differ?", ("find_existing",), lambda ask: ask("find_existing", expression=c["copied_expression"])),
+        ("Is there a table or view that carries two given columns together?", ("find_tables",), lambda ask: ask("find_tables", has_columns=c["link_columns"])),
         ("Is there a table that already holds the most-read table's subject?", ("find_tables",), lambda ask: ask("find_tables", need=c["most_read"].replace("_", " "))),
         ("Is there a table with a given column?", ("find_tables",), lambda ask: ask("find_tables", need=c["most_read"].replace("_", " "), column=c["most_read_column"])),
         ("What is in this project?", ("list_tables",), lambda ask: ask("list_tables")),
