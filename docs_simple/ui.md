@@ -39,7 +39,7 @@ To show a project in the graph, start with `--project path/to/project`, or conne
 
 Project files must have relative paths. Windows drive names, colons and paths that escape the temporary folder are refused. When loading a local project, KumoSQL skips linked files and directories and shows gaps for them. Keep the files you want analyzed inside the selected project.
 
-Saved project snapshots use checked JSON data. Old pickle snapshots are ignored, so reload the project once after upgrading. A restart can restore the saved model definitions without fetching Git or reading SQLX again; SQL analysis and lineage are rebuilt.
+Saved project snapshots use checked JSON data. Old pickle snapshots are ignored, so reload the project once after upgrading. A restart restores the saved model definitions without fetching Git or reading SQLX again, and the query graph is shown from a saved copy at once, however large the project is. The project is analysed again in the background while you look at it (the sidebar says it is building the graph), and then the fresh analysis takes over. Pages that need the analysis itself, and graphs for a saved scope or with job history loaded, still wait for it. The saved copy is for the last commit you looked at.
 
 The app remembers these choices on your computer. Its server listens on the local loopback address. Ordinary Workspace rewrites run locally; explicitly requested BigQuery, git, and Dataform features contact those services.
 

@@ -59,6 +59,8 @@ _CACHE_VERSION = "9"  # 9: models carry logical, disabled, has_output, increment
 _CACHE_KEEP = 12
 _SNAPSHOT_KEEP = 3
 _ANALYSIS: dict = {}  # id(pipeline) -> {"state", "stage", "started", "finished"}
+_GRAPH_SAVED: "OrderedDict[str, dict]" = OrderedDict()  # content key -> the analysis behind the unscoped graph, last computed or saved
+_GRAPH_KEEP = 3
 
 
 def _share_row_filters(rows: list[dict]) -> tuple[list[dict], dict[str, list[dict]]]:
@@ -382,9 +384,10 @@ def forget_project() -> None:
     with _LOCK:
         _LOADED = None
         _PROJECT_CACHE.clear()
+        _GRAPH_SAVED.clear()
     from . import state
 
-    for name in ("analysis-cache", "parse-cache"):
+    for name in ("analysis-cache", "parse-cache", "graph-cache"):
         folder = state.data_dir() / name
         if folder.is_dir():
             for item in folder.glob("*"):
@@ -734,6 +737,17 @@ def graph_payload(
 
     observed_reads = list(observed_reads)
     plan = _plan(scope_name, observed_reads)
+    inputs = _graph_inputs(pipeline, observed_reads, plan)
+    return _graph_from_inputs(pipeline, inputs, plan)
+
+
+def _graph_inputs(pipeline: Pipeline, observed_reads: list, plan) -> dict:
+    """The slow part of the graph payload: the pipeline analysis (graph, completeness, coverage, lineage, columns).
+
+    Plain JSON, so the unscoped copy without job history can be saved by commit and shown after a restart while
+    the project is analysed again (see :func:`_saved_graph`).
+    """
+
     with stage("graph report", models=len(pipeline.models)):
         # The duplicate searches are the slowest part and the graph does not use them.
         report = pipeline.report(
@@ -742,13 +756,20 @@ def graph_payload(
             observed_scope=plan.jobs if plan else None,
             include_duplicates=False,
         )
-    graph = report.get("graph") or {"nodes": [], "edges": []}
-    completeness = report["completeness"]
     with stage("lineage"):
         lineage = pipeline.lineage_report()
     if plan and plan.models is not None:
         keep = pipeline.scope_keys(plan.models)
         lineage = [row for row in lineage if row["node"] in keep]
+    return {"graph": report.get("graph") or {"nodes": [], "edges": []}, "completeness": report["completeness"],
+            "coverage": dict(report["coverage"] or {}), "lineage": lineage,
+            "outputs": {key: list(pipeline.output_columns(key)) for key in pipeline.models}}
+
+
+def _graph_from_inputs(pipeline: Pipeline, inputs: dict, plan) -> dict:
+    """The ``/api/graph`` payload from :func:`_graph_inputs`; what depends on settings is read live."""
+
+    graph, completeness, lineage = inputs["graph"], inputs["completeness"], inputs["lineage"]
     lineage, model_filters = _share_row_filters(lineage)
 
     columns: dict[str, list[str]] = {}
@@ -758,8 +779,8 @@ def graph_payload(
         if column not in seen:
             seen.append(column)
 
-    for key in pipeline.models:
-        for column in pipeline.output_columns(key):
+    for key, names in inputs["outputs"].items():
+        for column in names:
             add_column(key, column)
     for row in lineage:
         add_column(row["node"], row["column"])
@@ -806,7 +827,7 @@ def graph_payload(
         }
         for edge in graph["edges"]
     ]
-    coverage = dict(report["coverage"] or {})
+    coverage = dict(inputs["coverage"])
     coverage.setdefault("complete", completeness["complete"])
     return {
         "source": source_info(),
@@ -831,6 +852,109 @@ def graph_payload(
     }
 
 
+def _graph_cache_file(key: str):
+    """Where the analysis behind the unscoped graph of ``key`` is saved (None when it cannot be)."""
+
+    from . import state
+
+    try:
+        import sqlglot
+
+        from . import __version__, lineage_limits, schema_fetch
+        tag = hashlib.sha256(f"{_CACHE_VERSION}|{__version__}|{sqlglot.__version__}|{lineage_limits.cache_tag()}|{schema_fetch.cache_tag()}|graph|{key}".encode()).hexdigest()[:32]
+        return state.data_path("graph-cache", f"{tag}.json")
+    except OSError:
+        return None
+
+
+def _remember_graph(key: str, inputs: dict) -> None:
+    with _LOCK:
+        _GRAPH_SAVED[key] = inputs
+        _GRAPH_SAVED.move_to_end(key)
+        while len(_GRAPH_SAVED) > _GRAPH_KEEP:
+            _GRAPH_SAVED.popitem(last=False)
+
+
+def _save_graph(key: str, inputs: dict) -> None:
+    path = _graph_cache_file(key)
+    if path is None:
+        return
+    try:
+        from .storage import atomic_json
+
+        atomic_json(path, {"content_key": key, "inputs": inputs})
+        for old in sorted(path.parent.glob("*.json"), key=lambda f: f.stat().st_mtime, reverse=True)[_GRAPH_KEEP:]:
+            old.unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001 - a saved copy is an optimisation; never fail a graph over it
+        pass
+
+
+def _saved_graph(pipeline: Pipeline) -> dict | None:
+    """The analysis behind the unscoped graph as last computed for this commit, while ``pipeline`` has not been analysed.
+
+    The saved parse restores the models only; analysing them again (reading every model and tracing every column)
+    takes minutes on a large project, so after a restart the graph is shown from this copy while the analysis runs
+    in the background (:func:`_refresh_graph`). ``None`` once the pipeline has been analysed, and when nothing was saved.
+    """
+
+    key = getattr(pipeline, "content_key", None)
+    if not key or getattr(pipeline, "_graph_state", "") in ("fresh", "failed"):
+        return None
+    with _LOCK:
+        inputs = _GRAPH_SAVED.get(key)
+    if inputs is not None:
+        return inputs
+    inputs = _load_saved_graph(key)
+    if inputs is not None:
+        _remember_graph(key, inputs)
+    return inputs
+
+
+def _load_saved_graph(key: str) -> dict | None:
+    path = _graph_cache_file(key)
+    if path is None or not path.is_file():
+        return None
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        inputs = saved["inputs"]
+        if saved["content_key"] != key or not {"graph", "completeness", "coverage", "lineage", "outputs"} <= set(inputs):
+            return None
+    except Exception:  # noqa: BLE001 - a damaged or older copy is just a miss
+        return None
+    return inputs
+
+
+def _analyse_graph(pipeline: Pipeline) -> dict:
+    """Analyse the unscoped graph of ``pipeline`` now, and keep the result by commit."""
+
+    inputs = _graph_inputs(pipeline, [], None)
+    pipeline._graph_state = "fresh"
+    key = getattr(pipeline, "content_key", None)
+    if key:
+        _remember_graph(key, inputs)
+        _save_graph(key, inputs)
+    return inputs
+
+
+def _refresh_graph(pipeline: Pipeline) -> None:
+    """Analyse ``pipeline`` in a background thread (once), while the saved copy is shown."""
+
+    with _LOCK:
+        if getattr(pipeline, "_graph_state", "") == "refreshing":
+            return
+        pipeline._graph_state = "refreshing"
+
+    def run() -> None:
+        try:
+            with activity("Building graph"), stage("graph refresh"):
+                _analyse_graph(pipeline)
+        except Exception as exc:  # noqa: BLE001 - the next request analyses it itself and reports the error
+            pipeline._graph_state = "failed"
+            console.error("graph refresh failed (the next request analyses the project itself)", exc, code="KS-GRAPH-BUILD")
+
+    threading.Thread(target=run, name="kumosql-graph-refresh", daemon=True).start()
+
+
 def graph_or_empty(scope_name: str | None = None) -> dict:
     """The graph of the loaded project, or the empty state when nothing is loaded."""
 
@@ -838,15 +962,25 @@ def graph_or_empty(scope_name: str | None = None) -> dict:
     if current is None:
         return empty_payload(
             "project", "Load a Dataform project to see its query graph.", scope_name)
-    with activity("Building graph"), stage("graph payload"):
-        payload = graph_payload(current["pipeline"], current["label"], current["observed_reads"], scope_name)
-    models = current["pipeline"].models
+    pipeline = current["pipeline"]
+    saved = _saved_graph(pipeline) if not scope_name and not current["observed_reads"] else None
+    if saved is not None:
+        _refresh_graph(pipeline)
+        with stage("graph payload from the saved copy"):
+            payload = _graph_from_inputs(pipeline, saved, None)
+    elif not scope_name and not current["observed_reads"]:
+        with activity("Building graph"), stage("graph payload"):
+            payload = _graph_from_inputs(pipeline, _analyse_graph(pipeline), None)
+    else:
+        with activity("Building graph"), stage("graph payload"):
+            payload = graph_payload(pipeline, current["label"], current["observed_reads"], scope_name)
+    models = pipeline.models
     for node in payload.get("nodes", []):  # Dataform ``tags`` from each action's config block
         node["dataform_tags"] = sorted({tag for tag in getattr(models.get(node["id"]), "tags", ()) or () if isinstance(tag, str)})
     try:  # production schedules come from saved Dataform data only; never block or fail the graph
         from .workflow_configs import annotate
 
-        annotate(payload, current["pipeline"], current.get("remote"))
+        annotate(payload, pipeline, current.get("remote"))
     except Exception:  # noqa: BLE001
         pass
     return payload
