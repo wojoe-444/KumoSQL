@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from . import column_meaning
 from . import boundary
 from . import mcp_cost_access
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
@@ -263,6 +264,7 @@ def describe_table(session: Session, args: dict) -> Answer:
         answer.unknown("value statistics", "no saved data profile; `python -m kumosql profile-table` reads the table to make one")
     mcp_cost_access.describe_fields(session, key, answer)  # cached full-scan size and cached access denial
 
+    column_meaning.describe_notes(answer, session, key, outputs)  # declared meaning, inherited; zones unknown
     answer.summary = _card_summary(key, model.kind, grain, len(columns), len(unknown_columns), len(reads), len(readers))
     if unknown_columns:
         answer.next(f"trace_column table={key} column={unknown_columns[0][0]} shows how far its source can be followed.")
@@ -316,6 +318,7 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
     answer.counts = {"columns": len(columns), "read_by": len(readers)}
     answer.add_list("columns", columns[offset:][:PAGE], total=len(columns), offset=offset, primary=True)
     answer.add_list("read_by", readers[:PAGE], total=len(readers))
+    column_meaning.describe_notes(answer, session, key, list(pipeline.source_schema.get(key, {})))
     from . import join_profile_store as joins
 
     claim = session.grain_claim(key)
@@ -390,6 +393,7 @@ def trace_column(session: Session, args: dict) -> Answer:
     )
     answer.add_list("via_models", tables[:PAGE], total=len(tables))
 
+    column_meaning.trace_notes(answer, session, ref)
     if record is not None and record.status == "unknown":
         answer.unknown(f"how {ref} is built", explain(record.reason))
     group_unknown(answer, [(str(item), reason.split(":")[0]) for item, reason in trace.unknown if item != ref], "column on the path")
@@ -415,6 +419,7 @@ def _source_column(session: Session, ref: ColumnRef) -> Answer:
     answer.fields["column"] = str(ref)
     answer.fields["computed_by"] = "source column"
     answer.counts = {"read_by_models": len(readers)}
+    column_meaning.trace_notes(answer, session, ref)
     answer.add_list("read_by", readers[:PAGE], total=len(readers), primary=True)
     answer.next(f"impact table={ref.table} column={ref.dotted} lists what depends on it.")
     boundary.annotate_trace(session, [ref], answer)

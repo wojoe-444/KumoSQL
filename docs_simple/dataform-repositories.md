@@ -65,6 +65,7 @@ More of the same, from the later rounds of the audit:
 - Windows line endings in `---` separators, and a stray `${` inside a comment, no longer break loading.
 
 - A table made in JavaScript, such as `publish("report").query(ctx => \`SELECT 1 AS id\`)`, is read like a `.sqlx` file when its name and query are written out. Its columns then show up in lineage, and an unused column is found. A query built by code is not guessed.
+- The column descriptions you write in a table's `columns: { ... }` block are kept, and the agent server shows them for every column that is just a copy (or a rename, or a cast) of the documented one. See [column meaning](mcp-server.md#column-meaning).
 - A config key that Dataform would refuse, such as `bigqueryPolicy`, or a `uniqueKey` on a plain table, is reported. The model still loads.
 - A condition such as `WHERE ${when(incremental(), `ts >= checkpoint AND`)} ts >= x`, where the part inside `when()` ends with `AND`, is now read as one piece with that `AND`, so the statement parses instead of being read from its words alone. A rewrite that would separate the two is refused instead of guessed.
 - Project variables and `includes` inside the SQL itself stay as placeholders. A variable can be overridden when Dataform compiles, so its value in the settings file is only a default, and KumoSQL will not prove two queries equal on a guess. (A table's name taken from a variable does use the settings value, since nothing else can name it.)

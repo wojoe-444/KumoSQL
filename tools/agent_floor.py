@@ -148,6 +148,7 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Can I plan the profile of a join of two tables (cardinality, match rates) without touching BigQuery?", ("join_profile",),
          lambda ask: ask("join_profile", left=c["most_read"], right=c["widest"], keys=c["most_read_column"], split_by=c["most_read_column"])),
         ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
+        ("Is my draft's use of today's date safe from a silent UTC default?", ("check_query",), lambda ask: ask("check_query", sql="SELECT CURRENT_DATE() AS today")),
         ("Do the columns my draft compares have types that can be compared?", ("check_query",), lambda ask: ask("check_query", sql=c["typed_draft"])),
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
         ("Does my draft use a word BigQuery reserves as an alias?", ("check_query",),

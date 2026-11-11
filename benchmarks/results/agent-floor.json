@@ -1,9 +1,9 @@
 {
   "suite": "Agent-facing server: analyst questions",
   "order": 900,
-  "size": 39,
-  "score": "39/39 within bounds, largest answer 1,989 B",
-  "metric": "Standard analyst questions asked of the agent-facing server on the security-analytics project (106 models), each inside 2,000 bytes per answer, 3 calls per task and 1000 ms per call after the load. Median task 1,034 B in total, against 141,354 B for every .sqlx file and 894,869 B for the pipeline-report JSON.",
+  "size": 40,
+  "score": "40/40 within bounds, largest answer 1,995 B",
+  "metric": "Standard analyst questions asked of the agent-facing server on the security-analytics project (106 models), each inside 2,000 bytes per answer, 3 calls per task and 1000 ms per call after the load. Median task 1,028 B in total, against 141,354 B for every .sqlx file and 894,869 B for the pipeline-report JSON.",
   "evidence": "executed",
   "correctness": "Measures size, calls and latency, not whether an answer is right; the correctness tests are in tests/test_mcp_server.py. An answer that cannot decide says so (unknown with a reason) and still counts as inside its bound.",
   "coverage": {},
@@ -18,6 +18,6 @@
     "duckdb": "1.5.6",
     "z3-solver": "5.4.0.0",
     "sqlfluff": "4.5.0",
-    "commit": "7eb15158+changes"
+    "commit": "6a2dab5c+changes"
   }
 }

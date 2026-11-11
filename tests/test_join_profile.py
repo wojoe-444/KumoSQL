@@ -158,9 +158,9 @@ def fake_warehouse(monkeypatch, estimate=300_000, cap=1_000_000):
     return ran
 
 
-def test_join_profile_without_a_connection_returns_the_plan_and_sends_nothing(tmp_path):
+def test_join_profile_without_a_connection_returns_the_plan_and_sends_nothing(tmp_path, monkeypatch):
     server, _ = server_for(tmp_path)
-    block_network(pytest.MonkeyPatch())
+    block_network(monkeypatch)  # undone at the end of the test: a bare MonkeyPatch() left sockets blocked for later tests in the worker
     body, failed, used = ask(server, "join_profile", left="orders", right="p.wh.order_events", keys="order_id", split_by="order_week")
     assert not failed and used <= BOUND and body["mode"] == "plan_only" and "nothing was sent" in body["answer"]
     assert body["left"] == "p.ds.orders" and body["right"] == "p.wh.order_events" and "cardinality" in body["returns"]
