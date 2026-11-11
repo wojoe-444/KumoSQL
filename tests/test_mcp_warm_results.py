@@ -577,9 +577,9 @@ def test_servers_started_at_once_on_one_project_all_answer_and_leave_valid_files
     for _round in range(2):  # the second round starts from the files the first one left
         processes = [subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(3)]
         outputs = [p.communicate(request, timeout=180) for p in processes]
-        for process, (out, _err) in zip(processes, outputs):
-            assert process.returncode == 0
-            assert json.loads(json.loads(out)["result"]["content"][0]["text"])["table"] == "p.ds.node_3"
+        for process, (out, err) in zip(processes, outputs):
+            assert process.returncode == 0, err[-2000:]
+            assert json.loads(json.loads(out)["result"]["content"][0]["text"])["table"] == "p.ds.node_3", out[-2000:]
         assert mcp_cache.load_session(mcp_cache.session_file(mcp_cache.cache_file(cache, project))) is not None
         assert mcp_cache.load_cache(mcp_cache.cache_file(cache, project)) is not None
     assert not [p for p in cache.iterdir() if p.name.endswith(".tmp")]

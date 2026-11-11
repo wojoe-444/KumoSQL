@@ -434,8 +434,10 @@ class Index:
                 if swap:
                     self._pending = target
                 self.stage = ""
+                # logged before the build counts as over: the thread that answers may end the process the moment it is, and
+                # a daemon thread writing to a closed stderr at interpreter exit can abort the process
+                self._log(f"index ready: {traced} models analysed, {reused} replayed from the saved index")
                 self._idle.set()
-            self._log(f"index ready: {traced} models analysed, {reused} replayed from the saved index")
 
     def _set_stage(self, stage: str) -> None:
         self.stage = stage
