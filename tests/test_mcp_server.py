@@ -688,7 +688,9 @@ def check_check_query_and_profile_table_answers_fit_the_bound_on_the_big_project
         sizes.append(used)
     assert max(sizes) <= BOUND
     body, _, used = ask(big, "check_query", sql="SELECT a.day FROM csa.csa_3_11_intermediary_stats a JOIN csa.csa_1_30_summary_daily b ON a.day = b.day")
-    assert used <= BOUND and body["checked"] == ["types", "ties", "fan_out"]
+    # the project stores no column types and nothing here fixes them: the type check says so instead of claiming a pass
+    assert used <= BOUND and body["checked"] == ["ties", "fan_out"]
+    assert any(item["what"] == "types of csa_3_11_intermediary_stats.day unknown" for item in body["unknown"])
     [found] = [item for item in body["findings"] if item["check"] == "fan_out"]
     assert "one row per (day, ip, user, user_agent)" in found["what"] and "ip, user, user_agent are not matched" in found["what"]
 

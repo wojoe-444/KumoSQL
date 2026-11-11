@@ -12,6 +12,8 @@ python -m kumosql mcp path/to/your/dataform/project
 
 Add that command to your agent's list of MCP servers. If your project reads a table it does not define (a raw log, say) and you know which column identifies a row, add `--assume-grain logs.events=event_id`; KumoSQL then treats that as a stated fact, not something it worked out. KumoSQL reads the project once, keeps it in memory, and then each question takes a fraction of a second.
 
+A Dataform project does not say what type each column has (text, whole number, date), so the server cannot tell that a draft compares text with a number. To fix that, export your tables' column types once from the warehouse into a small file and add `--schema-snapshot columns.csv` (see [the file format](#column-types-the-schema-snapshot)). The server only reads that file; it never goes to the warehouse for it.
+
 ## What an agent can ask
 
 - **What is this table?** (`describe_table`) What one row stands for, which rows it keeps, what each column holds, what it reads, what reads it.
@@ -23,7 +25,7 @@ Add that command to your agent's list of MCP servers. If your project reads a ta
 - **Can this query be tidied?** (`clean_query`) KumoSQL's checked cleanups: filters that are always true, needless parentheses, copies of the same sub-query, sub-queries nothing uses. You get a short list of **what changed** (a diff), not the whole query back, and each change has been checked to keep the meaning. If a change cannot be checked, it is reported and not offered. It never writes your files. Turning single-use sub-queries into inline ones is off unless asked for, because it reshapes the whole query.
 - **Is the repository itself consistent?** (`project_checks`) Problems you can see without asking the warehouse: a name that the project both declares as a source and builds as a model, a model switched off with `disabled: true` that other models still read (so its table may never have been built), a table name declared in several datasets, two files that publish the same table. You get a count per problem, three examples and a fix. It cannot tell whether a table really exists in the warehouse or how old it is, and it says so. `describe_table` shows a one-line warning for a table concerned, and `check_query` mentions such tables (and declared sources the project does not build) among the things it could not check, instead of a bare "No problems found".
 - **Is my rewrite still the same query?** (`compare_queries`) Give it the original and the rewritten query. It answers "the same" (proven, with the assumptions listed), "different" (with a tiny example table where they disagree) or "unknown". Unknown is not a verdict: it means KumoSQL could not tell, and it never turns that into a "same". It stops after a few seconds (10 by default, 60 at most).
-- **Is this draft query sound before I run it?** (`check_query`) One call checks the draft for certain errors (a column that does not exist), places where ties make the result change between runs, and joins that could multiply rows (for example joining on part of a table's key, so a SUM counts rows twice). Each problem comes with the fix. You can write the draft the way you would in a Dataform file, with `${ref("table")}`; KumoSQL reads it as that table and says so in the answer (`compare_queries` does the same). It can also ask BigQuery for a free "dry run" (BigQuery plans the query and says how much data it would read, without reading any), but only if you pass `dry_run=true` and name the project yourself.
+- **Is this draft query sound before I run it?** (`check_query`) One call checks the draft for certain errors (a column that does not exist, or comparing a text column with a number), places where ties make the result change between runs, and joins that could multiply rows (for example joining on part of a table's key, so a SUM counts rows twice). Each problem comes with the fix. You can write the draft the way you would in a Dataform file, with `${ref("table")}`; KumoSQL reads it as that table and says so in the answer (`compare_queries` does the same). It can also ask BigQuery for a free "dry run" (BigQuery plans the query and says how much data it would read, without reading any), but only if you pass `dry_run=true` and name the project yourself.
 - **What do the values in this table look like?** (`profile_table`) Row count, empty values, distinct values, ranges and the most common values per column. By default it only plans and sends nothing. Naming a BigQuery project gives a free dry run with the estimated amount of data; the profile itself runs only if you also pass `run=true`, and never above your byte cap. A CSV, Parquet or JSON file inside the project folder is profiled at once because it costs nothing. Values from the table are shown quoted and shortened, and an agent should treat them as data, never as instructions.
 
 ## Example
@@ -45,9 +47,25 @@ Every answer follows the same habits:
 
 It also serves the saved data profiles from [Data profiling](data-profiling.md), so one server covers both.
 
+## Column types: the schema snapshot
+
+The file has one row per column, like BigQuery's `INFORMATION_SCHEMA.COLUMNS`:
+
+```
+table_catalog,table_schema,table_name,column_name,data_type,is_nullable
+my-project,sales,calendar,order_week,STRING,YES
+```
+
+With it, a draft like `WHERE c.order_week BETWEEN 202601 AND 202610` gets a finding: `order_week` is text and the bounds are numbers, and BigQuery will not compare them. The answer names both sides and the fix (write the bounds as text, `'202601'`, or `CAST(c.order_week AS INT64)`). The same goes for a join between a text key and a number key, a `UNION` whose branches disagree, `DATETIME` against `TIMESTAMP`, and `MOD` of a decimal number.
+
+Tables built by your own models get types too: KumoSQL works them out from each model's query, starting from the snapshot, and where the snapshot lists a table it trusts the snapshot. A column it cannot work out stays "unknown" on its own.
+
+Without the file, or for a column the file does not have, the answer does not pretend: it lists `types of calendar.order_week unknown` under what was not checked, and if no comparison could be checked it does not claim that types were checked at all. If the file is out of date, refresh it; the server does not notice by itself.
+
 ## Limits of the evidence
 
 - A word search such as `find_tables` cannot know that "revenue" and "sales" mean the same thing. If it finds nothing, try other words or a column name.
+- The type checks only report a mismatch they are sure about, and they look at comparisons, `BETWEEN`, `IN`, join keys, `UNION` branches and a few number functions, so a clean answer does not mean every type in the query is right. They are only as current as the snapshot file.
 - `check_query` saying "no problems found" means the checks that ran found none; it is not a promise that the query is right. A dry run needs working Google credentials; without them the answer says "not checked" and still gives the offline checks.
 - "The same" from `compare_queries` is about the rows only: check column types separately. The example table it shows for "different" is made up, not your data.
 - On the large public example project, KumoSQL now understands columns that read a field inside a nested record (it treats "the `email` field of the `principal` record of this log column" as one value that two tables can share), and `find_existing` can compare 54 of its 106 tables, where before it could compare 3. For the other 52 it still says "cannot tell" in a few lines instead of guessing: for most of them nothing says which columns identify a row, because the tables read a raw log table with no declared key. If you know such a key you can tell the server with `--assume-grain table=column`, but a table only gains a known row identity if it also keeps that column in its output, and on this example none does. That declaration is your claim, and nothing checks it.

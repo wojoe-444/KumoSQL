@@ -18,6 +18,7 @@ from . import data_profile_store as store
 from .pipeline import Pipeline
 from .pipeline_loading import load_compiled_graph, load_sqlx_project
 from .resilience import PipelineLoadError, parse_json_or_raise
+from .schema_snapshot import SchemaSnapshot, SchemaSnapshotError, load_schema_snapshot
 
 
 def load_project(root: Path, source_schema: Path | None = None) -> Pipeline:
@@ -55,8 +56,13 @@ class Session:
         profiles: Path | None = None,
         assume_grain: Mapping[str, Sequence[str]] | None = None,
         root: Path | None = None,
+        schema_snapshot: Path | SchemaSnapshot | None = None,
     ) -> None:
         self._assume_grain = dict(assume_grain or {})
+        #: a file of column types (``--schema-snapshot``) or an already loaded snapshot; read on first use, never fetched
+        self._snapshot_source = schema_snapshot
+        #: why the snapshot could not be read, when it could not
+        self.snapshot_error: str | None = None
         self._pipeline = pipeline
         #: the project folder; local files a tool is asked to read must sit inside it (the working folder when unknown)
         self.root = root
@@ -101,6 +107,7 @@ class Session:
             self.records()
             self.profiles()
             self.roles()
+            self.column_types()
         except Exception as exc:  # noqa: BLE001 - the first question computes it again and reports what failed
             print(f"kumosql mcp: warm-up stopped ({type(exc).__name__})", file=sys.stderr)
 
@@ -151,6 +158,35 @@ class Session:
                     continue
             found[key] = tuple(columns)
         return found or None
+
+    def schema_snapshot(self) -> SchemaSnapshot | None:
+        """The schema snapshot the server was started with (``--schema-snapshot``), read once; ``None`` when there is none.
+
+        A file that cannot be read gives ``None`` and sets ``snapshot_error``: checks that need types then say the snapshot
+        is unreadable instead of passing.
+        """
+
+        if self._snapshot_source is None:
+            return None
+        return self._once("schema_snapshot", self._read_snapshot)
+
+    def _read_snapshot(self) -> SchemaSnapshot | None:
+        source = self._snapshot_source
+        if isinstance(source, SchemaSnapshot):
+            return source
+        try:
+            return load_schema_snapshot(source)
+        except SchemaSnapshotError as exc:
+            self.snapshot_error = str(exc)
+            return None
+
+    def column_types(self):
+        """The type of every column of every table of the project, computed once (:mod:`kumosql.project_types`):
+        from the schema snapshot or the source declarations, carried through the models in dependency order."""
+
+        from . import project_types
+
+        return self._once("column_types", lambda: project_types.build(self))
 
     def roles(self) -> dict:
         from .table_roles import infer_roles

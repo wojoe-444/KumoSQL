@@ -34,7 +34,7 @@ Numbers that mix types (is `1 + 2.5` an integer or a decimal?), literals like `N
 - It does not run queries, read data or call BigQuery.
 - It is not a complete validator: a query it does not complain about can still fail in BigQuery.
 - Some parts of the language are left unknown on purpose: graph queries, protocol buffers, maps and a few uncommon number types.
-- Nothing else in KumoSQL uses it yet. It is a building block for later features such as checking schema changes more precisely.
+- Only the agent server's `check_query` uses it so far: with the column types of your tables it spots comparisons such as text against a number (see [the agent server](mcp-server.md)). It is also a building block for later features such as checking schema changes more precisely.
 
 ## How we know it is right
 

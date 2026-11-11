@@ -28,6 +28,7 @@ from pathlib import Path
 
 from . import mcp_answers, profile_mcp
 from .mcp_session import Session, load_project, parse_assumed_grain
+from .schema_snapshot import SchemaSnapshotError, load_schema_snapshot
 
 #: modules that register tools; each workstream adds its own here
 TOOL_MODULES = ("kumosql.mcp_tools", "kumosql.mcp_find", "kumosql.mcp_compare", "kumosql.mcp_preflight", "kumosql.mcp_profile", "kumosql.mcp_list", "kumosql.mcp_clean", "kumosql.project_checks")
@@ -112,6 +113,15 @@ def main(argv: list[str] | None = None) -> int:
         help="Declare which columns identify a row of a table the project does not define (or cannot derive), "
         "e.g. logs.events=insert_id. Repeatable. Answers show such a grain as declared, never as derived.",
     )
+    parser.add_argument(
+        "--schema-snapshot",
+        type=Path,
+        metavar="FILE",
+        help="Column types of the project's tables, one row per column in INFORMATION_SCHEMA.COLUMNS shape "
+        "(table_catalog,table_schema,table_name,column_name,data_type,is_nullable; CSV or JSON lines). "
+        "Export it once from the warehouse and refresh it when tables change; the server only reads the file. "
+        "check_query uses it to compare column types and carries them through the models.",
+    )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
     args = parser.parse_args(argv)
     if args.root and args.git:
@@ -130,12 +140,19 @@ def main(argv: list[str] | None = None) -> int:
         assumed = parse_assumed_grain(args.assume_grain)
     except ValueError as exc:
         parser.error(f"--assume-grain: {exc}")
+    snapshot = None
+    if args.schema_snapshot:
+        try:
+            snapshot = load_schema_snapshot(args.schema_snapshot)  # fail at start, not as a silent gap in every answer
+        except SchemaSnapshotError as exc:
+            parser.error(f"--schema-snapshot: {exc}")
     loader = (lambda: load_project(root, args.source_schema)) if root else None
     session = Session(
         loader=loader,
         profiles=args.profiles,
         root=(root.parent if root.is_file() else root) if root else None,
         assume_grain=assumed,
+        schema_snapshot=snapshot,
     )
     server = AgentServer(session)
     if loader is not None:

@@ -97,6 +97,7 @@ def choose(server) -> dict[str, object]:
         "widest_column": column_names(widest)[-1], "nested_column": column_names(with_nested)[-1], "incremental_column": column_names(incremental)[0],
         "second_column": (column_names(most_read) + column_names(most_read))[1],
         "draft": f"SELECT {column_names(most_read)[0]} FROM `{most_read}`",
+        "typed_draft": f"SELECT {column_names(most_read)[0]} FROM `{most_read}` WHERE {column_names(most_read)[0]} = 1",
     }
 
 
@@ -134,6 +135,7 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Does the repository itself have problems (a name declared and built, a disabled model still read)?", ("project_checks",), lambda ask: ask("project_checks")),
         ("Can I plan a profile of a table without touching BigQuery?", ("profile_table",), lambda ask: ask("profile_table", table=c["most_read"])),
         ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
+        ("Do the columns my draft compares have types that can be compared?", ("check_query",), lambda ask: ask("check_query", sql=c["typed_draft"])),
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
         ("Is my rewrite of a draft query equivalent to the original?", ("compare_queries",),
          lambda ask: ask("compare_queries", left=c["draft"], right=f"SELECT * FROM (SELECT {c['draft'][len('SELECT '):]}) AS t")),
