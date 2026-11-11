@@ -11,6 +11,12 @@ things change that, all in this module (the analysis itself reuses traces throug
 * **A background build.** The server answers ``initialize`` at once and builds the index in a thread. While it runs, a
   tool call waits up to ``wait_seconds`` and then answers ``index warming, N% done`` (a bounded answer with the stage
   and when to ask again), never a guess.
+* **Saved results and files.** A second file beside it (``<name>.session.json``) keeps what else is costly to rebuild: the
+  effect of each Dataform file (:mod:`kumosql.load_memo`), the table profiles, the column types and the expression index
+  (:mod:`kumosql.result_memo`), and the size, time and hash of every watched file. A restart on an unchanged project reads
+  no file (a file whose size and time match is known by its saved hash), parses none and computes none of those results; after
+  an edit only the changed file is read and parsed, and only the models downstream of it are computed again. Same rules as
+  the trace file: validated JSON, atomic rename, per-user folder outside the project, anything unreadable ignored.
 * **A refresh after edits.** On a tool call (at most once per ``refresh_interval`` seconds; ``0`` checks on every
   call) the project's files are compared by size and modification time, then by content hash. When content changed the
   project is read again in the background and only the models whose own definition or upstream changed are traced
@@ -30,11 +36,13 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable
 
+from . import load_memo, result_memo
 from .mcp_answers import Answer, render
 from .mcp_session import Session
 from .trace_memo import FORMAT, TraceMemo
 
 CACHE_NAME = "kumosql-mcp-trace-cache"
+SESSION_NAME = "kumosql-mcp-session-cache"
 #: the files a project is made of (a Dataform folder, ``.sql`` files, workflow settings, a compiled graph)
 WATCHED_SUFFIXES = (".sqlx", ".sql", ".js", ".json", ".yaml", ".yml")
 SKIPPED_FOLDERS = (".git", "node_modules", ".kumosql-cache", "__pycache__")
@@ -146,6 +154,60 @@ def save_cache(path: Path, fingerprint: str, entries: dict) -> None:
             pass
 
 
+def session_file(path: Path) -> Path:
+    """The file of saved results beside the trace file ``path`` (:func:`cache_file`)."""
+
+    return path.with_name(path.stem + ".session.json")
+
+
+def _session_header() -> dict:
+    return {"format": SESSION_NAME, "loader": load_memo.FORMAT, "results": result_memo.FORMAT, **_versions()}
+
+
+def load_session(path: Path) -> dict | None:
+    """The saved files and results (``{"files", "taken_ns", "loader", "results"}``), or ``None`` for a file that is missing,
+    corrupt, from another version or format, or not shaped as :func:`save_session` writes it."""
+
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_CACHE_BYTES:
+            return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("header") != _session_header():
+            return None
+        files, taken, loader, results = data.get("files"), data.get("taken_ns"), data.get("loader"), data.get("results")
+        if not (isinstance(files, dict) and isinstance(taken, int) and not isinstance(taken, bool) and isinstance(loader, dict) and isinstance(results, dict)):
+            return None
+        shots: dict[str, tuple[int, int, str]] = {}
+        for name, item in files.items():
+            if not (isinstance(name, str) and isinstance(item, list) and len(item) == 3 and all(isinstance(n, int) and not isinstance(n, bool) for n in item[:2]) and isinstance(item[2], str)):
+                return None
+            shots[name] = (item[0], item[1], item[2])
+        return {"files": shots, "taken_ns": taken, "loader": loader, "results": results}
+    except (OSError, ValueError, RecursionError, UnicodeError):
+        return None
+
+
+def save_session(path: Path, files: dict[str, tuple[int, int, str]], taken_ns: int, loader: dict, results: dict) -> None:
+    """Replace the saved file atomically (the same way, and in the same folder, as :func:`save_cache`)."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ignore = path.parent / ".gitignore"
+    if not ignore.exists():
+        try:
+            ignore.write_text("*\n", encoding="utf-8")
+        except OSError:
+            pass
+    body = {"header": _session_header(), "files": {k: list(v) for k, v in files.items()}, "taken_ns": taken_ns, "loader": loader, "results": results}
+    descriptor, name = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=path.parent)
+    temp = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(body, handle, separators=(",", ":"), allow_nan=False)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
 # ------------------------------------------------------------------ watching the project's files
 
 
@@ -166,16 +228,24 @@ def project_files(root: Path, extra: Iterable[Path] = (), skip: Iterable[Path] =
     return found
 
 
-def snapshot(files: Iterable[Path], previous: dict[str, tuple[int, int, str]] | None = None) -> dict[str, tuple[int, int, str]]:
-    """``{path: (mtime_ns, size, sha256)}``. A file whose size and time match ``previous`` is not read again."""
+def snapshot(
+    files: Iterable[Path], previous: dict[str, tuple[int, int, str]] | None = None, previous_taken_ns: int | None = None
+) -> dict[str, tuple[int, int, str]]:
+    """``{path: (mtime_ns, size, sha256)}``. A file whose size and time match ``previous`` is not read again.
+
+    ``previous_taken_ns`` is when ``previous`` was taken (``time.time_ns()``). A file changed within two seconds before
+    that moment is read again even when its size and time match: a second edit in the same clock tick would not show.
+    ``None`` trusts every match.
+    """
 
     previous = previous or {}
     found: dict[str, tuple[int, int, str]] = {}
+    recent = None if previous_taken_ns is None else previous_taken_ns - load_memo.RACY_NS
     for path in files:
         try:
             stat = path.stat()
             before = previous.get(str(path))
-            if before is not None and before[:2] == (stat.st_mtime_ns, stat.st_size):
+            if before is not None and before[:2] == (stat.st_mtime_ns, stat.st_size) and (recent is None or stat.st_mtime_ns <= recent):
                 found[str(path)] = before
             else:
                 found[str(path)] = (stat.st_mtime_ns, stat.st_size, hashlib.sha256(path.read_bytes()).hexdigest())
@@ -229,6 +299,7 @@ class Index:
         self._pending: Session | None = None
         self._thread: threading.Thread | None = None
         self._files: dict[str, tuple[int, int, str]] = {}
+        self._taken_ns = 0
         self._last_check = float("-inf")
         self._fingerprint: str | None = None
         self._entries: dict = {}
@@ -241,14 +312,66 @@ class Index:
             elif cache.is_file():
                 self.cache_state = "ignored"
                 self._log("the saved index is unreadable or from another version; it is ignored and will be written again")
+        #: saved files and results (the second file, see the module text), what the last build used, and why it was or was not read
+        self._saved_files: dict[str, tuple[int, int, str]] = {}
+        self._saved_taken_ns = 0
+        self._saved_loader: dict = {}
+        self._saved_results: dict = {}
+        self.load_memo: load_memo.LoadMemo | None = None
+        self.results: result_memo.ResultMemo | None = None
+        self.results_state = "off" if cache is None else "missing"
+        if cache is not None:
+            kept = load_session(session_file(cache))
+            if kept is not None:
+                self._saved_files, self._saved_taken_ns = kept["files"], kept["taken_ns"]
+                self._saved_loader, self._saved_results = kept["loader"], kept["results"]
+                self.results_state = "loaded"
+            elif session_file(cache).is_file():
+                self.results_state = "ignored"
+                self._log("the saved files and results are unreadable or from another version; they are ignored and will be written again")
         session.index = self
         session.trace_memo_factory = self.new_memo
+        session.load_memo_factory = self.new_load_memo
+        session.result_memo_factory = self.new_results
 
     # -- the memo every build uses
 
     def new_memo(self) -> TraceMemo:
         self.memo = TraceMemo(self._entries, self._fingerprint, on_finish=self._save)
         return self.memo
+
+    def new_load_memo(self) -> load_memo.LoadMemo:
+        self.load_memo = load_memo.LoadMemo(self._saved_loader, self._files, self._taken_ns)
+        return self.load_memo
+
+    def new_results(self) -> result_memo.ResultMemo:
+        self.results = result_memo.ResultMemo(self._saved_results)
+        return self.results
+
+    def _save_session(self, target: Session) -> None:
+        """Keep what the build used (for the next refresh) and save it, unless nothing changed since the saved file."""
+
+        memo, results = self.load_memo, self.results
+        if memo is None or results is None or target._pipeline is None:
+            return
+        counts = results.counts()
+        fresh = bool(memo.parsed or memo.resolved or any(v for k, v in counts.items() if k.endswith("_computed")))
+        # a file changed just before the saved snapshot was taken is read again on every start until a newer snapshot is saved
+        racy = any(mtime > self._saved_taken_ns - load_memo.RACY_NS for mtime, _size, _sha in self._saved_files.values())
+        unchanged = (not fresh and not racy and self.results_state == "loaded" and self._files == self._saved_files
+                     and set(memo.entries) == set(self._saved_loader) and all(len(results.entries[n]) == len(self._saved_results.get(n, ())) for n in result_memo.SECTIONS))
+        loader, kept = memo.entries, results.to_json()
+        if self.cache is None or unchanged:
+            self._saved_loader, self._saved_results = loader, kept
+            return
+        try:
+            save_session(session_file(self.cache), dict(self._files), self._taken_ns, loader, kept)
+            self.results_state = "saved"
+            self._saved_files, self._saved_taken_ns = dict(self._files), self._taken_ns
+        except (OSError, ValueError, TypeError) as exc:
+            self.results_state = "not saved"
+            self._log(f"the saved files and results could not be written ({type(exc).__name__}); the next start reads and analyses again")
+        self._saved_loader, self._saved_results = loader, kept
 
     def _save(self, fingerprint: str, entries: dict) -> None:
         unchanged = fingerprint == self._fingerprint and set(entries) == set(self._entries) and all(entries[k] is self._entries.get(k) for k in entries)
@@ -276,7 +399,9 @@ class Index:
                 return self._thread
             self._begin("starting")
             if self._watch is not None:
-                self._files = snapshot(self._watch())
+                taken = time.time_ns()
+                self._files = snapshot(self._watch(), self._saved_files, self._saved_taken_ns)
+                self._taken_ns = taken
             self._thread = threading.Thread(target=self._build, args=(self.session, False), name="kumosql-mcp-index", daemon=True)
             self._thread.start()
             return self._thread
@@ -286,20 +411,33 @@ class Index:
         self._idle.clear()
 
     def _build(self, target: Session, swap: bool) -> None:
+        failed = False
         try:
             target.warm(self._set_stage)
         except Exception as exc:  # noqa: BLE001 - a failed build must never leave the server waiting
+            failed = True
             self._log(f"the index build stopped ({type(exc).__name__}); questions compute what they need")
         finally:
             memo = getattr(target._pipeline, "trace_memo", None)
             traced, reused = (len(memo.traced), len(memo.reused)) if memo is not None else (0, 0)
+            if not failed:
+                self._save_session(target)
+            loaded, results = self.load_memo, self.results
+            extra = {}
+            if loaded is not None:
+                extra.update({"files_read": len(loaded.read), "files_parsed": len(loaded.parsed), "files_replayed": len(loaded.replayed),
+                              "assets_resolved": len(loaded.resolved)})
+            if results is not None:
+                extra.update(results.counts())
             with self._lock:
-                self.last = {"traced": traced, "reused": reused, "seconds": round(self._clock() - self.started, 2)}
+                self.last = {"traced": traced, "reused": reused, "seconds": round(self._clock() - self.started, 2), **extra}
                 if swap:
                     self._pending = target
                 self.stage = ""
+                # logged before the build counts as over: the thread that answers may end the process the moment it is, and
+                # a daemon thread writing to a closed stderr at interpreter exit can abort the process
+                self._log(f"index ready: {traced} models analysed, {reused} replayed from the saved index")
                 self._idle.set()
-            self._log(f"index ready: {traced} models analysed, {reused} replayed from the saved index")
 
     def _set_stage(self, stage: str) -> None:
         self.stage = stage
@@ -327,7 +465,7 @@ class Index:
         """``{"state": "ready"|"warming", "percent", "stage", ...}``: what a build is doing, and what the last one did."""
 
         building = self.building
-        out = {"state": "warming" if building else "ready", "percent": self.percent(), "cache": self.cache_state}
+        out = {"state": "warming" if building else "ready", "percent": self.percent(), "cache": self.cache_state, "results_cache": self.results_state}
         if building:
             out["stage"] = self.stage
             out["reason"] = self.reason
@@ -355,11 +493,12 @@ class Index:
         if now - self._last_check < self.refresh_interval:
             return False
         self._last_check = now
-        shot = snapshot(self._watch(), self._files)
-        if _contents(shot) == _contents(self._files):
-            self._files = shot
+        taken = time.time_ns()
+        shot = snapshot(self._watch(), self._files, self._taken_ns)
+        changed = _contents(shot) != _contents(self._files)
+        self._files, self._taken_ns = shot, taken
+        if not changed:
             return False
-        self._files = shot
         with self._lock:
             if self.building:
                 return False
@@ -374,6 +513,8 @@ class Index:
                 malloy=self.session._malloy,
             )
             fresh.trace_memo_factory = self.new_memo
+            fresh.load_memo_factory = self.new_load_memo
+            fresh.result_memo_factory = self.new_results
             threading.Thread(target=self._build, args=(fresh, True), name="kumosql-mcp-refresh", daemon=True).start()
         return True
 

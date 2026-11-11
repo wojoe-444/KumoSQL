@@ -141,7 +141,7 @@ class Pipeline:
         """Everything except locks and per-run memos, so a parsed project can be saved and reopened."""
 
         state = self.__dict__.copy()
-        for key in ("_memo", "_memo_locks", "_memo_guard", "_analysis_lock", "trace_memo"):
+        for key in ("_memo", "_memo_locks", "_memo_guard", "_analysis_lock", "trace_memo", "result_memo"):
             state.pop(key, None)
         return state
 

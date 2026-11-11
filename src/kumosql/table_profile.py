@@ -17,6 +17,7 @@ and a profile is ``complete`` only when all three parts are known.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
@@ -189,16 +190,70 @@ def _profile_pipeline(
     pipeline: Pipeline, declared_grain: Mapping[str, Sequence[str]] | None
 ) -> dict[str, TableProfile]:
     result: dict[str, TableProfile] = {}
+    if getattr(pipeline, "result_memo", None) is not None:
+        try:
+            pipeline._analyse()  # the saved profiles are keyed by the models' closure keys, which the analysis makes
+        except Exception:  # noqa: BLE001 - the profiler below reports a project that cannot be analysed
+            pass
+    saved = _replayed_profiles(pipeline, declared_grain)  # {key: (token, profile)} of models whose saved profile still holds
+    memo = getattr(pipeline, "result_memo", None)
     try:
         profiler = _Profiler(pipeline, declared_grain)
         order = [key for key in profiler.order if key in pipeline.models]
     except Exception as exc:  # never raise on odd input
         return {key: _failed(key, exc) for key in getattr(pipeline, "models", {})}
+
+    def profile_one(key: str) -> TableProfile:
+        if key in saved:
+            memo.replayed_one("profiles", saved[key][0], key)
+            return saved[key][1]
+        profile = profiler.profile(key)
+        if memo is not None:
+            from .result_memo import profile_is_cacheable
+
+            token = memo.token(pipeline, key, _grain_context(declared_grain))
+            memo.computed_one("profiles", token, key, profile.to_json() if token is not None and profile_is_cacheable(profile) else None)
+        return profile
+
     for key in order:
-        result[key] = profiler.profile(key)
+        result[key] = profile_one(key)
     for key in pipeline.models:
-        result.setdefault(key, profiler.profile(key))
+        if key not in result:
+            result[key] = profile_one(key)
     return {key: result[key] for key in pipeline.models}
+
+
+def _grain_context(declared_grain: Mapping[str, Sequence[str]] | None) -> str:
+    """What the grain declarations contribute to a profile (any change to them recomputes every profile)."""
+
+    try:
+        return json.dumps(sorted((str(k).lower(), [str(c) for c in ([v] if isinstance(v, str) else v)]) for k, v in (declared_grain or {}).items()))
+    except (TypeError, ValueError):
+        return "unreadable"
+
+
+def _replayed_profiles(pipeline: Pipeline, declared_grain: Mapping[str, Sequence[str]] | None) -> dict[str, tuple[str, TableProfile]]:
+    """The saved profiles that still hold (:mod:`kumosql.result_memo`): the model's closure key and the declared grains match."""
+
+    memo = getattr(pipeline, "result_memo", None)
+    if memo is None:
+        return {}
+    from .result_memo import MemoError, decode_profile
+
+    found: dict[str, tuple[str, TableProfile]] = {}
+    context = _grain_context(declared_grain)
+    for key in pipeline.models:
+        token = memo.token(pipeline, key, context)
+        payload = memo.lookup("profiles", token)
+        if payload is None:
+            continue
+        try:
+            profile = decode_profile(payload)
+        except MemoError:
+            continue
+        if profile.table == key:
+            found[key] = (token, profile)
+    return found
 
 
 def profile_query(

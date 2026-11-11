@@ -26,7 +26,28 @@ MEANINGS_BEFORE_AMBIGUOUS = 3
 def expression_index(session: Session) -> search.ExpressionIndex:
     """The per-session index of normalized sub-expressions, built from the parsed trees on first use."""
 
-    return session._once("expression_index", lambda: search.build_index(session.pipeline()))
+    return session._once("expression_index", lambda: _build_index(session))
+
+
+def _build_index(session: Session) -> search.ExpressionIndex:
+    """Build the index, taking the part of each model whose saved part still holds (:mod:`kumosql.result_memo`)."""
+
+    pipeline = session.pipeline()
+    memo = getattr(pipeline, "result_memo", None)
+    if memo is None:
+        return search.build_index(pipeline)
+    from .result_memo import valid_part
+
+    tokens = {key: memo.token(pipeline, key) for key in pipeline.models}
+    saved = {key: part for key, token in tokens.items() if token is not None and valid_part(part := memo.lookup("expression", token))}
+    index = search.build_index(pipeline, {"format": search.FORMAT, "models": saved})
+    for key, part in index.parts.items():
+        token = tokens.get(key)
+        if saved.get(key) is part:
+            memo.replayed_one("expression", token, key)
+        else:
+            memo.computed_one("expression", token, key, part)
+    return index
 
 
 def _plural(count: int, word: str) -> str:

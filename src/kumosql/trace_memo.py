@@ -243,6 +243,9 @@ class TraceMemo:
         self.total = 0
         self.done = 0
         self.entries: dict[str, dict] = {}
+        #: each model's closure key joined with the project fingerprint from the last run (``None`` for one that cannot be reused): what the other saved results
+        #: (:mod:`kumosql.result_memo`) are keyed by, so they are replayed for exactly the models whose trace was
+        self.closures: dict[str, str | None] | None = None
 
     def percent(self) -> int:
         """How much of the trace is done, 0 to 100 (100 only when finished)."""
@@ -256,7 +259,7 @@ class TraceMemo:
 
         fingerprint = project_fingerprint(state.pipeline, state.schema, special_texts)
         with self._lock:
-            self.traced, self.reused, self.entries, self.done = [], [], {}, 0
+            self.traced, self.reused, self.entries, self.done, self.closures = [], [], {}, 0, None
             self.total = len(state.order)
             reuse = eligible and fingerprint == self.previous_fingerprint
             self.state = "tracing" if eligible else "off"
@@ -319,6 +322,7 @@ class _Replay:
         with self.memo._lock:
             self.memo.state = "done" if self.eligible else "off"
             self.memo.done = self.memo.total
+            self.memo.closures = {k: (None if v is None else _digest(self.fingerprint, v)) for k, v in self.closure.items()} if self.eligible else None
         if self.eligible and self.memo.on_finish is not None:
             self.memo.on_finish(self.fingerprint, dict(self.memo.entries))
 
