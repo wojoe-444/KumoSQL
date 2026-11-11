@@ -26,6 +26,7 @@ from kumo_sql_prover.sqlx import (
     mask_sqlx_interpolations as _mask_sqlx_interpolations,
     outside_sql_comments as _outside_sql_comments,
     split_sqlx_sections as _split_sqlx_sections,
+    sql_comment_spans as _sql_comment_spans,
 )
 
 if TYPE_CHECKING:
@@ -96,6 +97,28 @@ def _sub_outside_comments(pattern: re.Pattern[str], replace: Callable[[re.Match[
         pieces.append(replace(match))
         cursor = match.end()
     pieces.append(text[cursor:])
+    return "".join(pieces)
+
+
+def _defuse_comment_templates(sql: str) -> str:
+    """``sql`` with each ``${`` inside a ``--`` or ``/* */`` comment written as ``$ {``.
+
+    Dataform leaves such an expression as text: it is neither evaluated nor a dependency. Masking it would count it as an
+    unresolved template (``Model.masked_expressions``, a ``__sqlx_token_N`` in the SQL) and make its identifiers look like
+    reads; spelling it so it is no longer an interpolation keeps the comment readable and never turns it into live SQL. A
+    ``--`` inside a string is not a comment, and a ``#`` comment is not one either (Dataform evaluates ``${ref()}`` after
+    ``#``), so neither is touched.
+    """
+
+    if "${" not in sql:
+        return sql
+    pieces: list[str] = []
+    cursor = 0
+    for start, end in _sql_comment_spans(sql):
+        pieces.append(sql[cursor:start])
+        pieces.append(sql[start:end].replace("${", "$ {"))
+        cursor = end
+    pieces.append(sql[cursor:])
     return "".join(pieces)
 
 
@@ -1192,6 +1215,7 @@ def load_sqlx_project(
                 inner = _sub_outside_comments(_REF_RE, plain_ref, inner)
                 inner = _sub_outside_comments(_RESOLVE_RE, plain_ref, inner)
                 inner = _sub_outside_comments(_SELF_RE, lambda match: target.sql(), inner)
+                inner = _defuse_comment_templates(inner)
                 if "${" in inner:
                     inner, _restorations = _mask_sqlx_interpolations(inner)
                 if inner.strip():
@@ -1205,6 +1229,7 @@ def load_sqlx_project(
             if declared not in dependencies:
                 dependencies.append(checked(declared, "a config dependency"))
         masked: tuple[str, ...] = ()
+        body = _defuse_comment_templates(body)
         if "${" in body:
             body, restorations = _mask_sqlx_interpolations(body)
             masked = tuple(item.original for item in restorations)

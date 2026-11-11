@@ -131,6 +131,7 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
         ("Which tables does nothing read?", ("list_tables",), lambda ask: ask("list_tables", max_readers=0, kind="view")),
         ("Which tables read two or more other models, and which sit deepest?", ("list_tables",),
          lambda ask: (ask("list_tables", min_reads=2, sort="reads"), ask("list_tables", sort="depth", max_bytes=1000))),
+        ("Does the repository itself have problems (a name declared and built, a disabled model still read)?", ("project_checks",), lambda ask: ask("project_checks")),
         ("Can I plan a profile of a table without touching BigQuery?", ("profile_table",), lambda ask: ask("profile_table", table=c["most_read"])),
         ("Is my draft query free of certain problems before I run it?", ("check_query",), lambda ask: ask("check_query", sql=c["draft"])),
         ("Is my SELECT * from a wide table free of certain problems?", ("check_query",), lambda ask: ask("check_query", sql=f"SELECT * FROM `{c['widest']}`")),
