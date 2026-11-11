@@ -226,10 +226,22 @@ def _grain_text(entry: Entry) -> str:
         "need": {"type": "string", "description": "What you are looking for, in plain words, such as 'daily revenue by customer'."},
         "column": {"type": "string", "description": "A column the table should have (optional); an exact name counts most."},
         "kind": {"type": "string", "enum": list(KINDS), "description": "Only tables of this kind or role (optional)."},
+        "has_columns": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Instead of need: two to four keys the table must carry together (a link table), such as [\"customer_id\", \"order_id\"]. "
+            "Matches column names and column meanings, so a renamed key counts; say which matched by name only. Views count. table.column pins a key.",
+        },
     },
-    required=("need",),
+    required=(),
 )
 def find_tables(session: Session, args: dict) -> Answer:
+    if args.get("has_columns") is not None:
+        from .mcp_expression import link_tables
+
+        return link_tables(session, args)
+    if not args.get("need"):
+        raise ToolError("missing argument 'need'", ["Pass need: what you are looking for, in plain words; or has_columns=[A, B] for a table that carries both keys."])
     need_text = str(args["need"])
     if len(need_text) > 500:
         raise ToolError("the need is too long (500 characters at most)", ["Name the main things you need in a few words."])
