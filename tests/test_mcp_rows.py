@@ -145,12 +145,12 @@ def test_a_condition_on_a_changed_copy_or_the_other_side_of_a_self_join_is_never
 
 # ------------------------------------------------------- the long chain and trace_column
 
-LAYERS = 18
-MODELS = 7
+LAYERS = 26
+MODELS = 6
 
 
 def long_chain():
-    """7 models (the first only a source) with 18 conditions each in the other 6 (108): a WHERE per layer on columns other than status, and one on status in two models, in a middle layer."""
+    """6 models (the first only a source) with 26 conditions each in the other 5 (130): a WHERE per layer on columns other than status, and one on status in two models, in a middle layer."""
 
     files = {"m0.sqlx": 'config { type: "table" }\nSELECT 1 AS status, 1 AS amount, ' + ", ".join(f"{i} AS k{i}" for i in range(LAYERS)) + "\n"}
     columns = ", ".join(["status", "amount"] + [f"k{i}" for i in range(LAYERS)])
