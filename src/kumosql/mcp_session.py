@@ -114,6 +114,9 @@ class Session:
             self.profiles()
             stage("inferring roles")
             self.roles()
+            from .mcp_expression import expression_index
+
+            expression_index(self)
         except Exception as exc:  # noqa: BLE001 - the first question computes it again and reports what failed
             print(f"kumosql mcp: warm-up stopped ({type(exc).__name__})", file=sys.stderr)
 

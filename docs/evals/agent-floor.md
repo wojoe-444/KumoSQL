@@ -13,7 +13,7 @@ About twenty questions on the largest public Dataform project in the fixtures, `
 | What is this table? | the most-read table, a table nothing reads, an incremental table, the widest table, the table that reads the most others, a table whose column meanings are unknown |
 | Where does this value come from? | a column of the most-read table, of a middle table, the last column of the widest table, a column that reads a nested field, a column of an incremental table |
 | What breaks if I change this? | drop a column of the most-read table, rename a column of a middle table, change how a column is computed, drop the most-read table, a column nothing reads |
-| Does one already exist? | a table like the most-read one, a draft query |
+| Does one already exist? | a table like the most-read one, a draft query, a computation that appears in several models (`find_existing` with `expression`: copies and variants), a table or view that carries two given columns (`find_tables` with `has_columns`) |
 | Several calls | can I delete a table nothing reads (describe, then impact), orient me in an unfamiliar table (describe, trace, impact) |
 
 The tables and columns are chosen by fixed rules from the project's own table cards (most readers, no readers, widest, and so on), so the same questions are asked every run. Questions for tools that do not exist yet are listed as `waiting` and do not fail. The questions for `find_tables`, `profile_table`, `check_query` and `compare_queries` are in the list (no BigQuery is touched: the dry-run and run paths are not part of this floor).
@@ -43,7 +43,7 @@ The result file is `agent-floor`. The test is `tests/test_agent_floor.py` (an ev
 
 ## Results
 
-With all eleven tools: 33 of 33 questions inside their bounds, largest answer 1,965 bytes, median task 1,001 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes; three `list_tables` and two `clean_query` questions took it from 26, one `project_checks` question made it 32 and one `check_query` question about a reserved word used as an alias, added with the static checks, 33). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
+With all eleven tools: 35 of 35 questions inside their bounds, largest answer 1,965 bytes, median task 1,001 bytes in total, at most 3 calls, median latency under 2 ms per task after a 2.4 s load (the first run, with four tools, was 20 of 20, median 1,036 bytes; three `list_tables` and two `clean_query` questions took it from 26, one `project_checks` question made it 32 and one `check_query` question about a reserved word used as an alias, added with the static checks, 33, and the expression and link-table questions 35). Reading every `.sqlx` file costs 141,354 bytes and the `pipeline-report` JSON 894,869 bytes. Numbers are bytes of JSON, not tokens.
 
 ## Limits of the evidence
 
