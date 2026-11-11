@@ -206,3 +206,23 @@ def test_a_project_of_400_models_and_1000_declared_sources_is_typed_once_from_a_
     assert session.schema_snapshot().ignored == 20000 and len(session.schema_snapshot()) == 1000
     assert str(session.column_type("p.ds.m399", "id")) == "STRING" and str(session.column_type("p.ds.m398", "total")) == "INT64"
     assert session.column_types() is types  # computed once and cached in the session
+
+
+NOT_IN = "SELECT 1 FROM ${ref('orders')} o WHERE CAST(o.order_id AS STRING) NOT IN (SELECT c.order_week FROM ${ref('calendar')} c)"
+
+
+def test_not_in_over_a_nullable_column_is_a_finding_with_a_snapshot_and_unknown_without_one(tmp_path, no_network):
+    body, _, _ = ask(server(tmp_path, SNAPSHOT_CSV), "check_query", sql=NOT_IN)
+    [found] = findings_of(body, "not_in_null")
+    assert "NOT IN (SELECT c.order_week" in found["what"] and "nullable" in found["what"] and "NOT EXISTS" in found["fix"]
+    body, _, _ = ask(server(tmp_path / "none"), "check_query", sql=NOT_IN)
+    assert not findings_of(body, "not_in_null") and any(g["what"] == "NOT IN subqueries not checked" for g in body["unknown"])
+    # a snapshot that says the column is NOT NULL clears it
+    body, _, _ = ask(server(tmp_path / "required", SNAPSHOT_CSV.replace("order_week,STRING,YES", "order_week,STRING,NO")), "check_query", sql=NOT_IN)
+    assert not findings_of(body, "not_in_null") and not any(g["what"] == "NOT IN subqueries not checked" for g in body.get("unknown", []))
+
+
+def test_the_session_hook_the_static_checks_call_answers_true_false_or_none(tmp_path):
+    session = server(tmp_path, SNAPSHOT_CSV.replace("order_week,STRING,YES", "order_week,STRING,NO")).session
+    assert session.column_is_nullable("p.ds.calendar", "order_week") is False and session.column_is_nullable("p.ds.calendar", "week_start") is True
+    assert session.column_is_nullable("p.ds.calendar", "no_such_column") is None and session.column_is_nullable("p.other.elsewhere", "k") is None
