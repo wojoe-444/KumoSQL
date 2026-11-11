@@ -198,7 +198,7 @@ def test_rows_filtered_pages_a_long_chain_with_the_column_conditions_marked(tmp_
 
 
 INACTIVE = {
-    "orders.sqlx": 'config { type: "table" }\nSELECT 1 AS order_id, "open" AS status, TIMESTAMP "2026-01-05" AS loaded_at\n',
+    "orders.sqlx": 'config { type: "table" }\nSELECT 1 AS order_id, "open" AS status, TIMESTAMP "2026-03-02" AS loaded_at\n',
     "orders_clean.sqlx": 'config { type: "view", disabled: true }\nSELECT order_id, status, loaded_at FROM ${ref("orders")} WHERE status != \'cancelled\'\n',
     "orders_kept.sqlx": 'config { type: "incremental" }\nSELECT order_id, status, loaded_at FROM ${ref("orders_clean")} WHERE status != \'void\' '
     "${when(incremental(), `AND loaded_at > (SELECT MAX(loaded_at) FROM ${self()})`)}\n",
