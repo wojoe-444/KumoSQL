@@ -73,11 +73,13 @@ People often know things about a column that the SQL does not say: what it holds
 
 Where it reads it from (it only reads; it never writes into your project or docs):
 
-- the `columns: { ... }` part of a Dataform file (`columns: {created_at: "When the order was placed"}`);
+- the `columns: { ... }` part of a Dataform file (`columns: {created_at: "When the order was placed"}`), whether it sits in a `.sqlx` file, in JavaScript (`declare({ schema: "raw", name: "orders", columns: {...} })`, or `publish("x").columns({...})`) or in a compiled graph. The answer says which file it came from;
 - a small file you give it, `--column-attributes facts.json`, for example `{"orders.created_at": {"timezone": "UTC"}, "products.margin_pct": {"scale": "0-100"}}`;
 - Markdown pages you already keep (`--docs docs/`): a heading with the table name, then a table with `Column` and `Description`. The answer says which file a description came from. If a page mentions "UTC", the answer shows "docs mention UTC (not declared)": a hint, not a fact, because nobody declared it.
 
 Example: `created_at` of a raw table is declared as UTC. A model renames it to `placed_at`, a second model calls it `order_time`. Asking `describe_table` about the second model shows the description and the zone UTC, with `inherited_from: raw.orders.created_at`. If a model computes something from it (adds an hour, say) the zone is **not** passed on, and the answer says why.
+
+If a description is written as something the server cannot work out without running your code, for example a template string that uses a variable (`` `Notes for ${label}` ``) or a function call, the server does **not** guess. It lists that column under "unknown" with the reason ("not read: a template string with a variable, in definitions/sources.js"), keeps reading the other columns next to it, and says the same for a model column that is a copy of it. Example: a source declares `note: \`Notes for ${label}\`` and `id: "Order id"`; `describe_table` shows the description for `id`, and lists `note` as unknown. If two places describe the same column differently (a config and a chained `.columns()`), neither is used and the answer says so.
 
 Then `check_query` can warn about three things: comparing a column in one zone with a column in another (it names both zones), `CURRENT_DATE()` or `DATE(ts)` with no zone (they use UTC, so "today" and the start of a day or month can be off by a day), and multiplying a percentage column (already 0 to 100) by 100. A timestamp column whose zone nobody declared is listed as **unknown**, not as an error.
 

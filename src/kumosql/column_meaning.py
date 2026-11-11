@@ -88,6 +88,9 @@ class Facts:
     converted: tuple[str, ...] = ()
     #: ``(attribute, upstream column text, reason)`` for declared facts a computation did not carry
     lost: tuple[tuple[str, str, str], ...] = ()
+    #: ``(attribute, declaring column text, reason, file)`` for facts written for this column (or one it copies) that cannot be read
+    #: without running code: a template string with a variable, a call. ``attribute`` is ``meaning`` when any of them may be there.
+    unread: tuple[tuple[str, str, str, str], ...] = ()
 
 
 _NONE = Facts()
@@ -124,7 +127,22 @@ def _own(pipeline, key: str, column: str) -> Facts:
             values["description"], labels["description"] = page["description"], f"docs {page['file']}"
         if page["hint"] and "timezone" not in values:
             values["timezone_hint"], labels["timezone_hint"] = page["hint"], f"docs {page['file']}"
-    return Facts(values, {name: (key, column) for name in values}, labels)
+    return Facts(values, {name: (key, column) for name in values}, labels, unread=_unread(pipeline, key, column, values))
+
+
+def _unread(pipeline, key: str, column: str, values: dict[str, str]) -> tuple[tuple[str, str, str, str], ...]:
+    """What is written for this column (or, with no column named, for the whole ``columns`` block) but cannot be read."""
+
+    found = []
+    for name, attribute, reason, where in (getattr(pipeline, "column_doc_unread", None) or {}).get(key, ()):
+        if name in ("", column) or name.casefold() == column.casefold():
+            if attribute not in values and not (attribute == "meaning" and "description" in values):
+                found.append((attribute, ref_text(key, column), reason, where))
+    return tuple(found)
+
+
+def _still_open(unread: tuple[tuple[str, str, str, str], ...], values: dict[str, str]) -> tuple[tuple[str, str, str, str], ...]:
+    return tuple(u for u in unread if u[0] not in values and not (u[0] == "meaning" and "description" in values))
 
 
 def _facts(session: Session, key: str, column: str, depth: int) -> Facts:
@@ -155,7 +173,8 @@ def _facts(session: Session, key: str, column: str, depth: int) -> Facts:
         values.update(own.values)
         origins.update(own.origin)
         labels.update(own.labels)
-        return Facts(values, origins, labels, tuple(a for a in up.converted if a not in own.values))
+        unread = own.unread + tuple(u for u in _still_open(up.unread, values) if u not in own.unread)
+        return Facts(values, origins, labels, tuple(a for a in up.converted if a not in own.values), unread=unread)
     if carry == "convert":
         values, origins, labels = {}, {}, {}
         if "timezone" not in own.values:
@@ -163,7 +182,7 @@ def _facts(session: Session, key: str, column: str, depth: int) -> Facts:
         values.update(own.values)
         origins.update(own.origin)
         labels.update(own.labels)
-        return Facts(values, origins, labels, tuple(a for a in ("timezone",) if a not in own.values))
+        return Facts(values, origins, labels, tuple(a for a in ("timezone",) if a not in own.values), unread=own.unread)
     reason = LOST_REASONS["field"] if any(s.path for s in sources) else LOST_REASONS.get(record.transform, "built from several columns" if len(sources) > 1 else "computed from it")
     if len(sources) > 1 and record.transform not in LOST_REASONS:
         reason = "built from several columns"
@@ -173,7 +192,7 @@ def _facts(session: Session, key: str, column: str, depth: int) -> Facts:
         for attribute in UNCARRIED:
             if attribute in up.values and attribute not in own.values and not any(item[0] == attribute and item[1] == ref_text(source.table, source.column) for item in lost):
                 lost.append((attribute, ref_text(source.table, source.column), reason))
-    return Facts(own.values, own.origin, own.labels, (), tuple(lost))
+    return Facts(own.values, own.origin, own.labels, (), tuple(lost), own.unread)
 
 
 def _parsed(session: Session, key: str):
@@ -454,6 +473,33 @@ def _group(answer: Answer, pairs: list[tuple[str, str]], what: str, reason_of: C
         answer.unknown(f"{what} of {len(labels)} column{'s' if len(labels) != 1 else ''}: {examples}", reason)
 
 
+UNREAD_WHAT = {
+    "meaning": "declared description, time zone, unit or scale",
+    "description": "declared description",
+    "timezone": "declared time zone",
+    "unit": "declared unit",
+    "scale": "declared scale",
+}
+
+
+def _unread_notes(answer: Answer, session: Session, key: str, columns: list[str]) -> None:
+    """``unknown`` entries for facts written in the project that the reader could not evaluate (never guessed), grouped by reason."""
+
+    by_attribute: dict[str, list[tuple[str, str]]] = {}
+    known = {c.casefold() for c in columns}
+    written = [n for n, *_ in (getattr(session.pipeline(), "column_doc_unread", None) or {}).get(key, ()) if n and n.casefold() not in known]
+    for name in [*columns, *dict.fromkeys(written)]:
+        for attribute, declaring, reason, where in facts(session, key, name).unread:
+            label = name if declaring == ref_text(key, name) else f"{name} (from {declaring})"
+            by_attribute.setdefault(attribute, []).append((label, f"not read: {reason}{f' (in {where})' if where else ''}; it is written but needs the code to run"))
+    for attribute, pairs in by_attribute.items():
+        _group(answer, pairs, UNREAD_WHAT.get(attribute, "declared " + attribute))
+    if not columns:
+        for _column, _attribute, reason, where in (getattr(session.pipeline(), "column_doc_unread", None) or {}).get(key, ()):
+            answer.unknown(f"column descriptions of {short(key)}", f"not read: {reason}{f' (in {where})' if where else ''}")
+            break
+
+
 def describe_notes(answer: Answer, session: Session, key: str, columns: list[str]) -> None:
     """Add to a ``describe_table`` answer: declared meanings (``column_notes``), what a computation did not carry, and the
     TIMESTAMP/DATETIME columns with no declared zone (both under ``unknown``)."""
@@ -472,6 +518,7 @@ def describe_notes(answer: Answer, session: Session, key: str, columns: list[str
     answer.counts["declared_meaning"] = len(items)
     answer.add_list("column_notes", items, total=len(items))
     _group(answer, lost, "declared time zone, unit or scale")
+    _unread_notes(answer, session, key, columns)
     missing = temporal_without_zone(session).get(key, [])
     if missing:
         examples = ", ".join(missing[:EXAMPLES]) + (", ..." if len(missing) > EXAMPLES else "")
@@ -490,8 +537,12 @@ def trace_notes(answer: Answer, session: Session, ref: ColumnRef) -> None:
     found = item_of(session, ref.table, ref.column, 300)
     if found is not None:
         answer.fields["meaning"] = found
-    for attribute, upstream, reason in facts(session, ref.table, ref.column).lost:
+    found_facts = facts(session, ref.table, ref.column)
+    for attribute, upstream, reason in found_facts.lost:
         answer.unknown(f"declared {attribute} of {upstream}", f"not carried: {reason}")
+    for attribute, declaring, reason, where in found_facts.unread:
+        origin_text = "" if declaring == ref_text(ref.table, ref.column) else f" of {declaring}"
+        answer.unknown(f"{UNREAD_WHAT.get(attribute, 'declared ' + attribute)}{origin_text}", f"not read: {reason}{f' (in {where})' if where else ''}; it is written but needs the code to run")
 
 
 def zone_unknown(answer: Answer, session: Session) -> None:

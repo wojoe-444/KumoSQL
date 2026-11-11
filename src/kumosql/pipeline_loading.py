@@ -622,7 +622,9 @@ def _read_project_defaults_strict(root: Path) -> tuple[str, str]:
 # ------------------------------------------------------- JavaScript declarations
 
 _JS_CALL_RE = re.compile(r"(?<![\w.$])(declare|publish)\s*\(")
+_JS_COLUMN_CALL_RE = re.compile(r"(?<![\w.$])(declare|publish|operate)\s*\(")  # operate is read for its column descriptions only
 _JS_IDENT_RE = re.compile(r"^[A-Za-z_$][\w$]*$")
+_COMPUTED = "\0computed"  # stands for a config that depends on a loop variable the reader could not substitute
 
 
 def _call_arguments(text: str, opening: int) -> str:
@@ -704,6 +706,19 @@ def _js_bindings(text: str, name: str) -> list[str] | None:
     return found[0]
 
 
+def _js_chain(text: str, end: int) -> list[tuple[str, str]]:
+    """The calls chained after a call that ended at ``end``: ``[(method, first argument text)]``, in order."""
+
+    chain: list[tuple[str, str]] = []
+    while call := re.match(r"\s*\.\s*([A-Za-z_$][\w$]*)\s*\(", text[end:]):
+        opening = end + call.end() - 1
+        inner = _call_arguments(text, opening)
+        arguments = _split_top_level(inner)
+        chain.append((call.group(1), arguments[0] if arguments else ""))
+        end = opening + len(inner) + 2
+    return chain
+
+
 def _js_field(config: str, text: str, key: str) -> list[str] | None | str:
     """Possible values of ``key`` in a config object: a list, ``""`` when absent, None when not knowable."""
 
@@ -745,6 +760,7 @@ def js_declared_targets(
     path: str = "",
     placeholders: Callable[[str], str | None] | None = None,
     unique_keys: dict | None = None,
+    column_reads: dict | None = None,
 ) -> tuple[list[Target], list[Target], bool]:
     """Declarations and named actions found in one Dataform JavaScript file.
 
@@ -756,9 +772,13 @@ def js_declared_targets(
     A schema or database written as an includes module's member called with literals (``functions.baseSchema("ga4")``) is read as the
     placeholder ``placeholders`` gives for it (see :func:`_placeholder`), so such an action is listed, not unknown.
     ``unique_keys``, when given, receives each declared target's literal unique keys (see :func:`declared_unique_keys`).
+    ``column_reads``, when given, receives ``{target: (call kind, columns reading)}`` for each ``declare``, ``publish`` and ``operate``
+    call that writes a ``columns`` block in its config or in a chained ``.columns()`` / ``.config()`` (see
+    :func:`kumosql.column_docs.call_columns`); ``operate`` calls are read for that only and never listed as targets.
     """
 
     from . import js_literals
+    from .column_docs import call_columns, merge_reads
 
     declared: list[Target] = []
     actions: list[Target] = []
@@ -782,15 +802,37 @@ def js_declared_targets(
             return None
         return [(name, db, schema) for name in names for db in (databases or [default.database]) for schema in (schemas or [default.schema])]
 
-    for match in _JS_CALL_RE.finditer(text):
+    def record(targets, kind: str, config: str, chain: list[tuple[str, str]]) -> None:
+        """Remember the columns a call declares, for each target it names (nothing when the call has no ``columns``)."""
+
+        if column_reads is None:
+            return
+        mentioned = "columns" in config or any(method == "columns" or "columns" in argument for method, argument in chain)
+        if not (mentioned or _JS_IDENT_RE.match(config.strip())):
+            return
+        try:
+            read = call_columns(kind, config, chain) if config != _COMPUTED else ({}, [("", "meaning", "computed from the loop variable")])
+        except Exception:  # noqa: BLE001 - column descriptions are optional
+            return
+        for name, database, schema in targets:
+            target = Target(database, schema, name)
+            if target in column_reads:  # the same action named twice: what both say, and where they differ
+                read = merge_reads(column_reads[target][1], read)
+            column_reads[target] = (kind, read)
+
+    for match in (_JS_COLUMN_CALL_RE if column_reads is not None else _JS_CALL_RE).finditer(text):
         kind = match.group(1)
         args = _split_top_level(_call_arguments(text, match.end() - 1))
+        opening = match.end() - 1
+        chain = _js_chain(text, opening + len(_call_arguments(text, opening)) + 2) if column_reads is not None else []
         if kind == "declare":
             config, name_args = (args[0] if args else ""), []
+            read_config = config
         else:
             if not args:
                 continue
             config, name_args = (args[1] if len(args) > 1 and args[1].startswith("{") else "{}"), args
+            read_config = args[1] if len(args) > 1 and (args[1].startswith("{") or _JS_IDENT_RE.match(args[1])) else "{}"
         found = fields(config, name_args, kind, text)
         if found is None:
             # Maybe a loop over a literal list of tables, here or in a required module.
@@ -818,10 +860,22 @@ def js_declared_targets(
                         found = None
                         break
                     found += each
+                    if column_reads is not None:
+                        one_read = js_literals.substitute(read_config, header.group("var"), item) if read_config != config else one
+                        one_chain = [(method, js_literals.substitute(argument, header.group("var"), item)) for method, argument in chain]
+                        if one_read is None or any(argument is None for _method, argument in one_chain):
+                            record(each, kind, _COMPUTED, [("columns", "")])  # reported as computed, never read
+                        else:
+                            record(each, kind, one_read, one_chain)
                 break
             if not looped or found is None:
-                complete = False
+                if kind != "operate":  # a computed operate name lists no table, so it settles nothing
+                    complete = False
                 continue
+        else:
+            record(found, kind, read_config, chain)
+        if kind == "operate":
+            continue
         for name, database, schema in found:
             target = Target(database, schema, name)
             (declared if kind == "declare" else actions).append(target)
@@ -892,7 +946,7 @@ def js_published_assets(text: str) -> list[tuple[str, str]]:
     written out as a literal, as the SQLX Dataform would read from a ``.sqlx`` file with the same config and body.
 
     Only a literal name, a literal config object and a literal query count; a publish inside a function or loop, a
-    computed query and chained calls other than ``query`` and ``config`` are left to the declaration scan, which
+    computed query and chained calls other than ``query``, ``config`` and ``columns`` are left to the declaration scan, which
     reports the names it cannot read.
     """
 
@@ -913,11 +967,13 @@ def js_published_assets(text: str) -> list[tuple[str, str]]:
                 query = _js_query_text(argument)
         end = opening + len(_call_arguments(text, opening)) + 2
         chained = True
-        while chained and (call := re.match(r"\s*\.\s*(query|config)\s*\(", text[end:])):
+        while chained and (call := re.match(r"\s*\.\s*(query|config|columns)\s*\(", text[end:])):
             inner_open = end + call.end() - 1
             inner = _call_arguments(text, inner_open)
             if call.group(1) == "query":
                 query = _js_query_text(inner)
+            elif call.group(1) == "columns":
+                pass  # the descriptions are read from the call itself (see js_declared_targets), not from the SQLX text
             elif inner.strip().startswith("{"):
                 config = inner.strip()
             else:
@@ -1040,28 +1096,58 @@ def _parse_ref_args(
     raise ValueError("unsupported ref() arguments")
 
 
-def _keep_column_docs(column_docs: dict, key: str, config: str) -> None:
-    """Remember the descriptions and attributes of the config's ``columns`` block (never lose an asset over them)."""
+def _keep_column_docs(book, key: str, config: str, where: str) -> None:
+    """Remember the descriptions and attributes of the config's ``columns`` block, and what in it could not be read (never lose an asset over them)."""
 
-    from .column_docs import config_column_docs
-
-    try:
-        found = config_column_docs(config)
-    except Exception:  # noqa: BLE001 - column docs are optional
-        return
-    if found and key:
-        column_docs[key] = found
-
-
-def _keep_compiled_column_docs(column_docs: dict, key: str, item: object) -> None:
-    from .column_docs import compiled_column_docs
+    from .column_docs import config_columns
 
     try:
-        found = compiled_column_docs(item)
+        read = config_columns(config)
     except Exception:  # noqa: BLE001 - column docs are optional
         return
-    if found and key:
-        column_docs[key] = found
+    if key and (read[0] or read[1]):
+        book.keep(key, read, where)
+
+
+def _keep_compiled_column_docs(book, key: str, item: object, where: str) -> None:
+    from .column_docs import compiled_columns
+
+    try:
+        read = compiled_columns(item)
+    except Exception:  # noqa: BLE001 - column docs are optional
+        return
+    if key and (read[0] or read[1]):
+        book.keep(key, read, where, "compiled graph actionDescriptor")
+
+
+def _attach_js_columns(book, js_columns: dict, models: dict, sources: dict, diagnostics: list) -> None:
+    """Put the column descriptions declared in JavaScript on the tables they belong to.
+
+    A reading replaces what the ``.sqlx`` route found for the same table (it saw the whole call, the config object and the
+    chained ``.columns()``). Two files declaring one table are merged: agreeing text is kept, differing text is dropped and
+    reported. A call that names an action the project does not model as a table (an ``operate``, a computed query) has nowhere
+    to attach: that is one diagnostic per file, not silence."""
+
+    from .column_docs import merge_reads
+
+    unattached: dict[str, int] = {}
+    for key, readings in js_columns.items():
+        if key not in models and key not in sources:
+            for relative, read in readings:
+                if read[0] or read[1]:
+                    unattached[relative] = unattached.get(relative, 0) + 1
+            continue
+        where, read = readings[0]
+        for other_where, other in readings[1:]:
+            read = merge_reads(read, other)
+            where = where if where == other_where else f"{where} and {other_where}"
+        if read[0] or read[1]:
+            book.keep(key, read, where, f"columns config in {where}")
+    for relative, count in unattached.items():
+        diagnostics.append(PipelineDiagnostic(
+            relative, "js_column_docs_unattached",
+            f"{count} column declaration{'s' if count != 1 else ''} in this file name an action the project does not model as a "
+            "table (an operate action, a computed query or name): the descriptions are not used"))
 
 
 def load_sqlx_project(
@@ -1103,7 +1189,9 @@ def load_sqlx_project(
     search_root = definitions if use_definitions else root
     models: dict[str, Model] = {}
     sources: dict[str, Target] = {}
-    column_docs: dict[str, dict[str, dict[str, str]]] = {}  # table key -> column -> declared description, timezone, unit, scale
+    from .column_docs import ColumnBook
+
+    book = ColumnBook()  # table key -> column -> declared description, timezone, unit, scale; and what could not be read
     source_keys: dict[str, tuple[tuple[str, ...], ...]] = {}
 
     def unlistable(directory: Path, reason: str) -> None:
@@ -1200,7 +1288,7 @@ def load_sqlx_project(
         if kind == "declaration":
             if "name" not in computed_identity:
                 sources[target.key] = target
-                _keep_column_docs(column_docs, target.key, config)
+                _keep_column_docs(book, target.key, config, relative)
                 try:
                     if keys := declared_unique_keys(config):
                         source_keys[target.key] = keys
@@ -1307,7 +1395,7 @@ def load_sqlx_project(
             config_reads, config_reads_unread = _column_reads(config)
         except Exception:  # noqa: BLE001 - a config that cannot be read keeps every column of the model in use
             config_reads, config_reads_unread = (), ("config",)
-        _keep_column_docs(column_docs, target.key, config)
+        _keep_column_docs(book, target.key, config, relative)
         add_model(Model(target, kind, body, relative, tuple(dependencies), masked, tags, non_null, unique_keys, tuple(operations),
                         config_reads=config_reads, config_reads_unread=config_reads_unread,
                         logical=renamed.get(target, ()), disabled=_config_flag(config, "disabled") is True,
@@ -1326,6 +1414,7 @@ def load_sqlx_project(
                 "logical": renamed, "variables": naming.variables, "placeholders": placeholders}
 
     js_files: dict[str, str] = {}
+    js_columns: dict[str, list[tuple[str, tuple]]] = {}  # table key -> the column readings of the JavaScript calls that name it
     nested_roots: dict[tuple[str, ...], bool] = {}
 
     def inside_other_project(directory_parts: tuple[str, ...]) -> bool:
@@ -1354,14 +1443,18 @@ def load_sqlx_project(
     modules = {name[:-3]: js_literals.module_exports(text) for name, text in js_files.items() if "module.exports" in text or "exports." in text}
     for relative_js, text in js_files.items():
         path = root / relative_js
-        if not _JS_CALL_RE.search(text):
+        if not _JS_COLUMN_CALL_RE.search(text):
             continue
         if use_definitions and relative_js.split("/", 1)[0] not in ("definitions", "includes"):
             continue  # Dataform runs definitions/ and what it requires; other folders are not part of the project's actions
         declared_keys: dict[Target, tuple[tuple[str, ...], ...]] = {}
+        file_columns: dict = {}
         declared, actions, complete = js_declared_targets(
             text, Target(database, dataset, ""), modules=modules, path=relative_js, placeholders=placeholders,
-            unique_keys=declared_keys)
+            unique_keys=declared_keys, column_reads=file_columns)
+        for target, (call_kind, read) in file_columns.items():
+            final_key = target.key if call_kind == "declare" else naming.apply(target).key
+            js_columns.setdefault(final_key, []).append((relative_js, read))
         for target in declared:
             if target not in known.setdefault(target.name, []):  # an identical declaration repeated is one table
                 known[target.name].append(target)
@@ -1446,6 +1539,8 @@ def load_sqlx_project(
         except Exception as exc:  # noqa: BLE001 - one odd file must not fail the whole project
             unreadable(asset[0], exc)
 
+    _attach_js_columns(book, js_columns, models, sources, diagnostics)
+
     for reader, ref in reads_output:
         operation = models.get(ref.key)
         if operation is not None and operation.kind == "operations" and not operation.has_output:
@@ -1463,7 +1558,9 @@ def load_sqlx_project(
         default_project=database,
         default_dataset=dataset,
         default_location=naming.location,
-        column_docs=column_docs,
+        column_docs=book.docs,
+        column_doc_sources=book.sources,
+        column_doc_unread=book.unread,
         source_unique_keys=source_keys,
     )
 
@@ -1507,7 +1604,9 @@ def load_compiled_graph(
         diagnostics.append(PipelineDiagnostic("", "compilation_error", "the compiler reported graph errors that could not be read"))
 
     models: dict[str, Model] = {}
-    column_docs: dict[str, dict[str, dict[str, str]]] = {}
+    from .column_docs import ColumnBook
+
+    book = ColumnBook()
     for kind_key, default_kind in (("tables", "table"), ("assertions", "assertion"), ("operations", "operations")):
         for index, item in enumerate(list_of(kind_key)):
             label = f"{kind_key}[{index}]"
@@ -1533,7 +1632,7 @@ def load_compiled_graph(
                         if isinstance(columns, list):
                             unique.append(tuple(c for c in columns if isinstance(c, str)))
                 config_reads, config_reads_unread = _compiled_column_reads(item)
-                _keep_compiled_column_docs(column_docs, target.key, item)
+                _keep_compiled_column_docs(book, target.key, item, file_name if isinstance(file_name, str) else "compiled graph")
                 model = Model(
                     target,
                     str(kind),
@@ -1581,7 +1680,7 @@ def load_compiled_graph(
             )
             continue
         sources[target.key] = target
-        _keep_compiled_column_docs(column_docs, target.key, item)
+        _keep_compiled_column_docs(book, target.key, item, "compiled graph")
     project_config = graph.get("projectConfig") if isinstance(graph.get("projectConfig"), dict) else {}
 
     def defaults(*keys: str) -> str:
@@ -1603,7 +1702,9 @@ def load_compiled_graph(
         default_project=defaults("defaultDatabase", "defaultProject"),
         default_dataset=defaults("defaultSchema", "defaultDataset"),
         default_location=defaults("defaultLocation"),
-        column_docs=column_docs,
+        column_docs=book.docs,
+        column_doc_sources=book.sources,
+        column_doc_unread=book.unread,
     )
 
 if TYPE_CHECKING:
