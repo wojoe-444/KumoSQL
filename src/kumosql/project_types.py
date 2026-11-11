@@ -37,6 +37,8 @@ class ProjectTypes:
     types: dict[str, dict[str, "GType | None"]] = field(default_factory=dict)
     #: column names as spelled, in order, for tables whose column list the snapshot gave
     snapshot_columns: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    #: the snapshot rows (column, type, partitioning, clustering) of each project table the snapshot lists
+    snapshot_rows: dict[str, tuple] = field(default_factory=dict)
     #: where each table's types came from: ``snapshot``, ``declared`` or ``derived``
     origin: dict[str, str] = field(default_factory=dict)
     #: snapshot tables that match no table of the project (or several, or one already matched), as written in the snapshot
@@ -121,6 +123,7 @@ def build(session: "Session") -> ProjectTypes:
             return False
         record(key, "snapshot", [(c.column, parse_type(c.data_type)) for c in rows], [c.is_nullable for c in rows])
         result.snapshot_columns[key] = tuple(c.column for c in rows)
+        result.snapshot_rows[key] = tuple(rows)
         return True
 
     for key in pipeline.sources:

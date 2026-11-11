@@ -162,6 +162,8 @@ def tasks(c: dict) -> list[tuple[str, tuple[str, ...], callable]]:
          lambda ask: ask("rows_filtered", table=c["mid_read"], column=c["mid_read_column"])),
         ("Which conditions upstream remove the rows I expect from a column of the widest table?", ("rows_filtered",),
          lambda ask: ask("rows_filtered", table=c["widest"], column=c["widest_column"], predicate=f"{c['widest_column']} IS NULL")),
+        ("Is the most-read table built in the warehouse and does it match the repository? (answers unknown without a schema snapshot)", ("deployed_status",),
+         lambda ask: ask("deployed_status", table=c["most_read"])),
         ("Can I delete a table nothing reads? (describe it, then ask what breaks)", ("describe_table", "impact"),
          lambda ask: (ask("describe_table", table=c["leaf"]), ask("impact", table=c["leaf"], change="drop_table"))),
         ("Orient me in an unfamiliar table: what is it, where does a column come from, what reads it?", ("describe_table", "trace_column", "impact"),
