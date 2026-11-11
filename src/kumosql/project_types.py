@@ -17,6 +17,7 @@ it is listed in ``unmatched`` instead.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -132,24 +133,64 @@ def build(session: "Session") -> ProjectTypes:
         declared = pipeline.source_schema.get(key) or {}
         if declared:
             record(key, "declared", [(name, parse_type(str(kind)) if kind else None) for name, kind in declared.items()])
+    memo = getattr(pipeline, "result_memo", None)  # saved types of unchanged models (kumosql.result_memo), or None
+    snapshot_context = _snapshot_context(matched) if memo is not None else ""
+    recorded = 0  # order-independent hash of the tables typed so far: what a name two tables share is found as neither
     for key in pipeline.topological_order():
         model = pipeline.models.get(key)
-        if model is None or from_snapshot(key):
+        if model is None:
+            continue
+        if from_snapshot(key):
+            recorded ^= _name_hash(key)
             continue
         if model.kind not in _TYPED_KINDS or not model.sql.strip():
             continue
-        try:
-            typed = infer(model.sql, catalog)
-        except Exception:  # noqa: BLE001 - a model the typer cannot read stays untyped; the rest is unaffected
-            result.models_untyped += 1
-            continue
-        named = [c for c in (typed.columns or ()) if c.name]
+        named, token = _typed_columns(memo, pipeline, key, model, catalog, infer, snapshot_context, recorded)
         if not named:
             result.models_untyped += 1
             continue
         result.models_typed += 1
-        record(key, "derived", [(c.name, c.type) for c in named], [False if c.required else None for c in named])
+        record(key, "derived", [(name, kind) for name, kind, _flag in named], [flag for _name, _kind, flag in named])
+        recorded ^= _name_hash(key)
     return result
+
+
+def _name_hash(key: str) -> int:
+    return int(hashlib.sha256(key.encode("utf-8", "replace")).hexdigest(), 16)
+
+
+def _snapshot_context(matched: dict) -> str:
+    """A hash of the snapshot rows the project's tables matched (any change to them types every model again)."""
+
+    return hashlib.sha256(repr(sorted((key, tuple(rows)) for key, rows in matched.items())).encode("utf-8", "replace")).hexdigest()
+
+
+def _typed_columns(memo, pipeline, key, model, catalog, infer, snapshot_context: str, recorded: int):
+    """``([(name, type, null flag)], token)`` of a model's own query: replayed when its saved entry still holds, else inferred.
+
+    The list is empty when the model cannot be typed (the typer raised, or the query names no columns)."""
+
+    from .result_memo import MemoError, decode_columns, encode_columns
+
+    token = memo.token(pipeline, key, snapshot_context, format(recorded, "x")) if memo is not None else None
+    payload = memo.lookup("types", token) if memo is not None else None
+    if payload is not None:
+        try:
+            columns = decode_columns(payload)
+        except MemoError:
+            columns = False
+        if columns is not False:
+            memo.replayed_one("types", token, key)
+            return columns or [], token
+    try:
+        typed = infer(model.sql, catalog)
+        named = [c for c in (typed.columns or ()) if c.name]
+        columns = [(c.name, c.type, False if c.required else None) for c in named]
+    except Exception:  # noqa: BLE001 - a model the typer cannot read stays untyped; the rest is unaffected
+        columns = []
+    if memo is not None:
+        memo.computed_one("types", token, key, encode_columns(columns or None))
+    return columns, token
 
 
 def snapshot_filter(keys):

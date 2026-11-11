@@ -105,6 +105,9 @@ class Session:
         #: the warm-start controller (:class:`kumosql.mcp_cache.Index`) and the factory of the trace memo each loaded project gets
         self.index = None
         self.trace_memo_factory: Callable[[], object] | None = None
+        #: likewise the saved effects of unchanged files (:mod:`kumosql.load_memo`) and the saved results (:mod:`kumosql.result_memo`)
+        self.load_memo_factory: Callable[[], object] | None = None
+        self.result_memo_factory: Callable[[], object] | None = None
         #: a producers-and-consumers file (``--boundary``), as a path (read on first use) or an already read spec
         self._boundary_source = boundary
         #: why the boundary file could not be applied (answers then say so under ``unknown``); ``None`` when it was or none was given
@@ -128,9 +131,20 @@ class Session:
         with self._lock:
             if self._pipeline is None and self._loader is not None and self.load_error is None:
                 try:
-                    self._pipeline = self._loader()
+                    if self.load_memo_factory is not None:
+                        from . import load_memo
+
+                        token = load_memo.CURRENT.set(self.load_memo_factory())  # files unchanged since the last load are not read or parsed again
+                        try:
+                            self._pipeline = self._loader()
+                        finally:
+                            load_memo.CURRENT.reset(token)
+                    else:
+                        self._pipeline = self._loader()
                     if self.trace_memo_factory is not None:
                         self._pipeline.trace_memo = self.trace_memo_factory()  # saved column traces of unchanged models are reused
+                    if self.result_memo_factory is not None:
+                        self._pipeline.result_memo = self.result_memo_factory()  # saved profiles, column types and expression parts likewise
                 except PipelineLoadError as exc:
                     self.load_error = str(exc)
                 except Exception as exc:  # noqa: BLE001 - a bad project must not stop the server

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -15,6 +16,7 @@ from .identity import NodeIdentity
 from .pipeline_types import Model, PipelineDiagnostic, Target
 from .resilience import (
     PipelineLoadError,
+    decode_text,
     describe_os_error,
     extended_path,
     find_assets,
@@ -1150,6 +1152,31 @@ def _attach_js_columns(book, js_columns: dict, models: dict, sources: dict, diag
             "table (an operate action, a computed query or name): the descriptions are not used"))
 
 
+class _Journal:
+    """What one load step does to the project, as an ordered list of events (see :mod:`kumosql.load_memo`)."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple] = []
+
+    def diag(self, diagnostic: PipelineDiagnostic) -> None:
+        self.events.append(("diag", diagnostic))
+
+    def model(self, model: Model) -> None:
+        self.events.append(("model", model))
+
+    def docs(self, key: str, config: str, where: str) -> None:
+        """Remember the column docs of a config, and what in it could not be read (never lose an asset over them)."""
+
+        from .column_docs import config_columns
+
+        try:
+            found, unread = config_columns(config)
+        except Exception:  # noqa: BLE001 - column docs are optional
+            return
+        if key and (found or unread):
+            self.events.append(("docs", key, found, [tuple(item) for item in unread], where))
+
+
 def load_sqlx_project(
     root: str | Path,
     *,
@@ -1175,6 +1202,12 @@ def load_sqlx_project(
         include_modules = {path.stem for path in (root / "includes").glob("*.js")}
     except OSError:
         include_modules = set()
+
+    from . import load_memo
+    from . import __version__ as kumosql_version
+
+    memo = load_memo.CURRENT.get()  # saved effects of unchanged files (the agent-facing server's warm start), or None
+    ctx1 = load_memo.contexts(kumosql_version, database, dataset, assertion_dataset, naming, include_modules) if memo is not None else ""
 
     def placeholders(expression: str) -> str | None:
         """What a computed database or dataset stands for in a config or a ``ref()``, or None (see ``_placeholder``)."""
@@ -1220,23 +1253,90 @@ def load_sqlx_project(
     renamed: dict[Target, tuple[str, ...]] = {}  # targets a project prefix or suffix changed -> as the config wrote them
     computed_identities = False  # an asset's name, schema or database is computed: refs to unlisted names stay unresolved
 
+    def apply_events(events: list[tuple]) -> None:
+        """Do what a load step recorded, in order (the one place a step changes the project)."""
+
+        nonlocal computed_identities
+        for event in events:
+            op = event[0]
+            if op == "diag":
+                diagnostics.append(event[1])
+            elif op == "model":
+                add_model(event[1])
+            elif op == "known":
+                listed = known.setdefault(event[1], [])
+                if event[2] not in listed:  # a JavaScript publish already listed it
+                    listed.append(event[2])
+            elif op == "renamed":
+                renamed[event[1]] = event[2]
+            elif op == "computed":
+                computed_identities = True
+            elif op == "source":
+                sources[event[1].key] = event[1]
+            elif op == "docs":
+                book.keep(event[1], (event[2], event[3]), event[4])
+            elif op == "source_keys":
+                source_keys[event[1]] = event[2]
+            elif op == "read_output":
+                reads_output.append((event[1], event[2]))
+
     def read_asset(path: Path):
         relative = str(path.relative_to(root))
-        text, reason = read_text_or_reason(path)
+        sha = memo.trusted_sha(path) if memo is not None else None
+        if sha is not None and (found := memo.first(relative, sha, ctx1)) is not None:
+            return finish_first(relative, sha, *found)  # size and time unchanged: the file is not even read
+        try:
+            if path.is_symlink():
+                text, reason, sha = None, "symbolic links are not read", None
+            else:
+                data = path.read_bytes()
+                text, reason, sha = decode_text(data), None, hashlib.sha256(data).hexdigest()
+        except (OSError, UnicodeError) as exc:
+            text, reason, sha = None, describe_os_error(exc), None
+        if memo is not None:
+            memo.note_read(relative)
         if text is None:
             diagnostics.append(PipelineDiagnostic(relative, "read_error", f"{reason}; asset was skipped"))
             return None
-        return read_text_asset(relative, path.stem, path.suffix, text)
+        return read_text_asset(relative, path.stem, path.suffix, text, relative, sha)
 
-    def read_text_asset(relative: str, stem: str, suffix: str, text: str):
+    asset_ids: dict[int, tuple[str, str | None]] = {}  # an asset (by id; the pending list keeps it alive) -> its memo key and content hash
+
+    def finish_first(relative: str, sha: str | None, events: list[tuple], asset: tuple | None):
+        apply_events(events)
+        if asset is not None:
+            asset_ids[id(asset)] = (relative, sha)
+        return asset
+
+    def read_text_asset(relative: str, stem: str, suffix: str, text: str, memo_key: str | None = None, sha: str | None = None):
+        """The first step of one asset (see :mod:`kumosql.load_memo`): replayed when this content was parsed before."""
+
+        if memo is not None:
+            if sha is None:  # an asset a JavaScript file publishes: known by its own text
+                sha = hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()
+                memo_key = f"{relative}#{stem}"
+            if (found := memo.first(memo_key or relative, sha, ctx1)) is not None:  # read, but this content was parsed before
+                return finish_first(memo_key or relative, sha, *found)
+        journal = _Journal()
+        try:
+            asset = first_step(journal, relative, stem, suffix, text)
+        finally:
+            apply_events(journal.events)  # what a step that stopped half way had done is kept, as before
+        if memo is not None:
+            memo.store_first(memo_key or relative, sha, ctx1, journal.events, asset)
+        if asset is not None and memo is not None:
+            asset_ids[id(asset)] = (memo_key or relative, sha)
+        return asset
+
+    def first_step(fx: _Journal, relative: str, stem: str, suffix: str, text: str):
         if suffix == ".sql" and not _SQLX_CONFIG_RE.search(text):
             target = Target(name=stem)
-            add_model(Model(target, "sql", text, relative))
+            fx.model(Model(target, "sql", text, relative))
             return None
         try:
             sections = _split_sqlx_sections(text)
         except ValueError as exc:
-            diagnostics.append(PipelineDiagnostic(relative, "sqlx_parse_error", str(exc)))
+            fx.diag(PipelineDiagnostic(relative, "sqlx_parse_error", str(exc)))
             return None
         config = next(
             (body for kind, body in sections if kind == "block" and body.lstrip().startswith("config")),
@@ -1245,7 +1345,7 @@ def load_sqlx_project(
         declared_type, computed_type = _config_literal(config, "type")
         kind = declared_type or ("unknown" if computed_type else "table")
         for problem in () if computed_type else _config_problems(config, declared_type):
-            diagnostics.append(PipelineDiagnostic(relative, "invalid_config", f"{problem}, so Dataform rejects the project"))
+            fx.diag(PipelineDiagnostic(relative, "invalid_config", f"{problem}, so Dataform rejects the project"))
         identity, computed_identity, placed = {}, [], []
         for key in ("database", "schema", "name"):
             identity[key], computed = _config_identity(config, key, database, dataset, naming.variables)
@@ -1265,7 +1365,7 @@ def load_sqlx_project(
         if computed_identity:
             # A computed name is also what a ref() finds the action by, so it cannot be found at all; a computed database
             # or schema leaves the name known, so refs still find the action (at the project defaults, the best guess).
-            diagnostics.append(PipelineDiagnostic(
+            fx.diag(PipelineDiagnostic(
                 target.key, "dynamic_config",
                 f"its config {' and '.join(computed_identity)} is computed (a project variable or a call), so which table it "
                 "writes is not known" + ("; refs by name do not find it" if "name" in computed_identity else
@@ -1274,30 +1374,28 @@ def load_sqlx_project(
             if kind != "declaration":
                 kind = "unknown"
             if "name" in computed_identity:
-                nonlocal computed_identities
-                computed_identities = True
+                fx.events.append(("computed",))
         if "name" not in computed_identity:
-            if target not in known.setdefault(logical.name, []):  # a JavaScript publish already listed it
-                known[logical.name].append(target)
+            fx.events.append(("known", logical.name, target))
             if target != logical:
-                renamed[target] = (logical.database, logical.schema, logical.name)
+                fx.events.append(("renamed", target, (logical.database, logical.schema, logical.name)))
         if computed_type:
-            diagnostics.append(PipelineDiagnostic(
+            fx.diag(PipelineDiagnostic(
                 target.key, "dynamic_config",
                 "its config type is computed (a project variable or a call), so it is not read as a table: it may be incremental"))
         if kind == "declaration":
             if "name" not in computed_identity:
-                sources[target.key] = target
-                _keep_column_docs(book, target.key, config, relative)
+                fx.events.append(("source", target))
+                fx.docs(target.key, config, relative)
                 try:
                     if keys := declared_unique_keys(config):
-                        source_keys[target.key] = keys
+                        fx.events.append(("source_keys", target.key, keys))
                 except Exception:  # noqa: BLE001 - a key claim is optional evidence
                     pass
             return None
         return relative, sections, config, kind, target
 
-    def load_asset(relative: str, sections, config: str, kind: str, target: Target) -> None:
+    def second_step(fx: _Journal, relative: str, sections, config: str, kind: str, target: Target) -> None:
         default = Target(database, dataset, "")
         body = "".join(section for kind_, section in sections if kind_ == "sql")
         dependencies: list[Target] = []
@@ -1308,19 +1406,19 @@ def load_sqlx_project(
             if ref not in known_targets:
                 spelled = sorted({name for name in known if name.lower() == ref.name.lower() and name != ref.name})
                 hint = f"; the action is named {spelled[0]!r} (names are case-sensitive)" if spelled else ""
-                diagnostics.append(PipelineDiagnostic(
+                fx.diag(PipelineDiagnostic(
                     target.key, "missing_ref",
                     f"{what} names {ref.name!r}, which no action or declaration of the project defines, so Dataform rejects "
                     f"the project{hint}"))
             elif needs_output:
-                reads_output.append((target.key, ref))
+                fx.events.append(("read_output", target.key, ref))
             return ref
 
         def substitute(match: re.Match[str]) -> str:
             try:
                 ref = _parse_ref_args(match.group("args"), default, known, **unknown_names())
             except ValueError as exc:
-                diagnostics.append(PipelineDiagnostic(target.key, "unsupported_ref", str(exc)))
+                fx.diag(PipelineDiagnostic(target.key, "unsupported_ref", str(exc)))
                 return match.group(0)  # left masked like any other interpolation
             dependencies.append(checked(ref, "ref()", needs_output=True))
             return ref.sql()
@@ -1337,7 +1435,7 @@ def load_sqlx_project(
                     try:
                         ref = _parse_ref_args(match.group("args"), default, known, **unknown_names())
                     except ValueError as exc:
-                        diagnostics.append(PipelineDiagnostic(target.key, "unsupported_ref", str(exc)))
+                        fx.diag(PipelineDiagnostic(target.key, "unsupported_ref", str(exc)))
                         continue
                     if ref not in dependencies:
                         dependencies.append(checked(ref, "ref()", needs_output=True))
@@ -1373,7 +1471,7 @@ def load_sqlx_project(
             try:
                 declared = _parse_ref_args(entry, default, known, **unknown_names())
             except ValueError as exc:
-                diagnostics.append(PipelineDiagnostic(target.key, "unsupported_ref", f"config dependencies: {exc}"))
+                fx.diag(PipelineDiagnostic(target.key, "unsupported_ref", f"config dependencies: {exc}"))
                 continue
             if declared not in dependencies:
                 dependencies.append(checked(declared, "a config dependency"))
@@ -1385,7 +1483,7 @@ def load_sqlx_project(
         try:
             tags = _config_tags(config)
         except Exception as exc:  # noqa: BLE001 - tags are optional; never lose the model over them
-            diagnostics.append(PipelineDiagnostic(relative, "config_tags_unreadable", f"could not read tags ({type(exc).__name__}: {exc}); the model was kept without tags"))
+            fx.diag(PipelineDiagnostic(relative, "config_tags_unreadable", f"could not read tags ({type(exc).__name__}: {exc}); the model was kept without tags"))
             tags = ()
         try:
             non_null, unique_keys = _config_assertions(config)
@@ -1395,11 +1493,32 @@ def load_sqlx_project(
             config_reads, config_reads_unread = _column_reads(config)
         except Exception:  # noqa: BLE001 - a config that cannot be read keeps every column of the model in use
             config_reads, config_reads_unread = (), ("config",)
-        _keep_column_docs(book, target.key, config, relative)
-        add_model(Model(target, kind, body, relative, tuple(dependencies), masked, tags, non_null, unique_keys, tuple(operations),
+        fx.docs(target.key, config, relative)
+        fx.model(Model(target, kind, body, relative, tuple(dependencies), masked, tags, non_null, unique_keys, tuple(operations),
                         config_reads=config_reads, config_reads_unread=config_reads_unread,
                         logical=renamed.get(target, ()), disabled=_config_flag(config, "disabled") is True,
                         has_output=_config_flag(config, "hasOutput") is True))
+
+    def load_asset(asset: tuple) -> None:
+        """The second step of one asset (``ref()`` resolution): replayed when this content resolved against the same names before."""
+
+        nonlocal names_context
+        ident = asset_ids.get(id(asset)) if memo is not None else None
+        if ident is not None and ident[1] is not None:
+            if names_context is None:
+                names_context = load_memo.second_context(ctx1, known, renamed, (incomplete_js, js_sets_database, computed_identities))
+            if (events := memo.second(ident[0], ident[1], names_context)) is not None:
+                apply_events(events)
+                return
+        journal = _Journal()
+        try:
+            second_step(journal, *asset)
+        finally:
+            apply_events(journal.events)  # what a step that stopped half way had done is kept, as before
+        if ident is not None and ident[1] is not None:
+            memo.store_second(ident[0], ident[1], names_context, journal.events)
+
+    names_context: str | None = None
 
     def unreadable(relative: str, exc: Exception) -> None:
         diagnostics.append(PipelineDiagnostic(
@@ -1535,7 +1654,7 @@ def load_sqlx_project(
     known_targets.update(target for targets in known.values() for target in targets)
     for asset in pending:
         try:
-            load_asset(*asset)
+            load_asset(asset)
         except Exception as exc:  # noqa: BLE001 - one odd file must not fail the whole project
             unreadable(asset[0], exc)
 
