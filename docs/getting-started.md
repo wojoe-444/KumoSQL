@@ -32,6 +32,15 @@ pip may warn that the scripts (`kumosql-ui.exe` and others) are installed in a f
 
 To install a local checkout instead, run `python -m pip install .` from the repository root. The distribution and the Python import package are both named `kumosql`.
 
+**Upgrading the prover.** The equivalence prover is the separate package `kumo-sql-prover`, which `pyproject.toml` pins to one commit of [Kumo_SQL_Prover](https://github.com/wojoe-444/Kumo_SQL_Prover). When a pull of KumoSQL changes that pin, `pip install .` or `pip install -e .` does **not** replace a prover that is already installed, because both commits carry the same version string, and you keep running the old prover. Reinstall it at the pinned commit (copy the SHA from `pyproject.toml`) and check the result:
+
+```shell
+python -m pip install --force-reinstall --no-deps "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@<sha from pyproject.toml>"
+python -m pip freeze | grep -i prover      # the line ends in the pinned sha
+```
+
+`tests/test_prover_aliases.py` fails when the installed prover has modules the alias list does not know. See [the prover split](prover-split.md#the-pin-and-bumping-it).
+
 Optional extras add capabilities; install them the same way, for example `python -m pip install "kumosql[smt,execution]"`:
 
 | Extra | Adds | Without it |

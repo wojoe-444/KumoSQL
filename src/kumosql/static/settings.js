@@ -714,7 +714,7 @@
     const verdictDetail = h("div", { class: "sp-query-detail" });
     const conditionsOf = (conditions) => h("details", { class: "ev-assumptions", open: "" },
       h("summary", { text: `Conditions (${conditions.length})` }),
-      h("ul", {}, ...conditions.map((item) => h("li", {}, h("details", {}, h("summary", { text: item.text }), h("pre", { class: "sp-pre", text: item.check_sql }))))));
+      h("ul", {}, ...conditions.map((item) => h("li", {}, item.check_sql ? h("details", {}, h("summary", { text: item.text }), h("pre", { class: "sp-pre", text: item.check_sql })) : h("span", { text: item.text })))));
     const assumptionsOf = (assumptions) => h("details", { class: "ev-assumptions" }, h("summary", { text: `Assumptions (${assumptions.length})` }),
       h("ul", {}, ...assumptions.map((item) => h("li", { text: item }))));
     const compare = async () => {

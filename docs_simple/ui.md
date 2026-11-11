@@ -8,7 +8,7 @@ The UI is a local website for working with SQL. Start it after installing KumoSQ
 python -m kumosql ui
 ```
 
-It opens at `http://127.0.0.1:8765/`. Keep the terminal running; Ctrl+C stops the app. `--no-browser` starts the server without opening a browser, and `--port 8766` chooses another port.
+It opens at `http://127.0.0.1:8765/`. Keep the terminal running; Ctrl+C stops the app. `--no-browser` starts the server without opening a browser, and `--port 8766` chooses another port. A program that starts the app for you can use `--port 0 --print-port` (pick a free port and print it as `PORT <number>`) and `--exit-on-stdin-close` (stop when that program ends).
 
 The server accepts only its own local addresses and gives each running session a fresh secret that the browser sends with API requests. If you restart the server while a page is open, reload that page before using it again. Other websites cannot use a foreign address or origin to change the app's settings. Programs running on your computer can still read the local page, so this does not replace your computer's account security. If you call the API from a script, see the [local request boundary](../docs/ui.md) for the required session header.
 

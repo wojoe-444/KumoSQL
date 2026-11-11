@@ -815,10 +815,38 @@ def _required(query: dict[str, list[str]], name: str) -> str:
     return value
 
 
+def stop_when_stdin_closes(server: ThreadingHTTPServer, stream=None) -> threading.Thread | None:
+    """Shut ``server`` down once standard input reaches end of file; returns the watcher thread.
+
+    A program that starts the UI keeps the pipe open for as long as it lives, so end of file means that
+    program is gone, however it ended. Anything read is discarded. Without a readable stdin (``pythonw``)
+    nothing can be watched, and the server keeps running.
+    """
+
+    stream = stream if stream is not None else sys.stdin
+    reader = getattr(stream, "buffer", stream)
+    if reader is None:
+        return None
+
+    def watch() -> None:
+        try:
+            while reader.read(65536):
+                pass
+        except (OSError, ValueError):
+            pass  # a closed or broken pipe is also the end of the program that held it
+        server.shutdown()  # called from this thread, not the one running serve_forever
+
+    thread = threading.Thread(target=watch, name="stdin-watch", daemon=True)
+    thread.start()
+    return thread
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m kumosql.ui", description="Open the local KumoSQL browser UI")
     parser.add_argument("--version", action="version", version=f"kumosql {version.describe()}")
-    parser.add_argument("--port", type=int, default=8765, help="Local port (default: 8765)")
+    parser.add_argument("--port", type=int, default=8765, help="Local port (default: 8765; 0 picks a free one, see --print-port)")
+    parser.add_argument("--print-port", action="store_true", help="Print `PORT <number>` as the first line of standard output once the server is bound, for a program that starts the UI and must learn the port (use with --port 0)")
+    parser.add_argument("--exit-on-stdin-close", action="store_true", help="Stop when standard input reaches end of file, so the UI ends with the program that started it (the starter keeps the pipe open)")
     parser.add_argument("--project", metavar="DIR", help="Load a Dataform or SQL folder into the query graph page")
     parser.add_argument("--git", metavar="URL", help="Load a Dataform repository through the local git CLI (private repositories work with your own credentials)")
     parser.add_argument("--branch", help="With --git: branch to load (default: the remote's default branch)")
@@ -830,8 +858,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verbose", action="store_true", help="Show every request in the console (they are always written to ui.log)")
     parser.add_argument("--no-browser", action="store_true", help="Print the URL without opening a browser")
     args = parser.parse_args(argv)
-    if not 1 <= args.port <= 65535:
-        parser.error("--port must be between 1 and 65535")
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535 (0 picks a free port)")
     console.set_redaction(not args.no_redact and redact.enabled_by_default())
     if args.lookup:
         found = redact.lookup(args.lookup)
@@ -890,7 +918,10 @@ def main(argv: list[str] | None = None) -> int:
         server = UIServer(("127.0.0.1", args.port), UIHandler)
     except OSError as exc:
         parser.error(f"could not start local server: {exc}")
-    url = f"http://127.0.0.1:{args.port}/"
+    port = server.server_address[1]  # the real port: --port 0 lets the system choose
+    if args.print_port:
+        print(f"PORT {port}", flush=True)
+    url = f"http://127.0.0.1:{port}/"
     console.set_verbose(args.verbose)
     console.disable_quick_edit()
     console.announce(url)
@@ -898,6 +929,8 @@ def main(argv: list[str] | None = None) -> int:
         repositories.autoload(background=True)  # after the banner, so its lines come after it
     if not args.no_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+    if args.exit_on_stdin_close:
+        stop_when_stdin_closes(server)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

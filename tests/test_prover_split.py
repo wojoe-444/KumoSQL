@@ -33,7 +33,7 @@ def test_scripting_and_the_rule_registry_stay_out_of_the_prover():
 def test_closure_is_bounded_by_the_roots_it_is_computed_from():
     modules = prover_split.analyse(SOURCE, PACKAGE)["modules"]
     assert set(prover_split.ROOTS) <= set(modules)
-    assert 100 < len(modules) < 160
+    assert 100 < len(modules) < 200  # the prover grows (163 at pin e380238); a closure of everything would be far larger
 
 
 def test_check_exits_zero_on_the_source_tree(capsys):

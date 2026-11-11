@@ -6,6 +6,7 @@ from kumosql import prover_context
 from kumosql.pipeline_loading import _config_assertions
 from kumosql.pipeline_types import Model, Target
 from kumosql.prover_schema import DECLARED_FACTS_NOTE, from_bigquery, from_pipeline
+from kumosql.algebraic_equivalence import prove_equivalent_algebraic
 from kumosql.smt_equivalence import SmtStatus
 
 SELF_JOIN = "SELECT a.id, b.v FROM p.d.t a JOIN p.d.t b ON a.id = b.id"
@@ -128,3 +129,16 @@ def test_bigquery_foreign_keys_reach_the_prover():
         constraints=schema.constraints,
     )
     assert result.proven, result.reason
+
+
+def test_bigquery_column_types_make_a_widening_cast_free():
+    pytest.importorskip("z3")
+    facts = from_bigquery([("p", "d", "t", {"schema": [{"name": "id", "type": "INTEGER"}, {"name": "amt", "type": "NUMERIC"}]})])
+    plain = "SELECT id FROM d.t WHERE id > 1"
+    cast = "SELECT id FROM d.t WHERE CAST(id AS NUMERIC) > 1"
+    with_types = prove_equivalent_algebraic(plain, cast, schema=facts.columns, constraints=facts.constraints, types=facts.types)
+    assert with_types.status is SmtStatus.PROVEN_EQUIVALENT
+    narrow = "SELECT id FROM d.t WHERE CAST(amt AS NUMERIC(10, 2)) > 1"
+    assert not prove_equivalent_algebraic(
+        "SELECT id FROM d.t WHERE amt > 1", narrow, schema=facts.columns, types=facts.types
+    ).proven

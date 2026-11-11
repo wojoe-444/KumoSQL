@@ -59,6 +59,7 @@ vm.runInNewContext(source, sandbox);
     await Promise.all(click.listeners.click.map((fn) => fn()));
     const holders = body.all().filter((node) => node.className === "sp-query-detail");
     out[name] = holders[detail].all().filter((node) => node.tag === "summary").map((node) => node.textContent.trim());
+    out[name + "_pre"] = holders[detail].all().filter((node) => node.tag === "pre").length;
     out[name + "_items"] = holders[detail].all().filter((node) => node.tag === "li" && node.textContent.includes(ASSUMPTION)).length > 0;
   }
   console.log(JSON.stringify(out));
@@ -77,3 +78,23 @@ def test_conditional_compare_shows_assumptions_in_both_panels(tmp_path):
         assert any(line.startswith("Conditions (1)") for line in shown[panel]), shown
         assert any(line.startswith("Assumptions (1)") for line in shown[panel]), (panel, shown)
         assert shown[panel + "_items"], (panel, shown)
+
+
+def run_harness(tmp_path, check_sql):
+    harness = tmp_path / "harness.js"
+    harness.write_text(HARNESS.replace('check_sql: "SELECT 1"', f"check_sql: {json.dumps(check_sql)}"))
+    run = subprocess.run(["node", str(harness), str(SETTINGS)], capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr[-800:]
+    return json.loads(run.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_condition_with_a_query_offers_it_and_one_without_shows_only_its_text(tmp_path):
+    """A same-statement-time condition (``NOW()`` read twice) has no table and an empty check query: no empty box."""
+
+    with_query = run_harness(tmp_path, "SELECT 1")
+    without = run_harness(tmp_path, "")
+    for panel in ("tables", "queries"):
+        assert with_query[panel + "_pre"] == 1, (panel, with_query)
+        assert without[panel + "_pre"] == 0, (panel, without)
+        assert any(line.startswith("Conditions (1)") for line in without[panel]), without
