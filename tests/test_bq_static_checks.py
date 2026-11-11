@@ -456,3 +456,55 @@ def test_no_static_finding_on_any_model_query_of_the_public_example_projects():
             assert found == [], (project.name, key, found)
             checked += 1
     assert checked > 100
+
+
+# --- Probes for validating the rules against BigQuery -------------------------------------------------------------
+#
+# Every probe reads only literals (``UNNEST`` and ``SELECT 1 AS id UNION ALL ...``), so a BigQuery dry run of it costs nothing
+# and touches no table. ``BIGQUERY`` is what a real dry run answered: ``None`` while nobody has run it. A recorded value is
+# ``("accepted",)`` or ``("rejected", "<error class>")`` and is only ever written from a real dry run, never guessed.
+# ``system_time`` has no table-free probe: ``FOR SYSTEM_TIME AS OF`` needs a table reference, so it stays unvalidated.
+ORDERS = "WITH o AS (SELECT 1 AS id, 10 AS amount UNION ALL SELECT 2, 20), c AS (SELECT 1 AS id, 'a' AS region UNION ALL SELECT 2, 'b')\n"
+PROBES = [
+    # (name, rule, flagged by the rule, BigQuery's recorded answer, sql)
+    ("in_subquery_inside_join_condition", "subquery", True, None, ORDERS + "SELECT o.id FROM o JOIN c ON o.id = c.id AND o.id IN (SELECT id FROM c)"),
+    ("in_subquery_in_where_of_a_join", "subquery", False, None, ORDERS + "SELECT o.id FROM o JOIN c ON o.id = c.id WHERE o.id IN (SELECT id FROM c)"),
+    ("correlated_scalar_subquery_with_limit", "subquery", True, None, ORDERS + "SELECT o.id, (SELECT c.region FROM c WHERE c.id = o.id LIMIT 1) AS r FROM o"),
+    ("correlated_scalar_subquery_inequality_only", "subquery", True, None, ORDERS + "SELECT o.id, (SELECT MAX(c.id) FROM c WHERE c.id < o.id) AS r FROM o"),
+    ("equality_correlated_exists", "subquery", False, None, ORDERS + "SELECT o.id FROM o WHERE EXISTS (SELECT 1 FROM c WHERE c.id = o.id)"),
+    ("cte_name_equals_a_column_name", "cte_shadow", True, None, "WITH o AS (SELECT 1 AS id), c AS (SELECT 1 AS o) SELECT o FROM o, c"),
+    ("cte_name_not_a_column_name", "cte_shadow", False, None, "WITH o AS (SELECT 1 AS id), c AS (SELECT 1 AS k) SELECT k FROM o, c"),
+    ("star_plus_alias_with_the_same_name", "duplicate_column", True, None, ORDERS + "SELECT o.*, o.id AS id FROM o"),
+    ("star_plus_alias_with_another_name", "duplicate_column", False, None, ORDERS + "SELECT o.*, o.id AS order_id FROM o"),
+    ("case_branch_after_an_always_true_one", "case_branch", True, None, "SELECT CASE WHEN 1 = 1 THEN 'a' WHEN 2 = 2 THEN 'b' END AS x"),
+    ("case_with_reachable_branches", "case_branch", False, None, "SELECT CASE WHEN x > 1 THEN 'a' ELSE 'b' END AS y FROM UNNEST([1, 2]) AS x"),
+    ("limit_without_order_in_a_cte_read_twice", "limit_reread", True, None, "WITH t AS (SELECT x FROM UNNEST([1, 2, 3]) AS x LIMIT 2) SELECT * FROM t UNION ALL SELECT * FROM t"),
+    ("limit_with_order_in_a_cte_read_twice", "limit_reread", False, None, "WITH t AS (SELECT x FROM UNNEST([1, 2, 3]) AS x ORDER BY x LIMIT 2) SELECT * FROM t UNION ALL SELECT * FROM t"),
+]
+
+
+@pytest.mark.parametrize("name, rule, flagged, bigquery, sql", PROBES, ids=[p[0] for p in PROBES])
+def test_probe_is_flagged_by_its_rule_exactly_when_the_probe_says_so(name, rule, flagged, bigquery, sql):
+    assert (rule in rules(sql)) is flagged
+
+
+@pytest.mark.parametrize("name, rule, flagged, bigquery, sql", PROBES, ids=[p[0] for p in PROBES])
+def test_probe_reads_only_literals_so_a_dry_run_costs_nothing(name, rule, flagged, bigquery, sql):
+    tree = sqlglot.parse_one(sql, read="bigquery")
+    real = [t for t in tree.find_all(sqlglot.exp.Table) if not (t.name in {c.alias for c in tree.find_all(sqlglot.exp.CTE)} and not t.db)]
+    assert real == []
+    assert bigquery is None or bigquery[0] in {"accepted", "rejected"}
+
+
+def test_a_rule_is_never_called_validated_without_a_recorded_bigquery_answer():
+    """The docs table says ``validated`` for a rule only when every probe of it carries BigQuery's recorded answer."""
+
+    docs = (ROOT / "docs" / "mcp-server.md").read_text(encoding="utf-8")
+    by_rule = {}
+    for _, rule, _, bigquery, _ in PROBES:
+        by_rule.setdefault(rule, []).append(bigquery)
+    for rule in ("subquery", "cte_shadow", "duplicate_column", "case_branch", "limit_reread", "system_time"):
+        row = next(line for line in docs.splitlines() if line.startswith(f"  | `{rule}` |"))
+        recorded = bool(by_rule.get(rule)) and all(b is not None for b in by_rule[rule])
+        assert ("| validated" in row) is recorded, rule
+        assert ("| not validated" in row) is not recorded, rule
