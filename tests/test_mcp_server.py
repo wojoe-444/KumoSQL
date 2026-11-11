@@ -435,7 +435,7 @@ def check_find_tables_puts_every_model_first_for_its_own_name_and_stays_in_bound
 
 
 def _ladder_models() -> dict[str, str]:
-    """The same code-to-number CASE ladder in five models, written five ways; two of them differ in one value."""
+    """The same code-to-number CASE ladder in six models, written five ways; two of them differ in one value."""
 
     def view(select):
         return 'config { type: "view" }\n' + select + "\n"
@@ -443,13 +443,14 @@ def _ladder_models() -> dict[str, str]:
     src = ' FROM ${ref("src", "events")}'
     return {
         "events.sqlx": 'config { type: "declaration", schema: "src", name: "events" }\n',
-        "a.sqlx": view("SELECT id, CASE WHEN code = 'A26' THEN 26 WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 ELSE NULL END AS n" + src),
-        "b.sqlx": view("SELECT id, CASE e.code WHEN 'C1' THEN 1 WHEN 'B7' THEN 7 WHEN 'A26' THEN 26 END AS num FROM ${ref(\"src\", \"events\")} AS e"),
-        "c.sqlx": view("select id,\n   case\n     when e.code in ('B7') then 7\n     when ('A26' = e.code) then 26\n     when code = 'C1' then 1\n   end as parsed\n FROM ${ref(\"src\", \"events\")} e"),
-        "d.sqlx": view("SELECT id, CASE WHEN code = 'A26' THEN NULL WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END AS n" + src),
-        "e.sqlx": view("SELECT id, COALESCE(CASE code WHEN 'A26' THEN NULL WHEN 'B7' THEN 7 WHEN 'C1' THEN 1 END, 0) AS n2" + src),
-        "short.sqlx": view("SELECT id, CASE WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END AS n" + src),
-        "other.sqlx": view("SELECT id, CASE WHEN code = 'Z' THEN 1 END AS n" + src),
+        "a.sqlx": view("SELECT id, CASE WHEN code = 'GOLD' THEN 30 WHEN code = 'SILVER' THEN 20 WHEN code = 'BRONZE' THEN 10 ELSE NULL END AS n" + src),
+        "b.sqlx": view("SELECT id, CASE e.code WHEN 'BRONZE' THEN 10 WHEN 'SILVER' THEN 20 WHEN 'GOLD' THEN 30 END AS num FROM ${ref(\"src\", \"events\")} AS e"),
+        "c.sqlx": view("select id,\n   case\n     when e.code in ('SILVER') then 20\n     when ('GOLD' = e.code) then 30\n     when code = 'BRONZE' then 10\n   end as parsed\n FROM ${ref(\"src\", \"events\")} e"),
+        "d.sqlx": view("SELECT id, CASE WHEN code = 'GOLD' THEN NULL WHEN code = 'SILVER' THEN 20 WHEN code = 'BRONZE' THEN 10 END AS n" + src),
+        "e.sqlx": view("SELECT id, COALESCE(CASE code WHEN 'GOLD' THEN NULL WHEN 'SILVER' THEN 20 WHEN 'BRONZE' THEN 10 END, 0) AS n2" + src),
+        "f.sqlx": view("SELECT id, CASE WHEN code = 'GOLD' THEN 30 WHEN code = 'SILVER' THEN 20 WHEN code = 'BRONZE' THEN 10 END AS n" + src),
+        "short.sqlx": view("SELECT id, CASE WHEN code = 'SILVER' THEN 20 WHEN code = 'BRONZE' THEN 10 END AS n" + src),
+        "other.sqlx": view("SELECT id, CASE WHEN code = 'Z' THEN 10 END AS n" + src),
     }
 
 
@@ -458,23 +459,23 @@ def ladders(tmp_path_factory):
     return mcp_server.AgentServer(Session(load_sqlx_project(write_project(tmp_path_factory.mktemp("ladders"), _ladder_models()))))
 
 
-LADDER = "CASE WHEN x.code = 'A26' THEN 26 WHEN x.code = 'B7' THEN 7 WHEN x.code = 'C1' THEN 1 END"
+LADDER = "CASE WHEN x.code = 'GOLD' THEN 30 WHEN x.code = 'SILVER' THEN 20 WHEN x.code = 'BRONZE' THEN 10 END"
 
 
 def test_find_existing_expression_counts_copies_of_a_case_ladder_and_names_the_variants(ladders):
     body, failed, used = ask(ladders, "find_existing", expression=LADDER)
     assert not failed and used <= BOUND
-    assert body["counts"]["copies"] == 5 and body["counts"]["variants"] == 2 and body["counts"]["models"] == 5
-    assert body["answer"].startswith("5 copies, 2 variants in 5 models")
-    assert "'A26' maps to NULL" in body["answer"] or "'A26' maps to 26" in body["answer"]
-    # spelling, aliases, qualifiers and branch order do not make a new variant: three copies are one variant
+    assert body["counts"]["copies"] == 6 and body["counts"]["variants"] == 2 and body["counts"]["models"] == 6
+    assert body["answer"].startswith("6 copies, 2 variants in 6 models")
+    assert "'GOLD' maps to NULL" in body["answer"] or "'GOLD' maps to 30" in body["answer"]
+    # spelling, aliases, qualifiers and branch order do not make a new variant: four copies are one variant
     by_size = sorted(body["variants"], key=lambda v: -v["copies"])
-    assert [v["copies"] for v in by_size] == [3, 2]
+    assert [v["copies"] for v in by_size] == [4, 2]
     listed = {m.split(" ")[0] for v in body["variants"] for m in v["models"]}
-    assert listed == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e"}
-    assert {m.split(" ")[0] for m in by_size[0]["models"]} == {"p.ds.a", "p.ds.b", "p.ds.c"} and by_size[0]["same_as_yours"]
+    assert listed == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e", "p.ds.f"}
+    assert {m.split(" ")[0] for m in by_size[0]["models"]} == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.f"} and by_size[0]["same_as_yours"]
     # the difference is named, against the closest variant, in both directions
-    assert "'A26' maps to NULL (26 in variant" in by_size[1]["differs"] and "'A26' maps to 26 (NULL in variant" in by_size[0]["differs"]
+    assert "'GOLD' maps to NULL (30 in variant" in by_size[1]["differs"] and "'GOLD' maps to 30 (NULL in variant" in by_size[0]["differs"]
     assert "(column n)" in json.dumps(body["variants"]) and "(column n2)" in json.dumps(body["variants"])  # where each one sits
     assert body["next"] and body["unknown"]
 
@@ -483,12 +484,12 @@ def test_find_existing_expression_reports_a_shorter_ladder_as_partial_not_equal(
     body, _, _ = ask(ladders, "find_existing", expression=LADDER)
     partial = body["partial"]
     assert [p["kind"] for p in partial] == ["partial"] and partial[0]["models"] == ["p.ds.short (column n)"]
-    assert "lacks 'A26'" in partial[0]["differs"]
+    assert "lacks 'GOLD'" in partial[0]["differs"]
     assert "p.ds.short" not in json.dumps(body["variants"])
     # asked the other way round, the long ladders are 'extends'
-    body, _, _ = ask(ladders, "find_existing", expression="CASE WHEN code = 'B7' THEN 7 WHEN code = 'C1' THEN 1 END")
+    body, _, _ = ask(ladders, "find_existing", expression="CASE WHEN code = 'SILVER' THEN 20 WHEN code = 'BRONZE' THEN 10 END")
     assert body["counts"]["copies"] == 1 and body["variants"][0]["models"] == ["p.ds.short (column n)"]
-    assert {p["kind"] for p in body["partial"]} == {"extends"} and body["counts"]["partial_or_related_copies"] == 5
+    assert {p["kind"] for p in body["partial"]} == {"extends"} and body["counts"]["partial_or_related_copies"] == 6
 
 
 def test_find_existing_expression_treats_branch_order_as_meaningful_when_conditions_overlap(tmp_path):
@@ -570,7 +571,7 @@ def test_the_expression_index_is_plain_json_keyed_by_model_content_and_reused_wh
     pipeline = load_sqlx_project(write_project(tmp_path / "one", models))
     index = es.build_index(pipeline)
     saved = json.loads(json.dumps(index.to_json()))  # plain data: it survives a JSON round trip
-    assert saved["format"] == es.FORMAT and set(saved["models"]) == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e", "p.ds.short", "p.ds.other"}
+    assert saved["format"] == es.FORMAT and set(saved["models"]) == {"p.ds.a", "p.ds.b", "p.ds.c", "p.ds.d", "p.ds.e", "p.ds.f", "p.ds.short", "p.ds.other"}
     assert all(part["hash"] and part["rows"] for part in saved["models"].values())
 
     # a new load of the same project reuses every saved part; the answers are the same
@@ -582,16 +583,16 @@ def test_the_expression_index_is_plain_json_keyed_by_model_content_and_reused_wh
         reused = es.build_index(again, saved)
         assert built == [] and reused.to_json() == saved
         # one model changed: only that model is normalized again, and a saved part for another format is ignored
-        changed = dict(models, **{"d.sqlx": models["d.sqlx"].replace("THEN NULL", "THEN 27")})
+        changed = dict(models, **{"d.sqlx": models["d.sqlx"].replace("THEN NULL", "THEN 31")})
         edited = es.build_index(load_sqlx_project(write_project(tmp_path / "three", changed)), saved)
         assert built == ["p.ds.d"] and edited.parts["p.ds.d"]["hash"] != saved["models"]["p.ds.d"]["hash"]
         built.clear()
         es.build_index(again, {"format": "older", "models": saved["models"]})
-        assert len(built) == 7
+        assert len(built) == 8
     finally:
         es.model_part = real
     query = es.prepare(reused, LADDER)
-    assert [len(g.copies) for g in es.search(reused, query).variants] == [3, 2]
+    assert [len(g.copies) for g in es.search(reused, query).variants] == [4, 2]
 
 
 # --------------------------------------------------- find_tables has_columns (link tables)

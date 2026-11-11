@@ -254,7 +254,7 @@ def _show(text: str, limit: int = 40) -> str:
 
 
 def ladder_difference(mine: Ladder, other: Ladder, other_name: str) -> list[str]:
-    """What ``mine`` does differently from ``other``, as short phrases (``'A26' maps to NULL (26 in variant 1)``)."""
+    """What ``mine`` does differently from ``other``, as short phrases (``'GOLD' maps to NULL (30 in variant 1)``)."""
 
     verb = "maps to" if mine.subject is not None else "gives"
     theirs = {b.cond: b for b in other.branches}
