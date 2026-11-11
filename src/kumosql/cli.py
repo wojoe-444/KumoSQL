@@ -91,7 +91,8 @@ def prove_main(argv: list[str] | None = None) -> int:
             print(conditional.reason)
             for condition in conditional.conditions:
                 print(f"condition: {condition.text}")
-                print(f"check: {condition.check_sql}")
+                if condition.check_sql:  # a same-statement-time or same-session condition has no query to run
+                    print(f"check: {condition.check_sql}")
             for assumption in conditional.assumptions:
                 print(f"diagnostic: assumption: {assumption}")
             return 3
