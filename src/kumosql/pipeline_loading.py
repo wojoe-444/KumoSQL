@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Mapping
 from sqlglot import exp
 
 from .identity import NodeIdentity
+from .paths import relative_posix
 from .pipeline_types import Model, PipelineDiagnostic, Target
 from .resilience import (
     PipelineLoadError,
@@ -1229,7 +1230,7 @@ def load_sqlx_project(
 
     def unlistable(directory: Path, reason: str) -> None:
         try:
-            label = str(directory.relative_to(root))
+            label = relative_posix(directory, root)
         except ValueError:
             label = "."
         file_link = directory.is_symlink() and not directory.is_dir()
@@ -1281,7 +1282,7 @@ def load_sqlx_project(
                 reads_output.append((event[1], event[2]))
 
     def read_asset(path: Path):
-        relative = str(path.relative_to(root))
+        relative = relative_posix(path, root)
         sha = memo.trusted_sha(path) if memo is not None else None
         if sha is not None and (found := memo.first(relative, sha, ctx1)) is not None:
             return finish_first(relative, sha, *found)  # size and time unchanged: the file is not even read
@@ -1590,7 +1591,7 @@ def load_sqlx_project(
             incomplete_js = True
             js_sets_database = js_sets_database or bool(re.search(r"\bdatabase\b", text))
             diagnostics.append(PipelineDiagnostic(
-                str(path.relative_to(root)), "js_declaration_dynamic",
+                relative_posix(path, root), "js_declaration_dynamic",
                 "declares or names tables that cannot be read without running the code; refs to unlisted names were left unresolved"))
 
     if incomplete_js and compiled_targets is None:
@@ -1635,7 +1636,7 @@ def load_sqlx_project(
         try:
             asset = read_asset(path)
         except Exception as exc:  # noqa: BLE001 - one odd file must not fail the whole project
-            unreadable(str(path.relative_to(root)), exc)
+            unreadable(relative_posix(path, root), exc)
             continue
         if asset is not None:
             pending.append(asset)

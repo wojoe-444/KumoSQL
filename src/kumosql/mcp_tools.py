@@ -16,6 +16,7 @@ from . import boundary
 from . import mcp_cost_access
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
+from .paths import posix_path
 from .pipeline_types import ColumnRef
 
 PAGE = 200  # most items one call hands to the size bound
@@ -168,7 +169,7 @@ def _project_check(session: Session, key: str) -> str | None:
 
 def _file(session: Session, key: str) -> str | None:
     model = session.pipeline().models.get(key)
-    return model.path if model is not None else None
+    return posix_path(model.path) if model is not None and model.path else None
 
 
 def _filter_text(found) -> str:
@@ -220,7 +221,7 @@ def describe_table(session: Session, args: dict) -> Answer:
     answer.fields["table"] = key
     answer.fields["kind"] = model.kind
     if model.path:
-        answer.fields["file"] = model.path
+        answer.fields["file"] = posix_path(model.path)
     if model.tags:
         answer.fields["tags"] = list(model.tags)
     if role is not None and role.role != "unknown":
@@ -273,7 +274,7 @@ def describe_table(session: Session, args: dict) -> Answer:
     elif not unknown_columns:
         answer.next("Nothing in the project reads it: it is an output. impact table=... column=... lists a column's readers.")
     if model.path:
-        answer.next(f"Open {model.path} for its SQL.")
+        answer.next(f"Open {posix_path(model.path)} for its SQL.")
     boundary.annotate_table(session, key, answer)
     return answer
 

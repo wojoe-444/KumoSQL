@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 from typing import Literal, Mapping
 
+from .paths import posix_path
+
 
 IdentityKind = Literal["table", "wildcard", "system", "asset", "unresolved"]
 
@@ -44,7 +46,7 @@ class NodeIdentity:
 
     @classmethod
     def for_asset(cls, path: str) -> "NodeIdentity":
-        normalized = PurePosixPath(path.replace("\\", "/")).as_posix()
+        normalized = PurePosixPath(posix_path(path)).as_posix()
         return cls("asset", asset_path=normalized)
 
     @classmethod

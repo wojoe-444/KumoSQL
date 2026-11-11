@@ -28,6 +28,7 @@ from sqlglot import exp
 from .column_docs import ATTRIBUTES
 from .mcp_answers import Answer, clip
 from .mcp_session import Session
+from .paths import posix_path
 from .pipeline_types import ColumnRef
 
 #: the attributes a computation does not carry (a description is simply not inherited by a computation)
@@ -449,7 +450,7 @@ def item_of(session: Session, key: str, column: str, limit: int) -> dict | None:
     item: dict = {}
     if "description" in found.values:
         item["description"] = clip(found.values["description"], limit)
-        item["described_in"] = found.labels.get("description", "columns config")
+        item["described_in"] = posix_path(found.labels.get("description", "columns config"))
     for attribute in UNCARRIED:
         if attribute in found.values:
             item[attribute] = clip(found.values[attribute], 60)
