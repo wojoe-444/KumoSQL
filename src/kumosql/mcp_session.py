@@ -12,13 +12,17 @@ import difflib
 import sys
 import threading
 from pathlib import Path
-from typing import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Callable, Mapping, Sequence
 
 from . import data_profile_store as store
 from .pipeline import Pipeline
 from .pipeline_loading import load_compiled_graph, load_sqlx_project
 from .resilience import PipelineLoadError, parse_json_or_raise
 from .schema_snapshot import SchemaSnapshot, SchemaSnapshotError, load_schema_snapshot
+
+
+if TYPE_CHECKING:
+    from .boundary import Boundary, BoundarySpec
 
 
 def load_project(root: Path, source_schema: Path | None = None) -> Pipeline:
@@ -57,6 +61,7 @@ class Session:
         assume_grain: Mapping[str, Sequence[str]] | None = None,
         root: Path | None = None,
         schema_snapshot: Path | SchemaSnapshot | None = None,
+        boundary: "Path | BoundarySpec | None" = None,
     ) -> None:
         self._assume_grain = dict(assume_grain or {})
         #: a file of column types (``--schema-snapshot``) or an already loaded snapshot; read on first use, never fetched
@@ -74,6 +79,10 @@ class Session:
         #: the warm-start controller (:class:`kumosql.mcp_cache.Index`) and the factory of the trace memo each loaded project gets
         self.index = None
         self.trace_memo_factory: Callable[[], object] | None = None
+        #: a producers-and-consumers file (``--boundary``), as a path (read on first use) or an already read spec
+        self._boundary_source = boundary
+        #: why the boundary file could not be applied (answers then say so under ``unknown``); ``None`` when it was or none was given
+        self.boundary_error: str | None = None
 
     # ------------------------------------------------------------- the project
 
@@ -124,6 +133,9 @@ class Session:
             from .mcp_expression import expression_index
 
             expression_index(self)
+            outside = self.boundary()
+            if outside is not None:
+                outside.warm()
         except Exception as exc:  # noqa: BLE001 - the first question computes it again and reports what failed
             print(f"kumosql mcp: warm-up stopped ({type(exc).__name__})", file=sys.stderr)
 
@@ -132,6 +144,29 @@ class Session:
 
         with self._lock:
             self._pipeline, self._cache, self.load_error = other._pipeline, other._cache, other.load_error
+            self.boundary_error = other.boundary_error
+
+    def boundary(self) -> "Boundary | None":
+        """The producers and consumers outside the project (see :mod:`kumosql.boundary`), or ``None`` when none were given or the file failed (``boundary_error`` says why)."""
+
+        if self._boundary_source is None or self.pipeline() is None:
+            return None
+        return self._once("boundary", self._load_boundary)
+
+    def _load_boundary(self) -> "Boundary | None":
+        from . import boundary as outside
+
+        try:
+            spec = self._boundary_source
+            if not isinstance(spec, outside.BoundarySpec):
+                spec = outside.read_file(Path(spec))
+            return outside.build(spec, self)
+        except outside.BoundaryError as exc:
+            self.boundary_error = str(exc)
+        except Exception as exc:  # noqa: BLE001 - a bad boundary file must not stop the server
+            self.boundary_error = f"the boundary file could not be applied ({type(exc).__name__})"
+        print(f"kumosql mcp: --boundary not applied: {self.boundary_error}", file=sys.stderr)
+        return None
 
     def _once(self, key: str, compute: Callable[[], object]):
         with self._lock:

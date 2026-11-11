@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from . import boundary
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 from .pipeline_types import ColumnRef
@@ -267,6 +268,7 @@ def describe_table(session: Session, args: dict) -> Answer:
         answer.next("Nothing in the project reads it: it is an output. impact table=... column=... lists a column's readers.")
     if model.path:
         answer.next(f"Open {model.path} for its SQL.")
+    boundary.annotate_table(session, key, answer)
     return answer
 
 
@@ -315,6 +317,7 @@ def _describe_source(session: Session, key: str, readers: list[str], offset: int
         answer.unknown("columns", "no source schema was given (--source-schema)")
     if readers:
         answer.next(f"impact table={key} lists what a change to it breaks.")
+    boundary.annotate_table(session, key, answer)
     return answer
 
 
@@ -379,6 +382,7 @@ def trace_column(session: Session, args: dict) -> Answer:
         answer.next(f"impact table={key} column={name} lists the models that read it.")
     if _file(session, key):
         answer.next(f"Open {_file(session, key)} where {name} is computed.")
+    boundary.annotate_trace(session, trace.sources, answer, source_tables={ref_.table for ref_ in trace.sources})
     return answer
 
 
@@ -390,6 +394,7 @@ def _source_column(session: Session, ref: ColumnRef) -> Answer:
     answer.counts = {"read_by_models": len(readers)}
     answer.add_list("read_by", readers[:PAGE], total=len(readers), primary=True)
     answer.next(f"impact table={ref.table} column={ref.dotted} lists what depends on it.")
+    boundary.annotate_trace(session, [ref], answer)
     return answer
 
 
@@ -455,6 +460,7 @@ def impact(session: Session, args: dict) -> Answer:
         column = ".".join((name, *path))
     result = pipeline.assess_change(change, key, column)
     offset = offset_wanted(args)
+    outside = boundary.impact_readers(session, change, key, column)  # readers named in --boundary, or None
 
     affected = sorted(result.affected, key=lambda a: (a.depth, _EFFECTS.get(a.effect, 9), a.model))
     items = []
@@ -474,7 +480,10 @@ def impact(session: Session, args: dict) -> Answer:
         answer.fields["target_known"] = False
     answer.counts = {"affected": len(affected), **{effect: effects[effect] for effect in _EFFECTS if effects[effect]},
                      "unknown_readers": len(result.unknown), "max_depth": max((a.depth for a in affected), default=0)}
-    answer.add_list("affected", items[offset:][:PAGE], total=len(items), offset=offset, primary=True)
+    # with a boundary file, `offset` pages whichever list is longer: the outside readers when they outnumber the inside ones
+    page_outside = outside is not None and len(outside.items) > len(items)
+    inner = 0 if page_outside else offset
+    answer.add_list("affected", items[inner:][:PAGE], total=len(items), offset=inner, primary=not page_outside)
 
     group_unknown(answer, [(u.model, u.reason) for u in result.unknown], "reader")
     if not result.complete:
@@ -496,6 +505,7 @@ def impact(session: Session, args: dict) -> Answer:
         answer.next(f"describe_table table={result.unknown[0].model} shows why that reader could not be analysed.")
     if not affected and not result.unknown:
         answer.next("No reader inside the project. Check query history and dashboards before deleting.")
+    boundary.annotate_impact(answer, outside, offset=offset if page_outside else 0, primary=page_outside)
     return answer
 
 

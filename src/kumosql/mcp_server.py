@@ -128,6 +128,13 @@ def main(argv: list[str] | None = None) -> int:
         "Export it once from the warehouse and refresh it when tables change; the server only reads the file. "
         "check_query uses it to compare column types and carries them through the models.",
     )
+    parser.add_argument(
+        "--boundary",
+        type=Path,
+        metavar="FILE",
+        help="YAML or JSON file naming the jobs outside the repository that build sources (producers) and the semantic models and "
+        "dashboards that read outputs (consumers). Traces continue through the producers' SQL and impact lists the consumers, labelled as outside the project.",
+    )
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
     parser.add_argument("--cache-dir", type=Path, help="folder where the analysed index is saved so the next start is warm (default: the per-user cache folder, outside the project)")
     parser.add_argument("--no-cache", action="store_true", help="do not save or read the analysed index")
@@ -152,9 +159,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"--assume-grain: {exc}")
     if args.schema_snapshot:
         try:
-            snapshot = check_schema_snapshot(args.schema_snapshot)  # fail at start, not as a silent gap in every answer
+            check_schema_snapshot(args.schema_snapshot)  # fail at start, not as a silent gap in every answer
         except SchemaSnapshotError as exc:
             parser.error(f"--schema-snapshot: {exc}")
+    boundary = None
+    if args.boundary:
+        from .boundary import BoundaryError, read_file
+
+        try:
+            boundary = read_file(args.boundary)
+        except BoundaryError as exc:
+            parser.error(f"--boundary: {exc}")
     loader = (lambda: load_project(root, args.source_schema)) if root else None
     session = Session(
         loader=loader,
@@ -162,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
         root=(root.parent if root.is_file() else root) if root else None,
         assume_grain=assumed,
         schema_snapshot=args.schema_snapshot,
+        boundary=boundary,
     )
     server = AgentServer(session)
     if loader is not None:
