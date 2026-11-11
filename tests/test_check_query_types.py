@@ -36,6 +36,12 @@ def server(tmp_path, snapshot=None, name="columns.csv"):
     return mcp_server.AgentServer(Session(load_sqlx_project(folder), schema_snapshot=path))
 
 
+def type_gaps(body):
+    """What the answer lists under unknown about column types (other checks add their own entries, e.g. the dry-run estimate)."""
+
+    return [g for g in body.get("unknown", []) if g["what"].startswith("types of") or "output column types" in g["what"]]
+
+
 def type_findings(body):
     return findings_of(body, "types")
 
@@ -46,21 +52,20 @@ def test_a_string_column_between_integer_bounds_is_a_types_finding_with_a_fix_wh
     [found] = type_findings(body)
     assert "c.batch_code (STRING)" in found["what"] and "31 (INT64 literal)" in found["what"] and "BETWEEN" in found["what"]
     assert "'31'" in found["fix"] and "CAST(c.batch_code AS INT64)" in found["fix"]
-    assert "types" in body["checked"] and body["counts"]["not_checked"] == 0
+    assert "types" in body["checked"] and type_gaps(body) == []
 
 
 def test_without_a_snapshot_the_same_query_says_the_column_type_is_unknown_and_types_were_not_checked(tmp_path, no_network):
     body, failed, _ = ask(server(tmp_path), "check_query", sql=BETWEEN)
     assert not failed and not type_findings(body)
-    assert body["counts"]["not_checked"] == 1
-    [gap] = body["unknown"]
+    [gap] = type_gaps(body)
     assert gap["what"] == "types of schedule.batch_code unknown" and "--schema-snapshot" in gap["reason"]
     assert "types" not in body["checked"] and "NOT be checked" in body["answer"]
 
 
 def test_a_snapshot_that_cannot_be_read_is_named_in_the_gap_instead_of_passing(tmp_path, no_network):
     body, _, _ = ask(server(tmp_path, "not,a,schema\n1,2,3\n"), "check_query", sql=BETWEEN)
-    [gap] = body["unknown"]
+    [gap] = type_gaps(body)
     assert "could not be read" in gap["reason"] and "types" not in body["checked"]
 
 
@@ -135,7 +140,7 @@ def test_nullability_comes_from_the_snapshot_or_from_what_a_models_query_guarant
 def test_many_unknown_columns_are_one_line_with_a_count(tmp_path, no_network):
     sql = "SELECT 1 FROM ${ref('schedule')} c WHERE c.batch_code = 'a' AND c.batch_start = 'b' AND c.batch_start > c.batch_code AND c.batch_code = c.batch_start"
     body, _, _ = ask(server(tmp_path), "check_query", sql=sql)
-    assert body["counts"]["not_checked"] == 2 and {g["what"] for g in body["unknown"]} == {"types of schedule.batch_code unknown", "types of schedule.batch_start unknown"}
+    assert {g["what"] for g in type_gaps(body)} == {"types of schedule.batch_code unknown", "types of schedule.batch_start unknown"}
 
 
 # ---------------------------------------------------------------- the snapshot loader
