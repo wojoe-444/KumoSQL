@@ -373,6 +373,14 @@ def pipeline_main(argv: list[str] | None = None) -> int:
         type=Path,
         help='JSON of release thresholds, e.g. {"min_columns_traced": 0.95, "require_complete": true}; flags override it',
     )
+    parser.add_argument(
+        "--boundary",
+        type=Path,
+        metavar="FILE",
+        help="YAML or JSON file naming the jobs outside the repository that build sources (producers) and the semantic models and "
+        "dashboards that read outputs (consumers), as for python -m kumosql mcp. Adds a boundary section to the report (or to the --assess "
+        "result): producer SQL as models outside the project and the readers outside the project. Nothing it names is contacted.",
+    )
     parser.add_argument("-o", "--output", type=Path, help="Write the JSON report here; stdout if omitted")
     args = parser.parse_args(argv)
     if args.fetch_schema:
@@ -393,6 +401,15 @@ def pipeline_main(argv: list[str] | None = None) -> int:
         except GitRepoError as exc:
             parser.error(str(exc))
 
+    boundary_spec = None
+    if args.boundary:
+        from .boundary import BoundaryError, read_file
+
+        try:
+            boundary_spec = read_file(args.boundary)  # the same checks, and messages, as python -m kumosql mcp
+        except BoundaryError as exc:
+            parser.error(f"--boundary: {exc}")
+
     scope = None
     if args.scope:
         scope = get_scope(args.scope)
@@ -403,6 +420,15 @@ def pipeline_main(argv: list[str] | None = None) -> int:
     except PipelineLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    boundary = boundary_session = None
+    if boundary_spec is not None:
+        from . import boundary_report
+        from .boundary import BoundaryError
+
+        try:
+            boundary, boundary_session = boundary_report.load(pipeline, boundary_spec)
+        except BoundaryError as exc:  # a producer table the project does not have, or builds itself
+            parser.error(f"--boundary: {exc}")
     if args.assess:
         table, column = args.target, None
         if args.assess != "drop_table":
@@ -423,6 +449,10 @@ def pipeline_main(argv: list[str] | None = None) -> int:
             ).to_json()
         except ValueError as exc:
             parser.error(str(exc))
+        if boundary is not None:
+            data["boundary"] = boundary_report.assess_section(
+                boundary, boundary_session, args.assess, table, column, file=args.boundary
+            )
         if args.fetch_schema:
             from . import schema_fetch
 
@@ -454,6 +484,13 @@ def pipeline_main(argv: list[str] | None = None) -> int:
         else:
             print(sheet)
         return 0
+    if boundary is not None:
+        data["boundary"] = boundary_report.report_section(
+            boundary,
+            boundary_session,
+            keep=None if scope is None else pipeline.scope_keys(scope),
+            file=args.boundary,
+        )
     if scope is not None and not data["models"]:
         print(f"warning: scope {scope.name!r} matches no models", file=sys.stderr)
     if args.fetch_schema:

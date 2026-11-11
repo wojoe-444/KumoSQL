@@ -104,6 +104,8 @@ consumers:
 - A file KumoSQL cannot read (nothing matches the path, it is not text, or it is too big) is reported as **unknown**, never as "nobody reads it".
 - A mistake in the file (a table the project does not have, SQL that does not parse) is explained in a line or two before the server starts, or, for a table name, in every answer.
 
+The same file works with `python -m kumosql pipeline-report --boundary that-file.yaml`, which adds the outside jobs and readers to the report (see [understanding a whole pipeline](pipeline-analysis.md)).
+
 The limit: KumoSQL only knows what the file says. A job or dashboard you did not list is still invisible, so it still never says a deletion is safe. The full details are in the [reference](../docs/mcp-server.md#producers-and-consumers-outside-the-repository---boundary).
 
 ## Column types: the schema snapshot
