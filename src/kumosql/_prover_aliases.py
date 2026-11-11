@@ -148,6 +148,7 @@ MOVED = frozenset(
         "sqlx",
         "sqlx_fragments",
         "statement_proof",
+        "statement_values",
         "string_literals",
         "string_number_compare",
         "string_number_literals",
