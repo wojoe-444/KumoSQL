@@ -37,8 +37,8 @@ table is skipped too (``INFORMATION_SCHEMA.COLUMNS`` has none). The loader never
 warehouse. ``Session.schema_snapshot()`` gives the snapshot a server was started with.
 
 The file is **streamed**, one row at a time, and a row of a table the caller does not want is dropped on the spot
-(``keep``, see below), so a warehouse-wide export of hundreds of thousands of rows costs the memory of the tables the
-project uses, and about a second per 100,000 rows. A JSON *array* is parsed whole (use JSON lines for big files). Nothing is
+(``keep``, see below), so a large warehouse-wide export costs the memory of the tables the
+project uses, and is read quickly (a generated file is read at about 100,000 rows a second). A JSON *array* is parsed whole (use JSON lines for big files). Nothing is
 written anywhere: the loader keeps no cache file.
 
     load_schema_snapshot("columns.csv", keep=lambda catalog, schema, table: table in project_tables)

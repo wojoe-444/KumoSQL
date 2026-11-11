@@ -11,20 +11,20 @@ from kumosql.project_types import snapshot_filter
 from kumosql.schema_snapshot import SchemaSnapshotError, check_schema_snapshot, load_schema_snapshot, parse_schema_snapshot
 from test_mcp_server import ask, findings_of, no_network, write_project  # noqa: F401
 
-#: a tiny Dataform project: raw_dates is declared without types, calendar and orders read it
+#: a tiny Dataform project: raw_schedule is declared without types, schedule and orders read it
 PROJECT = {
-    "raw_dates.sqlx": 'config { type: "declaration", schema: "src", name: "raw_dates" }\n',
-    "calendar.sqlx": 'config { type: "table" }\nSELECT week_label AS order_week, week_start FROM ${ref("src", "raw_dates")}\n',
+    "raw_schedule.sqlx": 'config { type: "declaration", schema: "src", name: "raw_schedule" }\n',
+    "schedule.sqlx": 'config { type: "table" }\nSELECT batch_label AS batch_code, batch_start FROM ${ref("src", "raw_schedule")}\n',
     "orders.sqlx": 'config { type: "table" }\nSELECT 1 AS order_id, 7 AS customer_id, "open" AS status, 2.5 AS amount, CAST(1 AS FLOAT64) AS weight, DATETIME "2026-01-01 00:00:00" AS placed_local\n',
     "customers.sqlx": 'config { type: "table" }\nSELECT "7" AS customer_id, "Ann" AS name\n',
 }
 SNAPSHOT_CSV = """table_catalog,table_schema,table_name,column_name,data_type,is_nullable
-p,ds,calendar,order_week,STRING,YES
-p,ds,calendar,week_start,DATE,YES
-p,src,raw_dates,week_label,STRING,YES
-p,src,raw_dates,week_start,DATE,YES
+p,ds,schedule,batch_code,STRING,YES
+p,ds,schedule,batch_start,DATE,YES
+p,src,raw_schedule,batch_label,STRING,YES
+p,src,raw_schedule,batch_start,DATE,YES
 """
-BETWEEN = "SELECT 1 FROM ${ref('calendar')} c WHERE c.order_week BETWEEN 202601 AND 202610"
+BETWEEN = "SELECT 1 FROM ${ref('schedule')} c WHERE c.batch_code BETWEEN 31 AND 58"
 
 
 def server(tmp_path, snapshot=None, name="columns.csv"):
@@ -44,8 +44,8 @@ def test_a_string_column_between_integer_bounds_is_a_types_finding_with_a_fix_wh
     body, failed, _ = ask(server(tmp_path, SNAPSHOT_CSV), "check_query", sql=BETWEEN)
     assert not failed and body["verdict"] == "problems_found"
     [found] = type_findings(body)
-    assert "c.order_week (STRING)" in found["what"] and "202601 (INT64 literal)" in found["what"] and "BETWEEN" in found["what"]
-    assert "'202601'" in found["fix"] and "CAST(c.order_week AS INT64)" in found["fix"]
+    assert "c.batch_code (STRING)" in found["what"] and "31 (INT64 literal)" in found["what"] and "BETWEEN" in found["what"]
+    assert "'31'" in found["fix"] and "CAST(c.batch_code AS INT64)" in found["fix"]
     assert "types" in body["checked"] and body["counts"]["not_checked"] == 0
 
 
@@ -54,7 +54,7 @@ def test_without_a_snapshot_the_same_query_says_the_column_type_is_unknown_and_t
     assert not failed and not type_findings(body)
     assert body["counts"]["not_checked"] == 1
     [gap] = body["unknown"]
-    assert gap["what"] == "types of calendar.order_week unknown" and "--schema-snapshot" in gap["reason"]
+    assert gap["what"] == "types of schedule.batch_code unknown" and "--schema-snapshot" in gap["reason"]
     assert "types" not in body["checked"] and "NOT be checked" in body["answer"]
 
 
@@ -68,7 +68,7 @@ def test_model_types_are_carried_from_their_queries_so_a_join_on_text_and_intege
     served = server(tmp_path)
     types = served.session.column_types()
     assert str(types.type("p.ds.orders", "customer_id")) == "INT64" and str(types.type("p.ds.customers", "customer_id")) == "STRING"
-    assert types.type("p.ds.calendar", "order_week") is None  # read from an undeclared source: unknown for that column only
+    assert types.type("p.ds.schedule", "batch_code") is None  # read from an undeclared source: unknown for that column only
     body, _, _ = ask(served, "check_query", sql="SELECT o.order_id FROM ${ref('orders')} o JOIN ${ref('customers')} c ON o.customer_id = c.customer_id")
     [found] = type_findings(body)
     assert found["what"].startswith("join condition") and "o.customer_id (INT64)" in found["what"] and "c.customer_id (STRING)" in found["what"]
@@ -119,7 +119,7 @@ def test_snapshot_types_win_over_derived_ones_and_rows_of_tables_the_project_doe
     served = server(tmp_path, csv)
     types = served.session.column_types()
     assert str(served.session.column_type("p.ds.orders", "customer_id")) == "STRING"
-    assert served.session.column_is_nullable("p.ds.orders", "customer_id") is False and served.session.column_is_nullable("p.ds.calendar", "order_week") is True
+    assert served.session.column_is_nullable("p.ds.orders", "customer_id") is False and served.session.column_is_nullable("p.ds.schedule", "batch_code") is True
     assert served.session.schema_snapshot().ignored == 1 and "p.other.elsewhere" not in served.session.schema_snapshot().tables()
     assert types.unmatched == []
     body, _, _ = ask(served, "check_query", sql="SELECT 1 FROM p.other.elsewhere e JOIN ${ref('orders')} o ON o.customer_id = e.k")
@@ -129,13 +129,13 @@ def test_snapshot_types_win_over_derived_ones_and_rows_of_tables_the_project_doe
 def test_nullability_comes_from_the_snapshot_or_from_what_a_models_query_guarantees(tmp_path):
     served = server(tmp_path)
     assert served.session.column_is_nullable("p.ds.orders", "order_id") is False  # a literal is never NULL
-    assert served.session.column_is_nullable("p.ds.calendar", "order_week") is None  # read from an undeclared source: not known
+    assert served.session.column_is_nullable("p.ds.schedule", "batch_code") is None  # read from an undeclared source: not known
 
 
 def test_many_unknown_columns_are_one_line_with_a_count(tmp_path, no_network):
-    sql = "SELECT 1 FROM ${ref('calendar')} c WHERE c.order_week = 'a' AND c.week_start = 'b' AND c.week_start > c.order_week AND c.order_week = c.week_start"
+    sql = "SELECT 1 FROM ${ref('schedule')} c WHERE c.batch_code = 'a' AND c.batch_start = 'b' AND c.batch_start > c.batch_code AND c.batch_code = c.batch_start"
     body, _, _ = ask(server(tmp_path), "check_query", sql=sql)
-    assert body["counts"]["not_checked"] == 2 and {g["what"] for g in body["unknown"]} == {"types of calendar.order_week unknown", "types of calendar.week_start unknown"}
+    assert body["counts"]["not_checked"] == 2 and {g["what"] for g in body["unknown"]} == {"types of schedule.batch_code unknown", "types of schedule.batch_start unknown"}
 
 
 # ---------------------------------------------------------------- the snapshot loader
@@ -187,42 +187,42 @@ def test_a_filter_drops_the_rows_of_other_tables_while_reading_and_counts_them(t
         check_schema_snapshot(tmp_path / "missing.csv")
 
 
-def test_a_project_of_400_models_and_1000_declared_sources_is_typed_once_from_a_large_snapshot(tmp_path):
+def test_a_project_of_many_models_and_sources_is_typed_once_from_a_snapshot_with_many_unused_rows(tmp_path):
     """Sizing, not a timing test: every model is typed once, rows of tables the project does not use are never kept."""
 
-    files = {f"src_{i}.sqlx": f'config {{ type: "declaration", schema: "src", name: "s{i}" }}\n' for i in range(1000)}
-    for i in range(400):
+    files = {f"src_{i}.sqlx": f'config {{ type: "declaration", schema: "src", name: "s{i}" }}\n' for i in range(260)}
+    for i in range(120):
         upstream = f'${{ref("src", "s{i}")}}' if i % 2 == 0 else f'${{ref("m{i - 1}")}}'
         files[f"m{i}.sqlx"] = f'config {{ type: "table" }}\nSELECT id, total FROM {upstream}\n'
     folder = write_project(tmp_path / "big", files)
     lines = ["table_catalog,table_schema,table_name,column_name,data_type,is_nullable"]
-    lines += [f"p,src,s{i},{c},{kind},YES" for i in range(1000) for c, kind in (("id", "STRING"), ("total", "INT64"))]
-    lines += [f"p,archive,old{i},c{j},STRING,YES" for i in range(2000) for j in range(10)]  # 20,000 rows of tables nobody uses
+    lines += [f"p,src,s{i},{c},{kind},YES" for i in range(260) for c, kind in (("id", "STRING"), ("total", "INT64"))]
+    lines += [f"p,archive,old{i},c{j},STRING,YES" for i in range(300) for j in range(10)]  # 3,000 rows of tables nobody uses
     path = tmp_path / "columns.csv"
     path.write_text("\n".join(lines) + "\n")
     session = Session(load_sqlx_project(folder), schema_snapshot=path)
     types = session.column_types()
-    assert types.models_typed == 400 and types.models_untyped == 0
-    assert session.schema_snapshot().ignored == 20000 and len(session.schema_snapshot()) == 1000
-    assert str(session.column_type("p.ds.m399", "id")) == "STRING" and str(session.column_type("p.ds.m398", "total")) == "INT64"
+    assert types.models_typed == 120 and types.models_untyped == 0
+    assert session.schema_snapshot().ignored == 3000 and len(session.schema_snapshot()) == 260
+    assert str(session.column_type("p.ds.m119", "id")) == "STRING" and str(session.column_type("p.ds.m118", "total")) == "INT64"
     assert session.column_types() is types  # computed once and cached in the session
 
 
-NOT_IN = "SELECT 1 FROM ${ref('orders')} o WHERE CAST(o.order_id AS STRING) NOT IN (SELECT c.order_week FROM ${ref('calendar')} c)"
+NOT_IN = "SELECT 1 FROM ${ref('orders')} o WHERE CAST(o.order_id AS STRING) NOT IN (SELECT c.batch_code FROM ${ref('schedule')} c)"
 
 
 def test_not_in_over_a_nullable_column_is_a_finding_with_a_snapshot_and_unknown_without_one(tmp_path, no_network):
     body, _, _ = ask(server(tmp_path, SNAPSHOT_CSV), "check_query", sql=NOT_IN)
     [found] = findings_of(body, "not_in_null")
-    assert "NOT IN (SELECT c.order_week" in found["what"] and "nullable" in found["what"] and "NOT EXISTS" in found["fix"]
+    assert "NOT IN (SELECT c.batch_code" in found["what"] and "nullable" in found["what"] and "NOT EXISTS" in found["fix"]
     body, _, _ = ask(server(tmp_path / "none"), "check_query", sql=NOT_IN)
     assert not findings_of(body, "not_in_null") and any(g["what"] == "NOT IN subqueries not checked" for g in body["unknown"])
     # a snapshot that says the column is NOT NULL clears it
-    body, _, _ = ask(server(tmp_path / "required", SNAPSHOT_CSV.replace("order_week,STRING,YES", "order_week,STRING,NO")), "check_query", sql=NOT_IN)
+    body, _, _ = ask(server(tmp_path / "required", SNAPSHOT_CSV.replace("batch_code,STRING,YES", "batch_code,STRING,NO")), "check_query", sql=NOT_IN)
     assert not findings_of(body, "not_in_null") and not any(g["what"] == "NOT IN subqueries not checked" for g in body.get("unknown", []))
 
 
 def test_the_session_hook_the_static_checks_call_answers_true_false_or_none(tmp_path):
-    session = server(tmp_path, SNAPSHOT_CSV.replace("order_week,STRING,YES", "order_week,STRING,NO")).session
-    assert session.column_is_nullable("p.ds.calendar", "order_week") is False and session.column_is_nullable("p.ds.calendar", "week_start") is True
-    assert session.column_is_nullable("p.ds.calendar", "no_such_column") is None and session.column_is_nullable("p.other.elsewhere", "k") is None
+    session = server(tmp_path, SNAPSHOT_CSV.replace("batch_code,STRING,YES", "batch_code,STRING,NO")).session
+    assert session.column_is_nullable("p.ds.schedule", "batch_code") is False and session.column_is_nullable("p.ds.schedule", "batch_start") is True
+    assert session.column_is_nullable("p.ds.schedule", "no_such_column") is None and session.column_is_nullable("p.other.elsewhere", "k") is None

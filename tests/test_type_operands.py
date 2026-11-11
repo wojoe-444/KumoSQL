@@ -69,8 +69,8 @@ def test_a_mismatch_with_known_types_is_reported_once_with_its_code(sql, code):
 
 
 def test_a_between_with_two_wrong_bounds_is_one_finding_that_names_both_bounds():
-    [finding] = run("SELECT 1 FROM sch.t WHERE s BETWEEN 202601 AND 202610").findings
-    assert "202601" in finding.what and "202610" in finding.what and "BETWEEN" in finding.what and "'202601'" in finding.fix
+    [finding] = run("SELECT 1 FROM sch.t WHERE s BETWEEN 31 AND 58").findings
+    assert "31" in finding.what and "58" in finding.what and "BETWEEN" in finding.what and "'31'" in finding.fix
 
 
 def test_unknown_types_are_returned_not_guessed_and_a_null_is_never_a_mismatch():

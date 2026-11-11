@@ -125,7 +125,7 @@ def _catalog(session: Session, draft: Draft):
 
 
 def _unknown_label(session: Session, draft: Draft, unknown) -> tuple[str, str] | None:
-    """``("calendar.order_week", reason)`` for a column of unknown type, or ``None`` when another gap already says it."""
+    """``("schedule.batch_code", reason)`` for a column of unknown type, or ``None`` when another gap already says it."""
 
     column = unknown.column.name
     table = unknown.table
