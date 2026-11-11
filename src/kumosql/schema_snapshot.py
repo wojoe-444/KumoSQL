@@ -23,6 +23,12 @@ data_type         ``data_type``, ``type``          required, BigQuery type text 
                                                    ``STRUCT<a STRING>``
 is_nullable       ``is_nullable``, ``nullable``    optional: ``YES``/``NO``/``true``/``false``
 ordinal_position  ``ordinal_position``             optional: columns are listed in this order
+partitioning      ``is_partitioning_column``       optional: ``YES``/``NO``, whether the table is partitioned by this column
+clustering        ``clustering_ordinal_position``  optional: the column's place in the table's clustering (blank or ``NULL`` when it
+                                                   is not a clustering column)
+exported at       ``exported_at``,                 optional: when the export was made (ISO 8601 or epoch seconds); the latest value
+                  ``snapshot_timestamp``,          in the file is the snapshot's age, else the file's modification time is used
+                  ``snapshot_time``
 ================  ===============================  =========================================================
 
 Use::
@@ -52,6 +58,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
@@ -67,6 +74,9 @@ _FIELDS = {
     "data_type": ("data_type", "type"),
     "is_nullable": ("is_nullable", "nullable"),
     "ordinal_position": ("ordinal_position", "position"),
+    "partitioning": ("is_partitioning_column", "partitioning_column"),
+    "clustering": ("clustering_ordinal_position", "clustering_position"),
+    "exported_at": ("exported_at", "snapshot_timestamp", "snapshot_time", "export_time"),
 }
 _REQUIRED = ("table", "column", "data_type")
 
@@ -83,6 +93,10 @@ class SnapshotColumn:
     column: str
     data_type: str
     is_nullable: bool | None = None
+    #: ``is_partitioning_column``: ``True``/``False``, or ``None`` when the file has no such column or the cell is blank
+    is_partitioning: bool | None = None
+    #: ``clustering_ordinal_position``: the column's place in the clustering (1, 2, ...), or ``None`` when it is not one
+    clustering_position: int | None = None
 
     @property
     def table_name(self) -> str:
@@ -102,6 +116,14 @@ class SchemaSnapshot:
     ignored: int = 0
     #: where it was read from, for messages
     source: str = "schema snapshot"
+    #: whether the file has an ``is_partitioning_column`` / ``clustering_ordinal_position`` column at all (a table with no
+    #: partitioning column and a file that never said are different things)
+    has_partitioning: bool = False
+    has_clustering: bool = False
+    #: when the export was made, as epoch seconds, from the file's timestamp column (the latest row); ``None`` when it has none
+    exported_at: float | None = None
+    #: the file's modification time (epoch seconds) when it was read from a file
+    modified_at: float | None = None
     _tables: dict[str, tuple[SnapshotColumn, ...]] = field(default_factory=dict, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -145,7 +167,8 @@ def load_schema_snapshot(path: str | Path, keep: Keep | None = None) -> SchemaSn
 
     path = Path(path)
     try:
-        size = path.stat().st_size
+        stat = path.stat()
+        size = stat.st_size
     except OSError as exc:
         raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it ({type(exc).__name__}: {exc.strerror or exc})") from exc
     if size > MAX_BYTES:
@@ -154,7 +177,9 @@ def load_schema_snapshot(path: str | Path, keep: Keep | None = None) -> SchemaSn
     fmt = "jsonl" if suffix in (".jsonl", ".ndjson", ".json") else "csv" if suffix in (".csv", ".tsv") else None
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            return _read(handle, fmt, path.name, keep, None)
+            snapshot = _read(handle, fmt, path.name, keep, None)
+        snapshot.modified_at = stat.st_mtime
+        return snapshot
     except (OSError, UnicodeDecodeError) as exc:
         raise SchemaSnapshotError(f"schema snapshot {path.name}: cannot read it as UTF-8 text ({type(exc).__name__})") from exc
 
@@ -254,6 +279,24 @@ def _nullable(value) -> bool | None:
     return True if folded in ("yes", "true", "1", "nullable") else False if folded in ("no", "false", "0", "required") else None
 
 
+def _moment(value) -> float | None:
+    """Epoch seconds of an ISO 8601 text or a number of seconds (milliseconds when it is that large); ``None`` when it is neither."""
+
+    text = _text(value)
+    if not text:
+        return None
+    try:
+        number = float(text)
+        return number / 1000 if number > 1e11 else number
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace(" UTC", "+00:00").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)).timestamp()
+
+
 def _positions(names: Iterable[str], source: str) -> dict[str, str]:
     """``{field: the file's name for it}`` from the names the file has; raises when a required field is missing."""
 
@@ -278,6 +321,8 @@ def _collect(rows: Iterator[dict], source: str, keep: Keep | None, limit: int | 
     wanted: dict[tuple[str, str, str], bool] = {}
     kept: list[tuple[int, int, SnapshotColumn]] = []
     skipped = ignored = count = 0
+    exported: float | None = None
+    moments: dict[str, float | None] = {}
     for count, row in enumerate(rows):
         if "__header__" in row:
             columns = row["__header__"]
@@ -294,6 +339,12 @@ def _collect(rows: Iterator[dict], source: str, keep: Keep | None, limit: int | 
             get = lambda name, item=item: item.get(mapping.get(name, ""))  # noqa: E731
         if limit is not None and count > limit:
             break
+        if "exported_at" in mapping:
+            stamp = _text(get("exported_at"))
+            if stamp not in moments:
+                moments[stamp] = _moment(stamp)
+            if moments[stamp] is not None and (exported is None or moments[stamp] > exported):
+                exported = moments[stamp]
         catalog, schema, table = _text(get("catalog")), _text(get("schema")), _text(get("table"))
         name = (catalog, schema, table)
         if name not in wanted:
@@ -311,10 +362,14 @@ def _collect(rows: Iterator[dict], source: str, keep: Keep | None, limit: int | 
             continue
         seen.add(key)
         position = _text(get("ordinal_position"))
-        kept.append((int(position) if position.isdigit() else len(kept), len(kept), SnapshotColumn(catalog, schema, table, column, data_type, _nullable(get("is_nullable")))))
+        cluster = _text(get("clustering"))
+        kept.append((int(position) if position.isdigit() else len(kept), len(kept), SnapshotColumn(
+            catalog, schema, table, column, data_type, _nullable(get("is_nullable")),
+            _nullable(get("partitioning")), int(cluster) if cluster.isdigit() else None)))
     if not mapping:
         raise SchemaSnapshotError(f"{source}: it has a header but no rows; {_accepted()}")
     if not kept and keep is None and limit is None:
         raise SchemaSnapshotError(f"{source}: no row has a table, a column and a data type; {_accepted()}")
     kept.sort(key=lambda item: (item[2].table_name.casefold(), item[0], item[1]))
-    return SchemaSnapshot(tuple(item[2] for item in kept), skipped, ignored, source)
+    return SchemaSnapshot(tuple(item[2] for item in kept), skipped, ignored, source,
+                          has_partitioning="partitioning" in mapping, has_clustering="clustering" in mapping, exported_at=exported)

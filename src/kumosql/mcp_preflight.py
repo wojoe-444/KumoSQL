@@ -12,6 +12,8 @@ One call instead of four commands, on a draft ``SELECT`` written against the pro
 * **fan-out**: joins that can multiply rows, judged from the grain of the joined tables (the project's table profiles);
 * **static**: BigQuery-specific text checks (a reserved word as an alias, ``NOT IN`` with NULL, a CASE branch no row reaches, ...),
   in :mod:`kumosql.bq_static_checks`;
+* **deployed tables**: a table the draft reads that is missing from the schema snapshot, and a column it uses that the
+  repository has but the snapshot's table lacks (:mod:`kumosql.mcp_deployed`; ``deployed_status`` compares one table);
 * **BigQuery dry run**: only when ``dry_run=true`` *and* a ``project`` is given. It plans the query without running it
   (free, no data read), reports the estimated bytes against the byte cap of Settings → Scopes and the column types BigQuery
   returns. It is the only part that reaches the network; without credentials it says ``not checked``. Its byte estimate, the
@@ -492,6 +494,11 @@ def check_query(session: Session, args: dict) -> Answer:
     from . import project_checks  # imported here so the tool list keeps the order of TOOL_MODULES
 
     gaps += project_checks.draft_notes(session, draft.keys())  # disabled, declared and built, declared-only: the repository cannot vouch for them
+    from . import mcp_deployed  # tables missing from the schema snapshot, columns the deployed table lacks
+
+    deployed = mcp_deployed.check_draft(session, draft)
+    findings += deployed.findings
+    gaps = deployed.gaps[:1] + gaps + deployed.gaps[1:]  # a table that may not be built goes first: it is the one that would break the run
     if facts:
         answer.fields["ties_judged_assuming"] = "; ".join(facts)
     if draft.assumptions:
@@ -510,6 +517,8 @@ def check_query(session: Session, args: dict) -> Answer:
     answer.add_list("sources", access.sources, total=len(access.sources))
     for what, reason in gaps:
         answer.unknown(what, reason)
+    for step in deployed.next:
+        answer.next(step)
     if findings:
         answer.summary = f"{len(findings)} problem{'s' if len(findings) != 1 else ''} found ({', '.join(f'{n} {c}' for c, n in counts.items())}); each names its fix."
         answer.next(f"Apply the fix of the first finding ({findings[0]['check']}), then run check_query again.")

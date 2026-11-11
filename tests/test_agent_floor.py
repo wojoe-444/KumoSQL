@@ -15,7 +15,7 @@ floor = importlib.util.module_from_spec(_spec)
 sys.modules["agent_floor"] = floor
 _spec.loader.exec_module(floor)
 
-QUESTIONS_FLOOR = 39
+QUESTIONS_FLOOR = 41
 
 
 def test_every_standard_question_is_answered_inside_its_bounds():
