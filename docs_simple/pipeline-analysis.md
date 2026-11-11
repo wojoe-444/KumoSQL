@@ -34,6 +34,19 @@ lists both written tables, and a rename connects the old name to the new one. Th
 that every assigned column can be traced. Nested fields of a stored STRUCT still trace to the containing column.
 A partition name such as `events$__UNPARTITIONED__` uses the schema of `events` when it is available.
 
+## Jobs and dashboards outside the project
+
+Your repository does not hold everything. A scheduled query may build one of your source tables, and a dashboard may read one of your outputs. List them in a small file (the format is in the [agent server guide](mcp-server.md#things-outside-the-repository)) and pass it to the report:
+
+```sh
+python -m kumosql pipeline-report path/to/project --boundary boundary.yaml -o report.json
+python -m kumosql pipeline-report path/to/project --boundary boundary.yaml --assess drop_column --target demo.analytics.daily_sales.total
+```
+
+The report then has an extra `boundary` section: the SQL of each outside job, read as a model that sits outside the project (what it reads, and which columns it builds from what), and, for each table, the dashboards or semantic models outside the project that read it. For example, if `daily_sales` is read by a dashboard whose SQL you listed, `daily_sales` shows that dashboard as an outside reader, and dropping `total` says whether the dashboard reads `total`. Without `--boundary` the report is exactly as before. A file with a mistake stops the command with the same message the agent server gives.
+
+The limit: KumoSQL only knows what the file says. A dashboard you did not list is invisible, so it still never says a deletion is safe. Matches found in plain text files are guesses and are labelled that way, and files it could not read are reported as unknown, not as "no reader". Details are in the [reference](../docs/pipeline-analysis.md).
+
 ## A query's own WITH table is not the model
 
 A `WITH` table only exists inside the query that defines it. If model `read_secret` reads the model `t`, and a subquery further along declares its own `WITH t AS (SELECT 1 AS id) ...`, that inner `t` is a different, private table. Reading `t` outside it, or inside a `WITH t AS (SELECT * FROM t)` body, still reads the real model. KumoSQL follows this rule, so the dependency on `t` is kept and `t.secret` is not called unused just because a nested `WITH` reused the name. This tracks name scope only; it does not check that the data matches. The exact rule is in the [full reference](../docs/pipeline-analysis.md).

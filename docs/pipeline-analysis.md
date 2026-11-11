@@ -41,6 +41,18 @@ when the schema for `events` is known.
 python -m kumosql pipeline-report path/to/dataform --source-schema sources.json --similarity 0.7 -o report.json
 ```
 
+**Producers and consumers outside the repository (`--boundary FILE`).** `pipeline-report` takes the same producers-and-consumers file as `python -m kumosql mcp` (format, validation and limits in [the agent server page](mcp-server.md#producers-and-consumers-outside-the-repository---boundary)). A file that is missing, unreadable, or has an unknown key, a bad SQL file or an absolute path stops the command with the same message as the server (`error: --boundary: ...`, exit status 2), and so does a producer table the project does not have or builds itself (the closest names are given). Nothing it names is contacted or written. Without the option the report and the `--assess` result are unchanged; with it they gain one top-level key, `boundary`:
+
+- the report: `external_models` has one entry per producer: `table`, `built_by` (`kind`, `id`, `url`), `status` (`sql_parsed`, `sql_not_available` or `no_sql`), and for parsed SQL its `file`, the tables it `reads` and one entry per column it builds (`column`, `status`, `transform`, `sources`), that is the producer's SQL read as a model outside the project. `readers_outside_project` lists, for each project table (only those in the scope with `--scope`, noted in `scope_note`), the outside readers: `name`, `kind`, `how` (`reads` for parsed consumer SQL, `reads (Malloy)`, `reads (by text)`), the `evidence` files. `counts` and `unknown` complete it: a consumer whose files cannot be read, or whose text names a column but not the table, is listed under `unknown` with the reason and is never counted as having no reader. `note` repeats that only what the file names is visible.
+- `--assess`: `readers_outside_project` for the target (with the columns each reads), `counts` and `unknown`. The result's own `safe_to_delete` stays `unknown`.
+
+```shell
+python -m kumosql pipeline-report path/to/dataform --boundary boundary.yaml -o report.json
+python -m kumosql pipeline-report path/to/dataform --boundary boundary.yaml --assess drop_column --target proj.sales.orders.amount
+```
+
+The reader scan is a text and Malloy scan, not a compiler, so each row is labelled by how it was found; a few hundred producers and consumers add a few seconds to a report.
+
 ## Lineage that follows GoogleSQL rather than guessing
 
 Column tracing uses sqlglot; `kumosql.lineage_soundness` corrects the shapes where its answer is not GoogleSQL's, so a trace is exact or says unknown (`tests/test_lineage_soundness.py`, with the cases of an external audit in `tests/fixtures/lineage_s013/`):
