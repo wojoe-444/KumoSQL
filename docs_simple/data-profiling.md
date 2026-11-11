@@ -39,6 +39,10 @@ python -m kumosql profile-table my-project.sales.orders --project my-billing-pro
 
 Every profile is saved on your computer. `python -m kumosql profile-mcp` starts a small read-only server that lets an AI agent list and read those saved summaries. It cannot run queries or change anything.
 
+## Which columns could be the key
+
+A saved profile also shows which columns have no repeated values, or only a few (at most 1 row in 100), as **key candidates**, for example "order_id: near-key: 3 duplicate rows in 5,000". That is a count taken on one day, not a promise that the column is the key. An agent can use it as an assumption when it checks a join, and the answer says so. A profile of only a sample, or with a filter, says nothing about the whole table, so it gives no candidates. To measure a join of two tables instead of one column, the [agent server](mcp-server.md) has `join_profile` ([details](../docs/data-profiling.md#key-candidates-and-join-profiles)).
+
 ## Things to be careful about
 
 - A profile quotes real values from your table (the most common ones, and the smallest and largest text). If the table has personal or private text, add `--no-values`.

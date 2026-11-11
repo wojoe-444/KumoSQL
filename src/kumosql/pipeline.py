@@ -96,6 +96,8 @@ class Pipeline:
     default_project: str = ""
     default_dataset: str = ""
     default_location: str = ""
+    #: unique keys a declaration states for a source (``assertions: {uniqueKey}`` or ``uniqueKey`` in ``declare({...})``), by source key
+    source_unique_keys: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ graph
 
