@@ -10,7 +10,8 @@ One call instead of four commands, on a draft ``SELECT`` written against the pro
   in :mod:`kumosql.bq_static_checks`;
 * **BigQuery dry run**: only when ``dry_run=true`` *and* a ``project`` is given. It plans the query without running it
   (free, no data read), reports the estimated bytes against the byte cap of Settings → Scopes and the column types BigQuery
-  returns. It is the only part that reaches the network; without credentials it says ``not checked``.
+  returns. It is the only part that reaches the network; without credentials it says ``not checked``. Its byte estimate, the
+  readable/denied verdict per source table and the remembered denials are in :mod:`kumosql.mcp_cost_access`.
 
 Every finding names its fix. Anything a check could not decide is listed under ``unknown`` with the reason. "No problems
 found" means the checks that ran found none, never that the query is correct.
@@ -332,36 +333,6 @@ def bigquery_dry_run(sql: str, project: str):
     return dryrun.dry_run(sql, project, **({"location": location} if location else {}))
 
 
-def _dry_run(sql: str, project: str) -> tuple[list[dict], list[tuple[str, str]], dict | None]:
-    """Findings, gaps and a summary of the dry run; ``not checked`` when BigQuery could not be asked."""
-
-    from . import scope_queries
-    from .sql_validation import validate_readonly_query
-
-    try:
-        validate_readonly_query(sql)
-    except ValueError as exc:
-        return [], [("BigQuery dry run", f"not checked: {clip(exc, 120)}")], None
-    try:
-        result = bigquery_dry_run(sql, project)
-    except Exception as exc:  # noqa: BLE001 - no credentials, no network, a proxy: the answer says so instead of failing
-        return [], [("BigQuery dry run", f"not checked: {clip(str(exc) or type(exc).__name__, 160)}")], None
-    if not result.ok:
-        where = f" (at {result.error_location})" if result.error_location else ""
-        finding = {"check": "dry_run", "what": clip(f"BigQuery rejects the query{where}: {result.error_message}", 260),
-                   "fix": "Fix what BigQuery reports; check_query without dry_run shows type problems it can see offline."}
-        return [finding], [], {"ok": False}
-    cap = scope_queries.get_settings().max_bytes_billed
-    summary = {"ok": True, "estimated_bytes": result.total_bytes_processed, "byte_cap": cap,
-               "columns": [clip(f"{f.name} {f.type}", 90) for f in result.schema] if result.schema_observed else None}
-    findings = []
-    if result.total_bytes_processed is not None and result.total_bytes_processed > cap:
-        findings.append({"check": "dry_run", "what": f"the query would process about {result.total_bytes_processed:,} bytes, over the {cap:,}-byte cap",
-                         "fix": "Filter on the table's partition column, select fewer columns, or raise the cap in Settings → Scopes."})
-    gaps = [] if result.total_bytes_processed is not None else [("estimated bytes", "BigQuery returned no estimate")]
-    return findings, gaps, summary
-
-
 # ------------------------------------------------------------------------- tool
 
 
@@ -376,6 +347,7 @@ def _dry_run(sql: str, project: str) -> tuple[list[dict], list[tuple[str, str]],
         "sql": {"type": "string", "description": "The draft SELECT query, written against the project's tables (a table name, dataset.table or a Dataform ${ref(\"table\")})."},
         "dry_run": {"type": "boolean", "description": "Also ask BigQuery to plan the query (free, reads no data). Needs project. Default false."},
         "project": {"type": "string", "description": "With dry_run: the BigQuery project billed for the dry run. Never guessed."},
+        "refresh": {"type": "boolean", "description": "With dry_run: ignore remembered denials and byte estimates and ask BigQuery again. Default false."},
     },
     required=("sql",),
     open_world=True,
@@ -390,6 +362,9 @@ def check_query(session: Session, args: dict) -> Answer:
         raise ToolError("dry_run needs an explicit project", ["Pass project=<the BigQuery project to bill>; it is not guessed. Leave dry_run out to check offline."])
     if project and not want_dry:
         raise ToolError("project is only used with dry_run=true", ["Pass dry_run=true to ask BigQuery for a dry run, or leave project out."])
+    refresh = bool(args.get("refresh", False))
+    if refresh and not want_dry:
+        raise ToolError("refresh is only used with dry_run=true", ["Pass dry_run=true and project=... to ask BigQuery again, or leave refresh out."])
     offset = offset_wanted(args)
 
     answer = Answer("")
@@ -434,17 +409,18 @@ def check_query(session: Session, args: dict) -> Answer:
     checked.append("fan_out")
     checked.append("static")
 
-    dry = None
-    if want_dry:
-        dry_findings, dry_gaps, dry = _dry_run(sql, project)
-        findings = dry_findings + findings
-        gaps += dry_gaps
-        if dry is not None:
-            checked.append("dry_run")
-            if dry.get("columns"):
-                columns = dry["columns"]
-                gaps = [g for g in gaps if not g[0].endswith("output column types")]
-                answer.fields["column_types_from"] = "BigQuery dry run"
+    from . import mcp_cost_access  # byte estimate and readable/denied per source; the dry run itself lives there
+
+    access = mcp_cost_access.assess(session, draft, sql, project if want_dry else None, refresh)
+    findings = access.findings + findings
+    gaps += access.gaps
+    dry = access.dry
+    if dry is not None:
+        checked.append("dry_run")
+        if dry.get("columns"):
+            columns = dry["columns"]
+            gaps = [g for g in gaps if not g[0].endswith("output column types")]
+            answer.fields["column_types_from"] = "BigQuery dry run"
 
     outside = sorted(spelled for spelled, key in draft.tables.items() if key is None)
     if outside:
@@ -464,9 +440,10 @@ def check_query(session: Session, args: dict) -> Answer:
     answer.fields["checked"] = checked
     answer.counts = {"findings": len(findings), **counts, "output_columns": len(columns), "not_checked": len(gaps)}
     if dry and dry.get("ok"):
-        answer.fields["dry_run"] = {"estimated_bytes": dry["estimated_bytes"], "byte_cap": dry["byte_cap"]}
+        answer.fields["dry_run"] = {"estimated_bytes": dry["estimated_bytes"], "byte_cap": dry["byte_cap"], **({"cached": dry["cached"]} if dry.get("cached") else {})}
     answer.add_list("findings", findings[offset:][:PAGE], total=len(findings), offset=offset, primary=True)
     answer.add_list("columns", columns, total=len(columns))
+    answer.add_list("sources", access.sources, total=len(access.sources))
     for what, reason in gaps:
         answer.unknown(what, reason)
     if findings:
