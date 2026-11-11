@@ -51,7 +51,14 @@ The hook has a price: `python -m kumosql.<moved name>` does not work (use `pytho
 
 `pyproject.toml` pins a release. To take a prover change: release it in the prover repository (a `vX.Y.Z` tag, with release notes saying which evals moved and the commit tested), change the pin here, and run the routine tier plus the canary. A KumoSQL pull request therefore cannot change a prover benchmark: none of the prover's evals, floors or results files live here.
 
-After the switch, an existing checkout needs `pip install -e .` once more: it installs the pinned prover next to KumoSQL. To work on both at once, clone the prover and `pip install -e path/to/Kumo_SQL_Prover` after that; the import aliases follow whatever is installed, and `tests/test_prover_aliases.py` fails when the list of moved modules no longer matches it.
+After the switch, an existing checkout needs `pip install -e .` once more: it installs the pinned prover next to KumoSQL. **A later change to the pin does not reach an installed prover that way.** Both commits carry the same version string, so pip sees the requirement as met and keeps the old one (a bump validated this way tests nothing new). After pulling a new pin, or when bumping it, reinstall the prover at the exact commit:
+
+```shell
+python -m pip install --force-reinstall --no-deps "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@<full sha>"
+python -m pip freeze | grep -i prover      # must end in that sha
+```
+
+A bump is then: change the pin, reinstall as above, regenerate `MOVED` in `kumosql/_prover_aliases.py` from the installed package (`tests/test_prover_aliases.py` shows the difference), run `python tools/run_tests.py --gate` (and `--evals` when prover behaviour moved), and open the pull request with those numbers. To work on both at once, clone the prover and `pip install -e path/to/Kumo_SQL_Prover` after that; the import aliases follow whatever is installed, and `tests/test_prover_aliases.py` fails when the list of moved modules no longer matches it.
 
 ## Keeping the prover repository in step
 
