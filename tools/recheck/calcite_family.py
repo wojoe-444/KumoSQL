@@ -8,6 +8,7 @@ eval's ``differ`` check runs it.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -21,6 +22,7 @@ import sqlsolver_bench as sb  # noqa: E402
 from recheck.engine import Case, Column, Table  # noqa: E402
 
 FIXTURES = TOOLS.parent / "tests" / "fixtures"
+PROVER_ENV = "KUMO_SQL_PROVER_CHECKOUT"  # the name tools/proof_admission.py reads its --prover default from
 _KIND = {"VARCHAR": "text", "DOUBLE": "float", "DATE": "date", "BIGINT": "int"}
 
 
@@ -68,6 +70,18 @@ def _proved(prove, *args) -> bool:
     except Exception:  # a crash is a failure to prove, never a proof
         return False
     return bool(result if isinstance(result, bool) else result.proven)
+
+
+def converted_fixtures(environ=os.environ) -> Path:
+    """Where QED's and mined Calcite's pairs are read: the named prover checkout, else this repository's copy.
+
+    Their converters live in the prover repository, and a pull request there can regenerate the fixtures, so its
+    ledger lists pairs this repository's copy does not hold yet. Read from the copy, those proofs would never be
+    checked, and a later run would report every one of them lost and drop it from the ledger. A named checkout is
+    never second-guessed: when it lacks the fixtures, reading them fails."""
+
+    named = environ.get(PROVER_ENV)
+    return Path(named).expanduser() / "tests" / "fixtures" if named else FIXTURES
 
 
 class Adapter:
@@ -120,7 +134,7 @@ class Qed(Adapter):
     name = "qed-calcite"
 
     def items(self) -> list[dict]:
-        rows = [json.loads(line) for line in (FIXTURES / "qed" / "qed_calcite_pairs.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in (converted_fixtures() / "qed" / "qed_calcite_pairs.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
         return [{"pair": r["name"], "left": r["sql_a"], "right": r["sql_b"], "ddl": r["ddl"]} for r in rows]
 
     def case(self, item: dict) -> Case | None:
@@ -137,8 +151,9 @@ class Mined(Adapter):
     name = "calcite-mined"
 
     def items(self) -> list[dict]:
-        schemas = json.loads((FIXTURES / "calcite_mined" / "schemas.json").read_text(encoding="utf-8"))
-        rows = [json.loads(line) for line in (FIXTURES / "calcite_mined" / "pairs.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
+        folder = converted_fixtures() / "calcite_mined"
+        schemas = json.loads((folder / "schemas.json").read_text(encoding="utf-8"))
+        rows = [json.loads(line) for line in (folder / "pairs.jsonl").read_text(encoding="utf-8").splitlines() if line.strip()]
         return [{"pair": r["name"], "left": r["sql_a"], "right": r["sql_b"], "ddl": schemas[r["schema_id"]]["ddl"], "held_out": bool(r.get("new"))} for r in rows]
 
     def case(self, item: dict) -> Case | None:
