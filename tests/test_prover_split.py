@@ -1,6 +1,7 @@
 """The prover stays a separate package: its import closure reaches nothing of the product and never imports it
 (step 8 of docs/roadmap.md). Before the split the same tests guarded the cut of the scripting edge."""
 
+import pkgutil
 import sys
 from pathlib import Path
 
@@ -33,7 +34,10 @@ def test_scripting_and_the_rule_registry_stay_out_of_the_prover():
 def test_closure_is_bounded_by_the_roots_it_is_computed_from():
     modules = prover_split.analyse(SOURCE, PACKAGE)["modules"]
     assert set(prover_split.ROOTS) <= set(modules)
-    assert 100 < len(modules) < 200  # the prover grows (163 at pin e380238); a closure of everything would be far larger
+    # The closure is the prover itself: about as many modules as the package holds at the top level (a few more for
+    # the ones inside sub-packages), so it grows with the prover. Far more would mean it reaches into the product.
+    top_level = len(list(pkgutil.iter_modules([str(SOURCE)])))
+    assert 100 < len(modules) <= top_level + 10, (len(modules), top_level)
 
 
 def test_check_exits_zero_on_the_source_tree(capsys):
