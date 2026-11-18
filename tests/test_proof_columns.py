@@ -533,7 +533,11 @@ def test_an_honest_algebraic_proof_keeps_its_proof_and_records_agreement():
     with recording() as log:
         result = prove_equivalent_algebraic(q1, q2, schema=schema)
     assert result.proven
-    assert summarize(log)["algebraic_qualification"] == {AGREE: 1}
+    summary = summarize(log)
+    # Whichever pass names the bare column first is the one recorded: the prover's own qualification, or the
+    # alias-column reading that runs before it (aliased_columns, of the VeriEQL worker rules).
+    qualification = summary.get("algebraic_qualification") or summary.get("aliased_column_qualification")
+    assert qualification == {AGREE: 1}
 
 
 def test_honest_algebraic_non_equivalence_is_unchanged():
