@@ -312,12 +312,6 @@
      "constants": false
     },
     {
-     "index": 15,
-     "left": "SELECT  SUM(l_extendedprice) / 7.0 AS avg_yearly FROM  lineitem,  part WHERE  p_partkey = l_partkey  AND p_brand = 'Brand#25'  AND p_container = 'WRAP PACK'  AND l_quantity < (  SELECT  0.2 * AVG(l_quantity)  FROM  lineitem  WHERE  l_partkey = p_partkey )",
-     "right": "SELECT SUM(l_extendedprice) / 7.0 AS avg_yearly FROM ( SELECT l_extendedprice FROM ( SELECT l_quantity, l_extendedprice, p_partkey FROM ( SELECT l_partkey, l_quantity, l_extendedprice FROM lineitem WHERE l_partkey IS NOT NULL AND l_quantity IS NOT NULL ) AS t3 INNER JOIN ( SELECT p_partkey FROM part WHERE ((p_brand IS NOT NULL AND p_container IS NOT NULL) AND ((p_brand = 'Brand#25') AND (p_container = 'WRAP PACK'))) AND p_partkey IS NOT NULL ) AS t4 ON p_partkey = l_partkey ) AS t1 INNER JOIN ( SELECT * FROM ( SELECT 0.2 * avg(l_quantity) AS pa, l_partkey FROM ( SELECT l_partkey, l_quantity FROM lineitem WHERE l_partkey IS NOT NULL ) AS t6 GROUP BY l_partkey ) AS t5 WHERE pa IS NOT NULL ) AS t2 ON (cast(l_quantity as decimal(21,7)) < pa) AND (l_partkey = p_partkey) ) AS t0",
-     "constants": false
-    },
-    {
      "index": 19,
      "left": "select cntrycode, count(*) as numcust, sum(c_acctbal) as totacctbal from ( select substring(c_phone from 1 for 2) as cntrycode, c_acctbal from customer where substring(c_phone from 1 for 2) in ('13', '10', '23', '21', '19', '34', '32') and c_acctbal > ( select avg(c_acctbal) from customer where c_acctbal > 0.00 and substring(c_phone from 1 for 2) in ('13', '10', '23', '21', '19', '34', '32') ) and not exists ( select * from orders where o_custkey = c_custkey ) ) as custsale group by cntrycode order by cntrycode",
      "right": "SELECT cntrycode, count(1) AS numcust, sum(c_acctbal) AS totacctbal FROM ( SELECT substring(c_phone, 1, 2) AS cntrycode, c_acctbal FROM ( SELECT c_custkey, c_phone, c_acctbal FROM customer WHERE c_acctbal IS NOT NULL AND (substring(c_phone from 1 for 2) IN ('13', '10', '23', '21', '19', '34', '32')) AND c_acctbal > ( SELECT avg(c_acctbal) FROM ( SELECT c_acctbal FROM customer WHERE c_acctbal IS NOT NULL AND ((c_acctbal > 0.00) AND substring(c_phone from 1 for 2) IN ('13', '10', '23', '21', '19', '34', '32')) ) AS t2 ) ) AS t1 LEFT ANTI JOIN ( SELECT o_custkey FROM orders ) AS t3 ON o_custkey = c_custkey ) AS t0 GROUP BY cntrycode ORDER BY cntrycode",
