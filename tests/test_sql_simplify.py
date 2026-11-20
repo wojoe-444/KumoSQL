@@ -1,11 +1,23 @@
 """Simpler equivalent forms of one query (kumosql.sql_simplify)."""
 
+import types
+
 import pytest
 import sqlglot
 from sqlglot import exp
 
 from kumosql.formatting import complexity
 from kumosql.sql_simplify import simpler_forms, tidy
+
+
+@pytest.fixture(autouse=True)
+def idle_clock(monkeypatch):
+    """simpler_forms spends less effort (a second rewrite round, the candidates it scores) when its own
+    clock shows a slow host, so the exact forms asserted here are those of an idle machine: pin the
+    clock it reads, and a loaded test run cannot change them."""
+
+    monkeypatch.setattr("kumosql.sql_simplify.time", types.SimpleNamespace(perf_counter=lambda: 0.0))
+
 
 COLUMNS = {
     "m.orders": ["id", "customer_id", "amount", "status"],
