@@ -340,6 +340,7 @@ MOVED = frozenset(
         "unnest_literals",
         "unread_windows",
         "using_rules",
+        "value_checks",
         "verdict_cache",
         "volatile_calls",
         "window_calls",
