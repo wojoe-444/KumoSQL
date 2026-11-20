@@ -24,6 +24,7 @@ import sys
 MOVED = frozenset(
     {
         "absolute_values",
+        "added_sums",
         "aggregate_membership",
         "aggregate_presence",
         "aggregate_rules",
@@ -39,6 +40,7 @@ MOVED = frozenset(
         "bigquery_on_duckdb",
         "bigquery_syntax",
         "boolean_identities",
+        "boolean_sums",
         "bounded_abstraction",
         "bounded_count_division",
         "bounded_equivalence",
@@ -275,6 +277,7 @@ MOVED = frozenset(
         "setop_operand_sources",
         "setop_rules",
         "shape_fallback",
+        "shared_group_names",
         "shifted_equalities",
         "single_source_columns",
         "single_value_groups",
