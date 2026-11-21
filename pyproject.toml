@@ -10,7 +10,7 @@ dependencies = [
     # The equivalence prover lives in its own repository and is pinned to a release (docs/prover-split.md).
     # A prover change reaches KumoSQL only as a bump of this pin. It names the commit released as v0.1.0 until that
     # tag exists in the prover repository; then it can read @v0.1.0.
-    "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@f05ea7c006629895bc24db31dd390580046325b4",
+    "kumo-sql-prover @ git+https://github.com/wojoe-444/Kumo_SQL_Prover@4aa4a36ba3d791a008e65d5662881e4f6002684d",
 ]
 
 [project.optional-dependencies]
