@@ -276,6 +276,7 @@ MOVED = frozenset(
         "scalar_having_groups",
         "scalar_subqueries",
         "self_key_membership",
+        "self_lookup_counts",
         "self_outer_join_columns",
         "semijoin_rules",
         "semijoin_shapes",
