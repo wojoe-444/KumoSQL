@@ -34,6 +34,7 @@ MOVED = frozenset(
         "anti_join_exists",
         "anti_join_reading",
         "anti_membership_joins",
+        "apart_alias_names",
         "apart_table_names",
         "ast_utils",
         "averaged_flags",

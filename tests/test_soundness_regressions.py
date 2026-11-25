@@ -289,10 +289,15 @@ def test_a_bare_column_keeps_its_source_when_a_derived_table_is_read_as_its_base
     assert not prove_equivalent_algebraic(left, "SELECT g.a FROM t JOIN u AS g ON g.k = t.k", schema=schema, dialect="mysql").proven
 
 
-def test_a_correlated_column_whose_table_name_is_reused_inside_is_declined():
+def test_a_correlated_column_whose_table_name_is_reused_inside_is_read_as_the_outer_row():
+    # the derived table named dept has only f, so the bare deptno is the outer row's (#370 declined this
+    # before the prover named the derived table and the source inside it apart; reading it as the inner row's
+    # is the wrong answer, and it is what the second assertion keeps out)
     left = "SELECT name FROM dept WHERE EXISTS (SELECT 1 FROM (SELECT 2 * deptno AS f FROM dept) AS dept WHERE deptno = dept.f)"
     right = "SELECT o.name FROM dept AS o WHERE EXISTS (SELECT 1 FROM dept AS t WHERE o.deptno = 2 * t.deptno)"
-    assert not prove_equivalent_algebraic(left, right, schema=CALCITE, dialect="mysql", compare_names=False).proven
+    captured = "SELECT o.name FROM dept AS o WHERE EXISTS (SELECT 1 FROM dept AS t WHERE t.deptno = 2 * t.deptno)"
+    assert prove_equivalent_algebraic(left, right, schema=CALCITE, dialect="mysql", compare_names=False).proven
+    assert not prove_equivalent_algebraic(left, captured, schema=CALCITE, dialect="mysql", compare_names=False).proven
     fixed = "SELECT name FROM dept WHERE EXISTS (SELECT 1 FROM (SELECT 2 * deptno AS f FROM dept) AS t WHERE deptno = t.f)"
     assert prove_equivalent_algebraic(fixed, right, schema=CALCITE, dialect="mysql", compare_names=False).proven
 
