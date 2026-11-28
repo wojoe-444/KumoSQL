@@ -12,10 +12,16 @@
   ``--target`` the test files your branch changed are the targets.
 
 sqlglot runs compiled when ``sqlglotc`` (mypyc wheels, same version as ``sqlglot``) is installed, which is
-about 10-15% faster on the prover tests; ``--install-compiled`` installs it. ``--pure`` runs the same suite
-against a pure-Python copy for focused diagnostics. Routine CI and Dell full-suite runs use compiled
+about 10-15% faster on the prover tests; ``--install-compiled`` installs it beside the sqlglot Python imports
+(when a second copy of sqlglot hides an installed sqlglotc, the run says so, and ``--install-compiled`` reinstalls
+it there). ``--pure`` runs the same suite against a pure-Python copy for focused diagnostics. Routine CI and Dell full-suite runs use compiled
 SQLGlot 30.21.0 once per revision; older versions are no longer supported.
 KumoSQL itself is always pure Python.
+
+Before pytest starts, the installed ``kumo-sql-prover`` is compared with the commit ``pyproject.toml`` pins
+(``tools/prover_pin.py``). A different commit stops the run with one message that names both commits and the
+reinstall command (exit code 4), instead of a scatter of failures from the wrong prover; ``--any-prover`` runs anyway.
+A prover installed from a local folder (``pip install -e``) is not compared.
 
 Workers default to the number of CPUs (``-j N`` to change it, ``-j 1`` for a plain serial run). Any other
 argument goes to pytest, e.g. ``python tools/run_tests.py tests/test_tags.py -k background``.
@@ -37,6 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GATE_BUDGET_SECONDS = 300  # roadmap step 2: the pull-request check finishes in five minutes on four cores
 SLOWEST_SHOWN = 12
 BUDGET_EXIT = 3
+PROVER_EXIT = 4
 
 
 def _sqlglot_dir() -> Path:
@@ -47,6 +54,36 @@ def _sqlglot_dir() -> Path:
 
 def _compiled() -> bool:
     return any(_sqlglot_dir().rglob("*.so")) or any(_sqlglot_dir().rglob("*.pyd"))
+
+
+def _sqlglotc_elsewhere() -> Path | None:
+    """The site-packages folder of an installed sqlglotc whose compiled files are not beside the sqlglot Python imports.
+
+    Two copies of sqlglot (one in the user's site-packages, one in Python's own) leave sqlglotc's files under the copy
+    that is not imported, so the run is pure Python although ``pip`` says sqlglotc is installed."""
+
+    from importlib import metadata
+
+    try:
+        located = Path(metadata.distribution("sqlglotc").locate_file(""))
+    except metadata.PackageNotFoundError:
+        return None
+    return None if located.resolve() == _sqlglot_dir().parent.resolve() else located
+
+
+def _install_compiled_command() -> list[str]:
+    """``pip install`` of the sqlglotc that matches the imported sqlglot, into the folder that sqlglot is in."""
+
+    import site
+    from importlib.metadata import version
+
+    command = [sys.executable, "-m", "pip", "install", f"sqlglotc=={version('sqlglot')}"]
+    if _sqlglotc_elsewhere() is not None:
+        command += ["--force-reinstall", "--no-deps"]  # pip counts the copy beside the other sqlglot as installed
+    user_site = site.getusersitepackages() if site.ENABLE_USER_SITE else None
+    if user_site and _sqlglot_dir().parent.resolve() == Path(user_site).resolve():
+        command.append("--user")
+    return command
 
 
 def _pure_copy() -> Path:
@@ -81,13 +118,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--eval-cache", metavar="PATH", help="local SQLSolver sample-execution cache directory; 'off' forces fresh checks")
     parser.add_argument("--verdict-cache", metavar="PATH", help="remember proof verdicts of the benchmark runs in this folder, keyed by the query pair and the prover's source ('off' disables)")
     parser.add_argument("--eval-jobs", type=int, help="processes for the large MV workload eval (default: spare CPUs, capped at 3; 1 forces serial)")
+    parser.add_argument("--any-prover", action="store_true", help="run even when the installed kumo-sql-prover is not the commit pyproject.toml pins")
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1, help="worker processes (default: all CPUs)")
     args, rest = parser.parse_known_args(argv)
 
-    if args.install_compiled and not _compiled():
-        from importlib.metadata import version
+    import prover_pin
 
-        subprocess.call([sys.executable, "-m", "pip", "install", f"sqlglotc=={version('sqlglot')}"])
+    problem = prover_pin.mismatch()
+    if problem and not args.any_prover:
+        print(f"FAILED before running any test: {problem}\n(--any-prover runs the tests against it anyway)", file=sys.stderr)
+        return PROVER_EXIT
+    print(f"WARNING: {problem}" if problem else prover_pin.describe(), file=sys.stderr)
+
+    if args.install_compiled and not _compiled():
+        subprocess.call(_install_compiled_command())
     env = dict(os.environ)
     if args.eval_jobs is not None and args.eval_jobs < 1:
         parser.error("--eval-jobs must be positive")
@@ -106,6 +150,9 @@ def main(argv: list[str] | None = None) -> int:
         print("sqlglot: pure Python", file=sys.stderr)
     elif _compiled():
         print("sqlglot: compiled (sqlglotc)", file=sys.stderr)
+    elif (elsewhere := _sqlglotc_elsewhere()) is not None:
+        print(f"sqlglot: pure Python: sqlglotc is installed in {elsewhere}, but Python imports sqlglot from {_sqlglot_dir()}, "
+              "which has no compiled files (python tools/run_tests.py --install-compiled puts them beside it)", file=sys.stderr)
     else:
         print("sqlglot: pure Python (python tools/run_tests.py --install-compiled makes the suite ~10-15% faster)", file=sys.stderr)
 

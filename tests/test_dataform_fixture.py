@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 
+from kumosql import resilience
 from kumosql.pipeline import load_sqlx_project
 
 SPEC = importlib.util.spec_from_file_location("make_dataform_fixture", Path(__file__).parent.parent / "tools" / "make_dataform_fixture.py")
@@ -15,8 +16,9 @@ def test_fixture_has_the_awkward_parts_and_loads(tmp_path):
     counts = fixture.generate(out, models=400, seed=3, config="both")
     assert (out / "workflow_settings.yaml").is_file() and (out / "dataform.json").is_file()
     assert sum(counts.get(k, 0) for k in ("sqlx-bom", "sqlx-latin1", "sqlx-config-only")) > 0
-    assert max(len(str(p.relative_to(out))) for p in out.rglob("*") if p.is_file()) > 260
-    assert any(b"\r\n" in p.read_bytes() for p in out.rglob("*.sqlx"))
+    listed = resilience.extended_path(out)  # without the prefix, Windows lists nothing past 260 characters
+    assert max(len(p.relative_to(listed).as_posix()) for p in listed.rglob("*") if p.is_file()) > 260
+    assert any(b"\r\n" in p.read_bytes() for p in listed.rglob("*.sqlx"))
     pipeline = load_sqlx_project(out)
     assert len(pipeline.models) > 200
 
@@ -24,7 +26,11 @@ def test_fixture_has_the_awkward_parts_and_loads(tmp_path):
 def test_fixture_is_deterministic(tmp_path):
     fixture.generate(tmp_path / "a", models=120, seed=5)
     fixture.generate(tmp_path / "b", models=120, seed=5)
-    names = lambda root: sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+    def names(root):
+        listed = resilience.extended_path(root)  # every file, the ones past 260 characters too
+        return sorted(p.relative_to(listed).as_posix() for p in listed.rglob("*") if p.is_file())
+
     assert names(tmp_path / "a") == names(tmp_path / "b")
 
 

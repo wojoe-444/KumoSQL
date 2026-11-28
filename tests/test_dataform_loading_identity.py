@@ -18,7 +18,7 @@ def project(tmp_path, files, settings="defaultProject: p\ndefaultDataset: ds\n",
     for file, text in files.items():
         path = tmp_path / "definitions" / file
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8", newline="")  # exactly these line endings, on Windows too
     return load_sqlx_project(tmp_path)
 
 

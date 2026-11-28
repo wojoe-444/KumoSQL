@@ -35,13 +35,14 @@ import logging
 import multiprocessing
 import os
 from pathlib import Path
-import signal
 import sys
 import time
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
 sys.path.insert(0, str(TOOLS.parent / "src"))
+
+import time_budget  # noqa: E402
 
 MODES = ("right", "left", "self")
 
@@ -130,11 +131,10 @@ def _work(job: tuple) -> list[dict]:
     start = time.time()
     counts: Counter = Counter()
     records = []
-    signal.signal(signal.SIGALRM, _alarm)
     for label, mutated in mutated_items(item, adapter.mutable, options["modes"], options["per_pair"]):
         counts["mutants"] += 1
         # Repeating timer: an exception raised inside a destructor (z3's __del__) is swallowed, so one alarm can be lost.
-        signal.setitimer(signal.ITIMER_REAL, int(options["prove_seconds"]), 5)
+        stop = time_budget.arm(int(options["prove_seconds"]), _alarm)
         try:
             case = adapter.case(mutated)
         except _Timeout:
@@ -144,11 +144,11 @@ def _work(job: tuple) -> list[dict]:
             counts["prove-error"] += 1
             continue
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            stop()
         if case is None:
             counts["not-proven"] += 1
             continue
-        signal.setitimer(signal.ITIMER_REAL, int(options["seconds"] * 2 + 30), 5)
+        stop = time_budget.arm(int(options["seconds"] * 2 + 30), _alarm)
         try:
             record = recheck(case, budget=options["budget"], seconds=options["seconds"], seed=options["seed"], exhaustive_cap=options["exhaustive_cap"])
         except _Timeout:
@@ -156,7 +156,7 @@ def _work(job: tuple) -> list[dict]:
         except Exception as error:
             record = {"eval": name, "pair": item["pair"], "verdict": "search-error", "error": f"{type(error).__name__}: {error}"[:300]}
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
+            stop()
         record["mutant"] = label
         record["left"], record["right"] = case.left, case.right
         record["source"] = [mutated["left"], mutated["right"]]

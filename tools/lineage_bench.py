@@ -31,7 +31,6 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 import random
-import resource
 import sys
 import time
 from pathlib import Path
@@ -610,7 +609,33 @@ def aggregate(runs: list[dict]) -> dict:
 
 
 def peak_memory_mb() -> float:
+    """This process's peak resident memory so far, in MB: ``ru_maxrss`` (KB on Linux), or on Windows, which has no
+    ``resource`` module, the peak working set."""
+
+    try:
+        import resource
+    except ImportError:
+        return _windows_peak_working_set() / 2**20
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
+def _windows_peak_working_set() -> int:
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):  # PROCESS_MEMORY_COUNTERS
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                    *((name, ctypes.c_size_t) for name in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                                                            "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+                                                            "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage"))]
+
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    counters = Counters(cb=ctypes.sizeof(Counters))
+    if not kernel32.K32GetProcessMemoryInfo(kernel32.GetCurrentProcess(), ctypes.byref(counters), counters.cb):
+        raise ctypes.WinError()
+    return counters.PeakWorkingSetSize
 
 
 def run_suite(families: tuple[str, ...], sizes=(8, 30, 120), seeds=(1, 2, 3)) -> dict:

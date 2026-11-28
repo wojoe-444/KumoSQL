@@ -58,6 +58,8 @@ python -m pip install --force-reinstall --no-deps "kumo-sql-prover @ git+https:/
 python -m pip freeze | grep -i prover      # must end in that sha
 ```
 
+`python tools/prover_pin.py` compares the installed prover's commit (from pip's record of the install) with the pin and prints this command when they differ. `python tools/run_tests.py` runs the same check first and stops with exit code 4 on a mismatch (`--any-prover` overrides it), and `tests/test_prover_pin.py` fails the same way under plain pytest; an editable install of a prover checkout is not compared.
+
 A bump is then: change the pin, reinstall as above, regenerate `MOVED` in `kumosql/_prover_aliases.py` from the installed package (`tests/test_prover_aliases.py` shows the difference), run `python tools/run_tests.py --gate` (and `--evals` when prover behaviour moved), and open the pull request with those numbers. To work on both at once, clone the prover and `pip install -e path/to/Kumo_SQL_Prover` after that; the import aliases follow whatever is installed, and `tests/test_prover_aliases.py` fails when the list of moved modules no longer matches it.
 
 ## Keeping the prover repository in step

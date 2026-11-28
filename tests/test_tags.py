@@ -1,6 +1,8 @@
 """Tags on objects inside datasets: manual tags, batch tag rules, and the scope field ``tag``."""
 
 import json
+import threading
+import time
 from threading import Thread
 from urllib.error import HTTPError
 from urllib.request import Request
@@ -29,8 +31,32 @@ REAL_PEEK = bq.peek
 REAL_CACHED = bq.cached
 
 
+def settle_inventory():
+    """Wait for the background catalog fill (``tags.start_inventory``) that an earlier snapshot started.
+
+    It is a module-level thread: left running, it writes its errors into the next test's ``tags._inventory``, clears
+    that test's ``running`` flag while the test's own fill is still going, and calls BigQuery after this test's stubs
+    are undone."""
+
+    for thread in threading.enumerate():
+        if thread.name == "tag-inventory":
+            thread.join(30)
+
+
+def until_synced(seconds=30.0):
+    """Snapshots until the background fill has finished (or ``seconds`` passed, so a loaded machine is not a failure)."""
+
+    deadline = time.monotonic() + seconds
+    while True:
+        snap = tags.snapshot()
+        if not snap["syncing"] or time.monotonic() > deadline:
+            return snap
+        time.sleep(0.05)
+
+
 @pytest.fixture(autouse=True)
 def catalog(monkeypatch):
+    settle_inventory()
     live_graph.clear_project()
     tags._inventory.update(running=False, errors={}, failed_at={})
 
@@ -47,6 +73,7 @@ def catalog(monkeypatch):
 
     monkeypatch.setattr(bq, "peek", peek)
     yield
+    settle_inventory()  # while this test's stubs are still in place
     live_graph.clear_project()
 
 
@@ -298,9 +325,6 @@ def test_tags_endpoint_reports_a_failure_instead_of_dropping_the_connection(serv
 def test_chosen_projects_are_listed_in_the_background_so_rules_reach_unopened_datasets(monkeypatch):
     """A rule on a dataset nobody opened still tags its tables: the catalog of chosen projects is filled in."""
 
-    import threading
-    import time
-
     monkeypatch.setattr(bq, "peek", REAL_PEEK)
     monkeypatch.setattr(bq, "cached", REAL_CACHED)
     bq.clear_cache()
@@ -319,11 +343,7 @@ def test_chosen_projects_are_listed_in_the_background_so_rules_reach_unopened_da
     first = tags.snapshot()
     assert first["syncing"] is True and first["objects"] == {}
     release.set()
-    for _ in range(100):
-        snap = tags.snapshot()
-        if not snap["syncing"]:
-            break
-        time.sleep(0.05)
+    snap = until_synced()
     assert set(snap["objects"]) == {"p1.archive.a_old", "p1.archive.f"}
     assert snap["tags"] == [{"tag": "Archived", "count": 2}] and snap["sync_errors"] == {}
     assert sorted(calls) == [("datasets", "p1"), ("tables", "ARCHIVE"), ("tables", "prod")]
@@ -334,16 +354,10 @@ def test_chosen_projects_are_listed_in_the_background_so_rules_reach_unopened_da
 
 
 def test_a_project_that_cannot_be_listed_is_reported_and_not_retried_at_once(monkeypatch):
-    import time
-
     monkeypatch.setattr(bq, "peek", REAL_PEEK)
     bq.clear_cache()
     tags.snapshot()
-    for _ in range(100):
-        snap = tags.snapshot()
-        if not snap["syncing"]:
-            break
-        time.sleep(0.05)
+    snap = until_synced()
     assert "offline in tests" in snap["sync_errors"]["p1"]
     assert tags.start_inventory() is False  # failed a moment ago: wait before asking again
 

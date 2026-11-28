@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 from . import console, query_context, scope_queries, state
+from .resilience import replace_file
 
 SECTION = "data_sources"
 PREFIX = "source:"
@@ -264,7 +265,7 @@ def _save_rows(source: Source, entry: dict) -> None:
     handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".source-", suffix=".tmp")
     with os.fdopen(handle, "w", encoding="utf-8") as out:
         json.dump(entry, out)
-    os.replace(temp, path)
+    replace_file(temp, path)
 
 
 @dataclass

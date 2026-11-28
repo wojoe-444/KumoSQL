@@ -28,6 +28,8 @@ import threading
 import time
 from pathlib import Path
 
+from .resilience import replace_file
+
 KINDS = ("repo", "branch", "project", "dataset", "table", "model", "file", "email", "name", "host")
 MAP_NAME = "redaction-map.json"
 KEEP_SESSIONS = 5
@@ -294,7 +296,7 @@ class Redactor:
             tmp = path.with_suffix(".tmp")
             tmp.write_text(json.dumps({"note": "Private. Real names behind the placeholders in the log. Never share this file.",
                                        "sessions": sessions}, indent=1), encoding="utf-8")
-            os.replace(tmp, path)
+            replace_file(tmp, path)
             try:
                 os.chmod(path, 0o600)
             except OSError:

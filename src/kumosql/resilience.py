@@ -11,8 +11,10 @@ import json
 import os
 import re
 import stat
+import sys
+import time
 from pathlib import Path
-from typing import Callable, Iterable, TypeVar
+from typing import BinaryIO, Callable, Iterable, TypeVar
 
 T = TypeVar("T")
 
@@ -108,6 +110,133 @@ def _extended_text(text: str) -> str:
     if text.startswith("\\\\"):
         return "\\\\?\\UNC\\" + text[2:]
     return "\\\\?\\" + text
+
+
+def ordinary_path_text(text: str) -> str:
+    """``text`` without Windows' extended-length prefix: the inverse of :func:`extended_path`, so a path read through
+    the prefix and the same path listed without it compare equal. Text without the prefix is returned unchanged."""
+
+    if text.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + text[8:]
+    if text.startswith("\\\\?\\"):
+        return text[4:]
+    return text
+
+
+REPLACE_SECONDS = 5.0  # how long a Windows sharing violation is waited out before the write fails
+
+
+def replace_file(source: str | Path, target: str | Path) -> None:
+    """``os.replace(source, target)`` that also works on Windows while ``target`` is being read.
+
+    Windows refuses to replace a file that any other handle has open (a reader in another thread or process, a virus
+    scanner looking at the file just written, the search indexer) with ``PermissionError``. There, the rename is
+    retried as a POSIX-semantics rename, which goes through while the only open handles are readers that allow it
+    (:func:`read_bytes_shared`); both are tried again for up to :data:`REPLACE_SECONDS`, since a scanner lets go within
+    milliseconds. Elsewhere this is ``os.replace``. Readers see the old file or the new one, never half of either.
+    """
+
+    if sys.platform != "win32":
+        os.replace(source, target)
+        return
+    deadline = time.monotonic() + REPLACE_SECONDS
+    pause = 0.001
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if _posix_rename(source, target):
+                return
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(pause)
+            pause = min(pause * 2, 0.05)
+
+
+def read_bytes_shared(path: str | Path) -> bytes:
+    """``Path(path).read_bytes()``, opened so that a writer may replace the file while it is being read.
+
+    Python opens files on Windows without ``FILE_SHARE_DELETE``, so a reader holding a file blocks every rename over it
+    until it closes, and two readers in a loop can hold it for seconds. A reader of a file that other threads or
+    processes replace (the saved state, the agent server's cache) reads it here with every share mode, as POSIX always
+    does: it gets the file as it was when opened, and :func:`replace_file` goes through meanwhile. Errors are the usual
+    ``OSError`` subclasses (``FileNotFoundError``, ``PermissionError``, ...).
+    """
+
+    with open_shared(path) as file:
+        return file.read()
+
+
+def open_shared(path: str | Path) -> BinaryIO:
+    """``open(path, "rb")``, on Windows with every share mode, so that the file may be renamed over or deleted while it
+    is open (:func:`read_bytes_shared`)."""
+
+    if sys.platform != "win32":
+        return open(path, "rb")
+    import ctypes
+    import msvcrt
+
+    api = _windows_api()
+    handle = api.CreateFileW(os.fspath(path), _GENERIC_READ, _SHARE_ALL, None, _OPEN_EXISTING, _FILE_ATTRIBUTE_NORMAL, None)
+    if handle is None or handle == api.invalid:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except OSError:
+        api.CloseHandle(handle)
+        raise
+    return os.fdopen(descriptor, "rb")
+
+
+_GENERIC_READ, _DELETE, _SYNCHRONIZE = 0x80000000, 0x00010000, 0x00100000
+_SHARE_ALL, _OPEN_EXISTING, _FILE_ATTRIBUTE_NORMAL = 0x7, 3, 0x80
+_FILE_RENAME_INFO_EX = 22  # FILE_INFO_BY_HANDLE_CLASS.FileRenameInfoEx
+_REPLACE_IF_EXISTS, _POSIX_SEMANTICS = 0x1, 0x2  # FILE_RENAME_FLAG_*
+_API = None
+
+
+def _windows_api():
+    """The kernel32 functions used here, with their argument types (set up once per process; Windows only)."""
+
+    global _API
+    if _API is None:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel32.SetFileInformationByHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.invalid = ctypes.c_void_p(-1).value  # INVALID_HANDLE_VALUE
+        _API = kernel32
+    return _API
+
+
+def _posix_rename(source: str | Path, target: str | Path) -> bool:
+    """Rename ``source`` over ``target`` with POSIX semantics (Windows 10 1607 or later, NTFS): the target may be open
+    by readers that share delete access. False when Windows refuses it (other handles, another file system)."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    api = _windows_api()
+    handle = api.CreateFileW(os.fspath(source), _DELETE | _SYNCHRONIZE, _SHARE_ALL, None, _OPEN_EXISTING, _FILE_ATTRIBUTE_NORMAL, None)
+    if handle is None or handle == api.invalid:
+        return False
+    try:
+        name = os.path.abspath(os.fspath(target))
+
+        class RenameInfo(ctypes.Structure):  # FILE_RENAME_INFO with its Flags member, and room for the name
+            _fields_ = [("Flags", wintypes.DWORD), ("RootDirectory", wintypes.HANDLE), ("FileNameLength", wintypes.DWORD),
+                        ("FileName", ctypes.c_wchar * (len(name) + 1))]
+
+        info = RenameInfo(_REPLACE_IF_EXISTS | _POSIX_SEMANTICS, None, len(name) * ctypes.sizeof(ctypes.c_wchar), name)
+        return bool(api.SetFileInformationByHandle(handle, _FILE_RENAME_INFO_EX, ctypes.byref(info), ctypes.sizeof(info)))
+    finally:
+        api.CloseHandle(handle)
 
 
 def extended_path(path: str | Path) -> Path:

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import state
 from .data_profile import ColumnProfile, DataProfile, ProfileError
+from .resilience import replace_file
 
 FOLDER = "data-profiles"
 NAME = re.compile(r"^[a-z0-9][a-z0-9._-]{0,119}$")
@@ -56,7 +57,7 @@ def save(profile: DataProfile, name: str | None = None, directory: Path | None =
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             json.dump(profile.to_json(), out, indent=2)
             out.write("\n")
-        os.replace(temp, path)
+        replace_file(temp, path)
     except OSError as exc:
         raise ProfileError(f"could not save the profile: {exc}") from None
     return path

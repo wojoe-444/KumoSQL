@@ -52,7 +52,7 @@ def test_manifest_lists_every_fixture_file_once():
     listed = [case["file"] for case in CASES]
     assert len(listed) == len(set(listed)) and len({c["id"] for c in CASES}) == len(CASES)
     on_disk = {
-        str(path.relative_to(coverage.FIXTURES))
+        path.relative_to(coverage.FIXTURES).as_posix()
         for pattern in ("sql/**/*.sql", "dataform/sqlx/*.sqlx")
         for path in coverage.FIXTURES.glob(pattern)
     }

@@ -230,10 +230,12 @@ def test_the_order_file_is_valid_and_names_real_test_files():
 
 
 def test_routine_profile_keeps_full_and_eval_profiles_available(monkeypatch):
+    import prover_pin
     import run_tests
     commands = []
     monkeypatch.setattr(run_tests, "_compiled", lambda: False)
     monkeypatch.setattr(run_tests.subprocess, "call", lambda command, **kwargs: commands.append(command) or 0)
+    monkeypatch.setattr(prover_pin, "mismatch", lambda root=None: None)
     for flags in (["--routine"], [], ["--evals"]):
         assert run_tests.main([*flags, "-j", "1"]) == 0
     routine, full, evals = commands
@@ -243,3 +245,34 @@ def test_routine_profile_keeps_full_and_eval_profiles_available(monkeypatch):
     assert "--quick" not in full
     assert evals[evals.index("-m", 2) + 1] == "eval and not slow"
     assert "--quick" not in evals
+
+
+def test_a_sqlglotc_hidden_by_a_second_sqlglot_is_named_and_reinstalled_beside_the_one_in_use(monkeypatch, capsys, tmp_path):
+    import prover_pin
+    import run_tests
+    commands = []
+    monkeypatch.setattr(run_tests, "_compiled", lambda: False)
+    monkeypatch.setattr(run_tests, "_sqlglotc_elsewhere", lambda: tmp_path / "other-site-packages")
+    monkeypatch.setattr(run_tests.subprocess, "call", lambda command, **kwargs: commands.append(command) or 0)
+    monkeypatch.setattr(prover_pin, "mismatch", lambda root=None: None)
+    assert run_tests.main(["--install-compiled", "-j", "1"]) == 0
+    from importlib.metadata import version
+
+    install, pytest_run = commands
+    assert install[2:5] == ["pip", "install", f"sqlglotc=={version('sqlglot')}"]
+    assert "--force-reinstall" in install and "--no-deps" in install
+    assert "-m" in pytest_run and "pytest" in pytest_run
+    assert "sqlglotc is installed in" in capsys.readouterr().err
+
+
+def test_a_prover_that_is_not_the_pin_stops_the_run_before_pytest(monkeypatch, capsys):
+    import prover_pin
+    import run_tests
+    commands = []
+    monkeypatch.setattr(run_tests, "_compiled", lambda: False)
+    monkeypatch.setattr(run_tests.subprocess, "call", lambda command, **kwargs: commands.append(command) or 0)
+    monkeypatch.setattr(prover_pin, "mismatch", lambda root=None: "the installed kumo-sql-prover is commit bbb, but pyproject.toml pins aaa")
+    assert run_tests.main(["--gate", "-j", "1"]) == run_tests.PROVER_EXIT
+    assert commands == [] and "commit bbb, but pyproject.toml pins aaa" in capsys.readouterr().err
+    assert run_tests.main(["--gate", "-j", "1", "--any-prover"]) == 0
+    assert len(commands) == 1 and "WARNING: the installed kumo-sql-prover" in capsys.readouterr().err

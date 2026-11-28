@@ -29,7 +29,7 @@ In the commands below, Windows users can replace `python` with `& .\.venv\Script
 
 If you already have this repository checked out, install from its root with `python -m pip install .` instead.
 
-After you pull a newer version of KumoSQL, the prover it needs can be newer too, and pip will not replace the old one by itself. If something looks out of date, run the reinstall command in the [full guide](../docs/getting-started.md) (it names the prover commit to use).
+After you pull a newer version of KumoSQL, the prover it needs can be newer too, and pip will not replace the old one by itself. If something looks out of date, run `python tools/prover_pin.py` from the checkout: it says whether the prover matches, and if it does not, it prints the reinstall command with the right commit. The [full guide](../docs/getting-started.md) has the same command. The test runner makes the same check before it starts and stops with that message.
 
 ## 2. Simplify a query
 

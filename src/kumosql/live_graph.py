@@ -18,7 +18,6 @@ from typing import Iterable
 import csv
 import io
 import json
-import os
 import shutil
 import tempfile
 import hashlib
@@ -29,7 +28,7 @@ from contextlib import contextmanager
 
 from . import console
 from .pipeline import Pipeline, load_sqlx_project
-from .resilience import extended_path, is_windows_device_name
+from .resilience import extended_path, is_windows_device_name, replace_file
 from .scripts import expand_script_jobs
 from .timing import stage
 
@@ -156,7 +155,7 @@ def cached_result(pipeline: Pipeline, name: str, compute, persist: bool = True):
                 stored[name] = value
                 temp = path.with_suffix(".tmp")
                 temp.write_text(json.dumps(stored), encoding="utf-8")
-                os.replace(temp, path)
+                replace_file(temp, path)
                 _prune_cache(path.parent)
             except (OSError, TypeError, ValueError):
                 pass  # the cache is an optimisation; never fail an analysis over it
@@ -443,7 +442,7 @@ def _save_jobs(records: list[dict], label: str) -> None:
             handle.write(json.dumps({"label": label}) + "\n")
             for record in records:
                 handle.write(json.dumps(record, default=str) + "\n")
-        partial.replace(path)
+        replace_file(partial, path)
     except OSError as exc:
         console.error(f"could not save the job history to {path}; it is kept until KumoSQL stops", exc, trace=False)
     _JOBS["restored_from"] = str(path)

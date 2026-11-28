@@ -16,6 +16,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from . import state
+from .resilience import replace_file
 
 SECTION = "storage"
 SNAPSHOT_VERSION = 3  # 3: models carry logical, disabled, has_output, incremental_sql and the pipeline a default_location; 2: models carry config_reads and config_reads_unread
@@ -29,7 +30,7 @@ def atomic_json(path: Path, value: object) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(value, handle, allow_nan=False)
-        os.replace(temp, path)
+        replace_file(temp, path)
     finally:
         temp.unlink(missing_ok=True)
 

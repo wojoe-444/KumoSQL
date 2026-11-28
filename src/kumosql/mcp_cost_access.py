@@ -42,6 +42,7 @@ import sqlglot
 from sqlglot import exp
 
 from .mcp_answers import Answer, clip
+from .resilience import replace_file
 
 DEFAULT_TTL_SECONDS = 3600
 MAX_PROBES = 3
@@ -253,7 +254,7 @@ class AccessCache:
             try:
                 with os.fdopen(handle, "w", encoding="utf-8") as out:
                     json.dump(kept, out)
-                os.replace(temp, self.path)
+                replace_file(temp, self.path)
             except OSError:
                 try:
                     os.unlink(temp)

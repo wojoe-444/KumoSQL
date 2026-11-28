@@ -182,22 +182,31 @@ def test_one_credential_is_used_for_every_concurrent_request(monkeypatch):
 
 
 def test_many_tables_are_fetched_concurrently(monkeypatch):
+    import threading
     import time
 
     tables = {f"p.ext{i % 7}.t{i}": ["id"] for i in range(210)}
     fake_bigquery(monkeypatch, tables)
     real = bigquery_catalog.get_table
+    lock, in_flight, peak = threading.Lock(), [0], [0]
 
     def slow(project, dataset, table):
-        time.sleep(0.05)
-        return real(project, dataset, table)
+        with lock:
+            in_flight[0] += 1
+            peak[0] = max(peak[0], in_flight[0])
+        try:
+            time.sleep(0.05)
+            return real(project, dataset, table)
+        finally:
+            with lock:
+                in_flight[0] -= 1
 
     monkeypatch.setattr(bigquery_catalog, "get_table", slow)
-    started = time.time()
     schema, stats = schema_fetch.resolve(list(tables))
-    elapsed = time.time() - started
     assert stats["found"] == 210
-    assert elapsed < 210 * 0.05 / 3  # serial would take 10.5 s; a pool of 8 takes about 1.3 s
+    # Counted, not timed, so a busy machine cannot fail it: three or more lookups at once is a threefold speed-up over
+    # one at a time (serial would take 10.5 s; a pool of 8 takes about 1.3 s).
+    assert 3 <= peak[0] <= schema_fetch.WORKERS
 
 
 def test_many_tables_write_the_catalog_file_once(monkeypatch):

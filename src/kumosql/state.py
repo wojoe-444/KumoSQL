@@ -18,6 +18,8 @@ import tempfile
 import threading
 from contextlib import contextmanager
 
+from .resilience import read_bytes_shared, replace_file
+
 try:
     import fcntl
 except ImportError:  # Windows
@@ -163,7 +165,7 @@ def load_state() -> dict:
     """Read all saved state; a missing or unreadable file yields empty state."""
 
     try:
-        data = json.loads(state_path().read_text(encoding="utf-8"))
+        data = json.loads(read_bytes_shared(state_path()).decode("utf-8"))  # never blocks a writer on Windows
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -176,7 +178,7 @@ def _write(state: dict) -> None:
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as file:
             json.dump(state, file, indent=2, sort_keys=True)
-        os.replace(temp_name, path)
+        replace_file(temp_name, path)
     except BaseException:
         try:
             os.unlink(temp_name)
