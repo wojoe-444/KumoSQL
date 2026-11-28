@@ -27,10 +27,10 @@ import threading
 from dataclasses import asdict, dataclass
 from typing import Any, Callable, Mapping
 
-from .pipeline_types import ColumnFilter, ColumnLineage, ColumnRef, PipelineDiagnostic
+from .pipeline_types import ColumnFilter, ColumnLineage, ColumnRef, LogicStep, PipelineDiagnostic
 
 #: bump when what a trace produces, or how it is saved, changes: saved entries of another version are never read
-FORMAT = 1
+FORMAT = 2  # 2: records carry the column's logic (expression, aggregation and partition keys, steps)
 
 
 class MemoError(ValueError):
@@ -90,12 +90,41 @@ def _unfilters(value: object) -> tuple[ColumnFilter, ...] | None:
     return tuple(found)
 
 
+def _keys(keys: tuple[str, ...] | None) -> list | None:
+    return None if keys is None else list(keys)
+
+
+def _unkeys(value: object) -> tuple[str, ...] | None:
+    return None if value is None else tuple(_strings(value))
+
+
+def _logic(record: ColumnLineage) -> list:
+    steps = [[s.reference, s.scope, s.expression, _keys(s.aggregation_keys)] for s in record.steps]
+    return [record.expression, _keys(record.aggregation_keys), _keys(record.partition_keys), steps]
+
+
+def _unlogic(value: object) -> dict:
+    if not (isinstance(value, list) and len(value) == 4 and (value[0] is None or isinstance(value[0], str))):
+        raise MemoError("logic")
+    if not isinstance(value[3], list):
+        raise MemoError("logic steps")
+    steps = []
+    for item in value[3]:
+        if not (isinstance(item, list) and len(item) == 4 and isinstance(item[0], str) and isinstance(item[1], str)):
+            raise MemoError("logic step")
+        if not (item[2] is None or isinstance(item[2], str)):
+            raise MemoError("logic step expression")
+        steps.append(LogicStep(item[0], item[1], item[2], _unkeys(item[3])))
+    return {"expression": value[0], "aggregation_keys": _unkeys(value[1]), "partition_keys": _unkeys(value[2]), "steps": tuple(steps)}
+
+
 def encode_delta(delta: Mapping[str, Any]) -> dict:
     """One model's trace as JSON-ready data (the inverse of :func:`decode_delta`)."""
 
     return {
         "records": [
-            [_ref(r.column), _refs(r.sources), r.status, r.transform, r.reason, _filters(r.filters)] for r in delta["records"]
+            [_ref(r.column), _refs(r.sources), r.status, r.transform, r.reason, _filters(r.filters), _logic(r)]
+            for r in delta["records"]
         ],
         "direct": [[_ref(ref), _refs(sources)] for ref, sources in delta["direct"]],
         "outputs": None if delta["outputs"] is None else list(delta["outputs"]),
@@ -117,10 +146,12 @@ def decode_delta(value: object) -> dict:
     try:
         records = []
         for row in value["records"]:
-            ref, sources, status, transform, reason, filters = row
+            ref, sources, status, transform, reason, filters, logic = row
             if not (isinstance(status, str) and isinstance(transform, str) and (reason is None or isinstance(reason, str))):
                 raise MemoError("record")
-            records.append(ColumnLineage(_unref(ref), _unrefs(sources), status, transform, reason, _unfilters(filters)))
+            records.append(
+                ColumnLineage(_unref(ref), _unrefs(sources), status, transform, reason, _unfilters(filters), **_unlogic(logic))
+            )
         direct = [(_unref(ref), _unrefs(sources)) for ref, sources in value["direct"]]
         outputs = value["outputs"]
         if outputs is not None:
