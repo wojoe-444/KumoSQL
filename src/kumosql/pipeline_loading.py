@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Mapping
 from sqlglot import exp
 
 from .identity import NodeIdentity
+from .js_tokens import strip_comments as _strip_js_comments
 from .paths import relative_posix
 from .pipeline_types import Model, PipelineDiagnostic, Target
 from .resilience import (
@@ -436,31 +437,11 @@ def _without_js_comments(text: str) -> str:
     """``text`` with each ``//`` and ``/* */`` comment outside a string replaced by one space; strings are kept whole.
 
     A config block is JavaScript: a comment may sit between the entries of a ``uniqueKey`` list, and may hold a quote or
-    a bracket that would end the list early when read with a pattern.
+    a bracket that would end the list early when read with a pattern. This is the shared tokenizer of
+    :mod:`kumosql.js_tokens`, which the config code mod (:mod:`kumosql.sqlx_config`) reads blocks with too.
     """
 
-    out: list[str] = []
-    index, length = 0, len(text)
-    while index < length:
-        char = text[index]
-        if char in "'\"`":
-            end = index + 1
-            while end < length and text[end] != char:
-                end += 2 if text[end] == "\\" else 1
-            out.append(text[index : end + 1])
-            index = end + 1
-        elif text.startswith("//", index):
-            end = text.find("\n", index)
-            index = length if end < 0 else end
-            out.append(" ")
-        elif text.startswith("/*", index):
-            end = text.find("*/", index + 2)
-            index = length if end < 0 else end + 2
-            out.append(" ")
-        else:
-            out.append(char)
-            index += 1
-    return "".join(out)
+    return _strip_js_comments(text)
 
 
 # A member's key: a name or a quoted name, at the start of the object or after a comma (in text whose strings are blanked).

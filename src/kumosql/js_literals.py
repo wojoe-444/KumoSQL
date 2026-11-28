@@ -10,31 +10,20 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
+from .js_tokens import strip_comments as _strip_comments
+
 _MISSING = object()
-_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 _STRING_RE = re.compile(r"""'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\$])*)`""", re.S)
 _KEY_RE = re.compile(r"""([A-Za-z_$][\w$]*)|'([^']*)'|"([^"]*)" """.strip())
 
 
 def strip_comments(text: str) -> str:
-    """``text`` without ``//`` and ``/* */`` comments (string contents are left alone)."""
+    """``text`` without ``//`` and ``/* */`` comments (string contents are left alone).
 
-    out, index, length = [], 0, len(text)
-    while index < length:
-        char = text[index]
-        if char in "'\"`":
-            match = _STRING_RE.match(text, index)
-            end = match.end() if match else index + 1
-            out.append(text[index:end])
-            index = end
-        elif text.startswith("//", index) or text.startswith("/*", index):
-            match = _COMMENT_RE.match(text, index)
-            index = match.end() if match else length
-            out.append(" ")
-        else:
-            out.append(char)
-            index += 1
-    return "".join(out)
+    The shared tokenizer of :mod:`kumosql.js_tokens`: a template literal holding ``${...}`` is kept whole too.
+    """
+
+    return _strip_comments(text)
 
 
 def parse_literal(text: str, index: int = 0):
