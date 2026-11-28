@@ -59,6 +59,8 @@ A load that could not reach Dataform is still saved, so a restart shows the proj
 
 A table name that carries a dataset (`raw.orders`, `ref("raw", "orders")`) is matched on that dataset, never on its table name alone, so a staging model that shares its source table's name still reads the source. A bare `ref("orders")` that two actions answer to is ambiguous to Dataform itself and stays unresolved; spell the dataset (`ref("raw", "orders")`) to settle it.
 
+**Declarations built by old scheduled jobs.** A declaration names a table the project reads but does not build. When that table is written by an old scheduled BigQuery job, load the job's SQL beside the project with `--job-sql PATH` (a folder of scripts with a `jobs.yaml` manifest, or a job-history export; `pipeline-report`, `python -m kumosql mcp PROJECT` and `python -m kumosql.ui --project DIR`). The declaration then resolves to the job statement that writes its table, matched with partial names on either side, and lineage runs through it. A declaration with two loaded writers, or one in the jobs' sandbox dataset with none, is a gap instead (`job_writer_ambiguous`, `job_writer_missing`). The manifest format and the limits are in [pipeline analysis](pipeline-analysis.md#scheduled-jobs-loaded-beside-the-project).
+
 While a `.js` file declares tables by computation, a two-part `ref("schema", "name")` to an unlisted name resolves exactly to the project's default database, unless that file sets a `database` (then it stays unresolved). A one-part ref to an unlisted name stays unresolved. A load with no Dataform repository to ask notes `compiled_graph_not_requested` (see the table above).
 
 ## What the static reader does not guess

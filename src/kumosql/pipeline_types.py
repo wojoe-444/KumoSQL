@@ -298,6 +298,10 @@ class Model:
     # Compiled incremental tables: the query that runs after the first run, and its pre and post operations. The loaded
     # ``sql`` is the full-refresh query; these read tables and columns too.
     incremental_sql: tuple[str, ...] = ()
+    # A statement of a scheduled job loaded beside the project (``kumosql.job_sql``): the job and the step that writes
+    # this table. ``None`` for the project's own actions.
+    job_id: str | None = None
+    job_step: int | None = None
 
     def __post_init__(self) -> None:
         if self.path:

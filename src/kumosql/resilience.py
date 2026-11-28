@@ -43,6 +43,11 @@ ASSET_FAILURE_CODES = frozenset(
         "ambiguous_reference",
         "insert_target_columns",
         "template_columns",
+        # Scheduled-job SQL loaded beside the project (kumosql.job_sql).
+        "job_sql_unread",
+        "job_writer_ambiguous",
+        "job_writer_missing",
+        "job_destination_ambiguous",
     }
 )
 
@@ -59,6 +64,10 @@ _EFFECTS = {
     "template_columns": ("impact", "dead_columns"),
     # A computed type changes what a model's stored rows are, not what it reads: only proofs depend on it.
     "dynamic_config": (),
+    # A declared table whose writer is not settled: the trace stops there, and a change to the jobs is not followed.
+    "job_writer_ambiguous": ("lineage", "impact"),
+    "job_writer_missing": ("lineage", "impact"),
+    "job_destination_ambiguous": ("lineage", "impact"),
 }
 
 # Kinds shared with the graph page's gaps table; other codes keep their own name.
@@ -79,6 +88,8 @@ _GAP_KINDS = {
     "external_tables": "unmatched_reference",
     "unknown_reads": "unattributed_reads",
     "unresolved_template": "unmatched_reference",
+    "job_sql_unread": "parse_error",
+    "job_destination_ambiguous": "unmatched_reference",
 }
 
 

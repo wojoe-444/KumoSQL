@@ -25,13 +25,29 @@ if TYPE_CHECKING:
     from .boundary import Boundary, BoundarySpec
 
 
-def load_project(root: Path, source_schema: Path | None = None, column_attributes: Path | None = None, docs: Sequence[Path] = ()) -> Pipeline:
-    """The project the CLI's ``pipeline-report`` would load: a Dataform folder, a folder of ``.sql`` files or a compiled graph."""
+def load_project(
+    root: Path,
+    source_schema: Path | None = None,
+    column_attributes: Path | None = None,
+    docs: Sequence[Path] = (),
+    job_sql: Sequence[Path] = (),
+) -> Pipeline:
+    """The project the CLI's ``pipeline-report`` would load: a Dataform folder, a folder of ``.sql`` files or a compiled graph.
+
+    ``job_sql`` are job folders or job-history exports whose statements join the project (``kumosql.job_sql``).
+    """
 
     schema = parse_json_or_raise(source_schema, "source schema file") if source_schema else None
     if schema is not None and not isinstance(schema, dict):
         raise PipelineLoadError("source schema file must be a JSON object")
     pipeline = load_compiled_graph(root, source_schema=schema) if root.is_file() else load_sqlx_project(root, source_schema=schema)
+    if job_sql:
+        from .job_sql import JobSqlError, load_into
+
+        try:
+            pipeline = load_into(pipeline, job_sql)
+        except JobSqlError as exc:
+            raise PipelineLoadError(str(exc)) from None
     return with_column_meaning(pipeline, column_attributes, docs)
 
 

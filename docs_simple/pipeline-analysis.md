@@ -49,6 +49,31 @@ The report then has an extra `boundary` section: the SQL of each outside job, re
 
 The limit: KumoSQL only knows what the file says. A dashboard you did not list is invisible, so it still never says a deletion is safe. Matches found in plain text files are guesses and are labelled that way, and files it could not read are reported as unknown, not as "no reader". Details are in the [reference](../docs/pipeline-analysis.md).
 
+## Old scheduled jobs next to a new Dataform project
+
+When you move old scheduled BigQuery jobs into Dataform, the new models often read the old tables through declarations. Lineage used to stop at those declarations. Now you can load the old jobs too, and lineage carries on into the job that wrote the table.
+
+Put one SQL script per job in a folder, with a small `jobs.yaml` that names each job and its script:
+
+```yaml
+defaults:
+  project: shop-legacy   # what an unqualified table name in the scripts means
+  dataset: sandbox
+jobs:
+  - job_id: daily_orders
+    script: daily_orders.sql
+```
+
+```sh
+python -m kumosql pipeline-report path/to/dataform --job-sql path/to/old_jobs -o report.json
+```
+
+Each statement that writes a table becomes a step. You can also list the steps yourself, with the table each one writes. Instead of a folder you can give a job-history export (rows of query text and destination table). Many runs of the same scheduled query then count as one job.
+
+For example, `daily_revenue` in Dataform reads the declared table `sandbox.orders_daily`. Tracing `daily_revenue` now goes into job `daily_orders` step 2, where `orders_daily.revenue` is `SUM(amount)` per day, then into step 1, and ends at the raw `orders` table. Each step of the trace names the job and the step.
+
+KumoSQL does not guess when it is unsure. If two loaded jobs write the same table, the report lists both as a gap and lineage stops at the table. If a declared table in the shared sandbox dataset is written by no loaded job, that is a gap too. The [full reference](../docs/pipeline-analysis.md) has the manifest format and every limit.
+
 ## A query's own WITH table is not the model
 
 A `WITH` table only exists inside the query that defines it. If model `read_secret` reads the model `t`, and a subquery further along declares its own `WITH t AS (SELECT 1 AS id) ...`, that inner `t` is a different, private table. Reading `t` outside it, or inside a `WITH t AS (SELECT * FROM t)` body, still reads the real model. KumoSQL follows this rule, so the dependency on `t` is kept and `t.secret` is not called unused just because a nested `WITH` reused the name. This tracks name scope only; it does not check that the data matches. The exact rule is in the [full reference](../docs/pipeline-analysis.md).

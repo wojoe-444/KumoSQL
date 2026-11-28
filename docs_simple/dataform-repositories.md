@@ -37,6 +37,10 @@ Dataform's `${ref("name")}` resolves to the action or declaration with that name
 
 When Google credentials are available, KumoSQL also reads Dataform workflow configurations. A model gets a production-schedule marker when an active configuration selects it, directly or through dependencies. Here, active production means a scheduled, enabled configuration using the release named `production`.
 
+## Declared tables that old jobs build
+
+A declaration tells Dataform about a table it reads but does not build. During a move from old scheduled BigQuery jobs, that table is often still built by an old job. Give KumoSQL the old jobs' SQL with `--job-sql` (a folder of scripts with a small `jobs.yaml`, or a job-history export), and the declaration leads into the job step that writes the table. If two loaded jobs write it, or none does, KumoSQL says so instead of guessing. The [pipeline guide](pipeline-analysis.md#old-scheduled-jobs-next-to-a-new-dataform-project) shows an example.
+
 ## Tables that only JavaScript can name
 
 Some Dataform projects list their source tables with JavaScript that only Dataform can run, for example a loop over a list the code builds. KumoSQL cannot read those names from the files, so it asks Dataform itself, when it can: it looks for the Dataform repository that matches your connected git repository, using the Google Cloud projects you chose on the BigQuery page, starting in one region (`us-central1` unless you set another) and then trying the others, and with your Google credentials. If that works, the names resolve and lineage shows the real source tables. Either way the load says what happened: it read the compilation, it was not asked because no repository is connected, or it could not be read and why (no projects chosen, no credentials, no matching repository in any region, no compilation yet, or an error from Dataform). The message never names your projects or tables.

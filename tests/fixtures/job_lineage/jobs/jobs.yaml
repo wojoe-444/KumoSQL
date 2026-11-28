@@ -1,0 +1,18 @@
+# The old scheduled jobs. Unqualified names in the scripts mean shop-legacy.sandbox.
+defaults:
+  project: shop-legacy
+  dataset: sandbox
+jobs:
+  - job_id: daily_orders
+    script: daily_orders.sql
+    steps:
+      - step: 1
+        destination: orders_clean
+      - step: 2
+        destination: sandbox.orders_daily
+  # Steps left out: read from the script's own statements.
+  - job_id: customer_totals
+    script: customer_totals.sql
+  # A second writer of sandbox.customer_totals, so that table is a gap.
+  - job_id: customer_totals_backfill
+    script: customer_totals_backfill.sql

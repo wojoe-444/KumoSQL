@@ -1,0 +1,5 @@
+config { type: "table" }
+
+SELECT d.return_day, d.returns, w.returns AS week_returns
+FROM ${ref("returns_daily")} AS d
+LEFT JOIN ${ref("returns_weekly")} AS w ON DATE_TRUNC(d.return_day, WEEK) = w.week

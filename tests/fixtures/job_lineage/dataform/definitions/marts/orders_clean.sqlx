@@ -1,0 +1,4 @@
+config { type: "table", description: "The new model; the old job has a table of the same name in the sandbox" }
+
+SELECT order_id, customer_id, amount * 100 AS amount_cents
+FROM ${ref("shop-legacy", "raw", "orders")}

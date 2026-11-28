@@ -1,0 +1,6 @@
+config { type: "table" }
+
+SELECT customer_id, lifetime_amount
+FROM ${ref("customer_totals")}
+ORDER BY lifetime_amount DESC
+LIMIT 100

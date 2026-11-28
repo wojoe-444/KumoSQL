@@ -27,7 +27,7 @@ The server accepts only its own local addresses and gives each running session a
 
 In Workspace, start with one rule. Open **Details** to understand the verdict, then use **Diff** to see the changed lines. A green planning check alone does not establish equal results; see [provers](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs_simple/provers.md).
 
-To show a project in the graph, start with `--project path/to/project`, or connect a repository through **Settings → Repositories**. On large projects, the graph can appear before Cost and Change reports finish their analysis.
+To show a project in the graph, start with `--project path/to/project`, or connect a repository through **Settings → Repositories**. If the project reads tables that old scheduled jobs build, add `--job-sql path/to/old_jobs` (a folder of the jobs' SQL with a `jobs.yaml`, or a job-history export), and the graph and lineage carry on into those jobs. On large projects, the graph can appear before Cost and Change reports finish their analysis.
 
 ## Settings in everyday terms
 

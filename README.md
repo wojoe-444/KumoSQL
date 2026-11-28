@@ -597,7 +597,7 @@ Every command prints `--help`.
 
 | Command | Purpose |
 | --- | --- |
-| `python -m kumosql.ui` | Local browser UI (`--project DIR`, `--git URL`, `--branch`, `--refresh`, `--jobs FILE`, `--port` (0 picks a free port), `--print-port`, `--exit-on-stdin-close`, `--no-browser`) |
+| `python -m kumosql.ui` | Local browser UI (`--project DIR`, `--git URL`, `--branch`, `--refresh`, `--jobs FILE`, `--job-sql PATH` (with `--project`), `--port` (0 picks a free port), `--print-port`, `--exit-on-stdin-close`, `--no-browser`) |
 | `python -m kumosql rewrite-sql` | Apply rules with verification, optional idempotence, planner and synthetic checks |
 | `python -m kumosql lift-subqueries` | Lift `FROM`/`JOIN` subqueries into CTEs (`--report` prints a summary) |
 | `python -m kumosql prove-sql-equivalent` | Structural equivalence proof for two queries, then the SMT prover; unwraps `CREATE TABLE/VIEW AS`; `--conditional` lists the facts that would make an unproven pair equivalent (exit 3); `--explain-difference` prints "except when P" for a refuted pair; `--emit-rule` (`--rule-name`, `--rule-output FILE`) writes P as a known-difference rule |
@@ -619,7 +619,7 @@ Every command prints `--help`.
 | `python -m kumosql notebook timeline FILE` | A Jupyter notebook's cells, outputs and errors as a compact timeline under a hard cap (`--max-chars`, `--cells`, `--errors-only`, `--json`) |
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |
 | `python -m kumosql equivalence list\|add\|remove` | Saved "column X of table A is column Y of table B" declarations |
-| `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate |
+| `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate; `--job-sql PATH` loads old scheduled-job SQL (a job folder or job history) beside the project so lineage runs through it ([details](docs/pipeline-analysis.md#scheduled-jobs-loaded-beside-the-project)) |
 | `python -m kumosql scopes` | Manage saved scopes (`list`, `add`, `remove`, `fields`, `refresh`) |
 | `python -m kumosql compare-outputs` | Generate SQL that compares pipeline outputs before and after a refactor |
 | `python -m kumosql dry-run` | BigQuery planning and schema check, no query execution |

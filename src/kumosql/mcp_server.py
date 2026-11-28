@@ -146,6 +146,15 @@ def main(argv: list[str] | None = None) -> int:
         help="YAML or JSON file naming the jobs outside the repository that build sources (producers) and the semantic models and "
         "dashboards that read outputs (consumers). Traces continue through the producers' SQL and impact lists the consumers, labelled as outside the project.",
     )
+    parser.add_argument(
+        "--job-sql",
+        type=Path,
+        action="append",
+        metavar="PATH",
+        help="A job folder (one SQL script per scheduled job plus a jobs.yaml manifest) or a BigQuery job-history export "
+        "(JSON, JSON lines or CSV): its statements are loaded as models beside the project, so lineage continues from a "
+        "declaration into the job step that writes its table. Repeatable. Nothing is contacted.",
+    )
     parser.add_argument("--docs", type=Path, action="append", metavar="DIR", help="Folder of Markdown docs (read-only, repeatable). Its 'Primary key: a, b' lines or primary-key columns state a table's grain (answers show such a grain as declared, with the file it came from), and its tables of columns (Column | Description) give column descriptions, shown with the file they came from; a time zone a description mentions is only a hint.")
     parser.add_argument("--malloy", type=Path, action="append", metavar="DIR", help="Folder of Malloy files whose source primary_key states the grain of the table it reads (read-only, repeatable)")
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
@@ -183,7 +192,18 @@ def main(argv: list[str] | None = None) -> int:
             boundary = read_file(args.boundary)
         except BoundaryError as exc:
             parser.error(f"--boundary: {exc}")
-    loader = (lambda: load_project(root, args.source_schema, args.column_attributes, args.docs or ())) if root else None
+    job_sql = args.job_sql or []
+    if job_sql:
+        if not root:
+            parser.error("--job-sql needs a project")
+        from .job_sql import JobSqlError, load_job_sql
+
+        for path in job_sql:
+            try:
+                load_job_sql(path)  # fail at start, not as a gap in every answer
+            except JobSqlError as exc:
+                parser.error(f"--job-sql: {exc}")
+    loader = (lambda: load_project(root, args.source_schema, args.column_attributes, args.docs or (), job_sql)) if root else None
     session = Session(
         loader=loader,
         profiles=args.profiles,
@@ -203,10 +223,12 @@ def main(argv: list[str] | None = None) -> int:
             extra.append(args.column_attributes)
         docs = args.docs or []  # the sidecar and the docs pages are part of what the saved index was built from
         skip = [args.cache_dir] if args.cache_dir else []
+        from .job_sql import job_files  # the job folders and histories are part of it too
+
         index = mcp_cache.Index(
             session,
             cache=cache,
-            watch=lambda: mcp_cache.project_files(root, [*extra, *markdown_files(docs)], skip),
+            watch=lambda: mcp_cache.project_files(root, [*extra, *markdown_files(docs), *job_files(job_sql)], skip),
             refresh_interval=args.refresh_interval,
             wait_seconds=args.warm_wait,
         )

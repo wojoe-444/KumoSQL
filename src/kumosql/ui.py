@@ -852,6 +852,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--branch", help="With --git: branch to load (default: the remote's default branch)")
     parser.add_argument("--refresh", action="store_true", help="With --git: fetch the latest commit instead of reusing the cached clone")
     parser.add_argument("--jobs", metavar="FILE", help="Load a BigQuery job-history export (JSON, JSON lines or CSV) for the cost page and observed edges; needs --project or --git")
+    parser.add_argument("--job-sql", metavar="PATH", action="append", help="With --project: a job folder (SQL scripts plus a jobs.yaml manifest) or a job-history export whose statements are loaded as models beside the project, so lineage continues into the old jobs. Repeatable; the file given to --jobs works here too")
     parser.add_argument("--diagnose-repo", metavar="URL", help="Load a repository once and print a report of every git call (for bug reports); does not start the server")
     parser.add_argument("--no-redact", action="store_true", help="Log real repository, project, table, model and file names instead of placeholders (local debugging only; never paste such a log)")
     parser.add_argument("--lookup", metavar="PLACEHOLDER", help="Print the real name behind a placeholder from the log, for example repo#1 or model#417 (read from the private map on this computer); does not start the server")
@@ -886,6 +887,8 @@ def main(argv: list[str] | None = None) -> int:
             console.say(f"Loaded repository ({result['files']} files)")
         except GitRepoError as exc:
             parser.error(console.scrub(str(exc)))
+    if args.job_sql and not args.project:
+        parser.error("--job-sql needs --project")
     if args.project:
         from .pipeline import load_sqlx_project
 
@@ -893,6 +896,10 @@ def main(argv: list[str] | None = None) -> int:
             from .shared_models import read_project_files
 
             pipeline = load_sqlx_project(args.project)
+            if args.job_sql:
+                from .job_sql import load_into
+
+                pipeline = load_into(pipeline, args.job_sql)
             pipeline.source_files = read_project_files(args.project)
             live_graph.set_project(pipeline, args.project)
         except Exception as exc:

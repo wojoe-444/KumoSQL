@@ -350,11 +350,17 @@ class Pipeline:
                 continue
             seen.add(item)
             record, hop = _one_hop(analysis.records, item)
+            model = self.models.get(item.table)
             if record is None:
                 reason = analysis.untraced_reason(item, self.models)
                 if reason:
                     unknown[item] = reason
-                    hops.append(TraceHop(item, item.table, "unknown", "unknown", filters_unknown=True, reason=reason))
+                    hops.append(
+                        TraceHop(
+                            item, item.table, "unknown", "unknown", filters_unknown=True, reason=reason,
+                            job_id=model.job_id if model else None, step=model.job_step if model else None,
+                        )
+                    )
                 else:
                     sources.add(item)
                 continue
@@ -364,7 +370,7 @@ class Pipeline:
                 filters_unknown.add(item.table)
             else:
                 filters.update(dict.fromkeys((item.table, found) for found in record.filters))
-            hops.append(_trace_hop(item, record, hop))
+            hops.append(_trace_hop(item, record, hop, model))
             pending.extend(sorted(hop))
         seen.discard(column)
         return ColumnTrace(
@@ -903,6 +909,8 @@ class Pipeline:
                     "identity": model.identity.to_json() if model.identity else None,
                     "model_kind": model.kind,
                     "asset": model.asset_identity.to_json() if model.asset_identity else None,
+                    # a statement of a scheduled job loaded beside the project (kumosql.job_sql)
+                    **({"job_id": model.job_id, "step": model.job_step} if model.job_id is not None else {}),
                 }
                 for key, model in sorted(self.models.items())
             },
@@ -2281,8 +2289,13 @@ def _narrows(record: ColumnLineage | None) -> bool:
     )
 
 
-def _trace_hop(column: ColumnRef, record: ColumnLineage, sources: frozenset[ColumnRef]) -> TraceHop:
-    """One step of a trace: how ``column`` is computed in its model (``record``), from ``sources`` one hop back."""
+def _trace_hop(
+    column: ColumnRef, record: ColumnLineage, sources: frozenset[ColumnRef], model: Model | None = None
+) -> TraceHop:
+    """One step of a trace: how ``column`` is computed in its model (``record``), from ``sources`` one hop back.
+
+    A model read from a scheduled job (``kumosql.job_sql``) names the job and its step on the hop.
+    """
 
     return TraceHop(
         column=column,
@@ -2297,6 +2310,8 @@ def _trace_hop(column: ColumnRef, record: ColumnLineage, sources: frozenset[Colu
         partition_keys=record.partition_keys,
         steps=record.steps,
         reason=record.reason,
+        job_id=model.job_id if model is not None else None,
+        step=model.job_step if model is not None else None,
     )
 
 

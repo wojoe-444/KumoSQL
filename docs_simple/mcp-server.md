@@ -110,6 +110,8 @@ The same file works with `python -m kumosql pipeline-report --boundary that-file
 
 The limit: KumoSQL only knows what the file says. A job or dashboard you did not list is still invisible, so it still never says a deletion is safe. The full details are in the [reference](../docs/mcp-server.md#producers-and-consumers-outside-the-repository---boundary).
 
+If those outside jobs are old scheduled BigQuery jobs you are moving into Dataform, you can instead load their SQL into the project itself with `--job-sql` (a folder of scripts with a `jobs.yaml`, or a job-history export). A trace then goes from a Dataform model into the old job that wrote the table. See [understanding a whole pipeline](pipeline-analysis.md#old-scheduled-jobs-next-to-a-new-dataform-project).
+
 ## Column types: the schema snapshot
 
 The file has one row per column, like BigQuery's `INFORMATION_SCHEMA.COLUMNS`:

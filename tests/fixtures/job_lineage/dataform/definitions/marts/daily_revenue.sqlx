@@ -1,0 +1,7 @@
+config { type: "table" }
+
+SELECT
+  order_day,
+  revenue AS daily_revenue
+FROM ${ref("orders_daily")}
+WHERE revenue > 0

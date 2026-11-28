@@ -361,6 +361,15 @@ def pipeline_main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Look up columns of tables the project does not define in BigQuery (off by default: nothing reaches the network otherwise)",
     )
+    parser.add_argument(
+        "--job-sql",
+        type=Path,
+        action="append",
+        metavar="PATH",
+        help="A job folder (one SQL script per scheduled job plus a jobs.yaml manifest) or a BigQuery job-history export "
+        "(JSON, JSON lines or CSV): its statements are loaded as models beside the project, so lineage continues from a "
+        "declaration into the job step that writes its table. Repeatable. Nothing is contacted.",
+    )
     parser.add_argument("--min-nodes", type=int, default=12, help="Smallest SELECT subtree to report as a duplicate")
     parser.add_argument(
         "--similarity",
@@ -461,6 +470,13 @@ def pipeline_main(argv: list[str] | None = None) -> int:
     except PipelineLoadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.job_sql:
+        from .job_sql import JobSqlError, load_into
+
+        try:
+            pipeline = load_into(pipeline, args.job_sql)
+        except JobSqlError as exc:
+            parser.error(f"--job-sql: {exc}")
     boundary = boundary_session = None
     if boundary_spec is not None:
         from . import boundary_report
