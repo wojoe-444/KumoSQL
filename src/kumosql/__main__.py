@@ -52,8 +52,9 @@ def usage() -> str:
     lines += ["", "Run `python -m kumosql COMMAND --help` for a command's options. --help only prints text; it never does any work.",
               "Most commands only read and print (consolidate-tables, refactor, minimize-tables, prove-*). A command writes",
               "a file only for an option you give it: -o/--output/--patch/--csv write the file you name; reduce-project",
-              "--write is the only option that edits a project folder. q run is the exception: it always writes the query's",
-              "results, to the -o file or, without one, to a new file in the temp folder that its summary names.",
+              "--write is the only option that edits a project folder; workbook patch --apply edits the workbook file you",
+              "name. q run is the exception: it always writes the query's results, to the -o file or, without one, to a new",
+              "file in the temp folder that its summary names.",
               "The kumosql- prefix is optional: `python -m kumosql ui` runs kumosql-ui."]
     return "\n".join(lines)
 

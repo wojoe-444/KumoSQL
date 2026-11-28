@@ -65,6 +65,8 @@ kumosql-reconcile = "kumosql.reconcile_cli:reconcile_main"
 kumosql-rules = "kumosql.reconcile_cli:rules_main"
 kumosql-q = "kumosql.query_runner:main"
 kumosql-query = "kumosql.query_runner:main"
+kumosql-workbook = "kumosql.bi_workbook.cli:main"
+kumosql-notebook = "kumosql.notebook_text:main"
 
 [build-system]
 requires = ["setuptools>=68"]
