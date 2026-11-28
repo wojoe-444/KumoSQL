@@ -359,9 +359,11 @@ def _resolve(name: str, raw: dict, known: Mapping[str, dict], done: dict, result
     for join in joins:
         join = dict(join)
         target = join.get("source")
-        if target and target in raw and target != name:
+        if target and target in raw and target != name and target not in trail:
             other = _resolve(target, raw, known, done, result, trail | {name})
             join["table"] = join["table"] or other.get("table")
+        elif target and target in raw and target in trail:
+            join["table"] = join["table"] or raw[target]["table"]  # sources that join each other: the table it names itself
         elif target and target in known:
             join["table"] = join["table"] or known[target].get("table")
         elif target and not join.get("table"):

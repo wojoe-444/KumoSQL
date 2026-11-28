@@ -54,6 +54,16 @@ def test_joins_name_the_joined_table_or_source_and_the_columns_read_from_it():
     assert joined["joins"][0]["table"] == "d.region" and "region_code" in joined["columns"]
 
 
+def test_sources_that_join_each_other_are_still_read():
+    # a join cycle used to send the resolver round the cycle until Python's recursion limit, which dropped the whole file
+    sources = read_malloy("source: a is table('d.a') extend { primary_key: id\n  join_one: b with b_id }\n"
+                          "source: b is table('d.b') extend { primary_key: id\n  join_one: a with a_id }\n")
+    found = by_name(sources)
+    assert [found[n]["primary_key"] for n in ("a", "b")] == ["id", "id"]
+    assert found["a"]["joins"][0]["table"] == "d.b" and found["b"]["joins"][0]["table"] == "d.a"
+    assert not any("stopped" in u["reason"] for u in sources.unknown)
+
+
 def test_a_source_that_extends_another_inherits_its_table_key_columns_and_joins():
     big = by_name(read_malloy(MODEL))["big_sales"]
     assert big["table"] == "ds.orders" and big["extends"] == "sales" and big["primary_key"] == "order_id"
