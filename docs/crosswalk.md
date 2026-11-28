@@ -111,7 +111,7 @@ Pairs that share no meaning, source column or expression shape are counted under
 
 - Suggestions come from lineage, not data. Use them to decide what to check, not as evidence. The score is a ranking heuristic, not a probability.
 - A meaning names the source columns a model reads, so declarations act on source tables. One between two models changes no meaning.
-- A table whose grain is unknown (a source with no declared key, the common case without a source schema or `uniqueKey` assertion) never gets an `equal` hint.
+- A table whose grain is unknown never gets an `equal` hint. This is the common case for a table that only passes source rows on, since a source's grain is known only when someone states it. The command profiles the project with no stated grains. The [agent server](mcp-server.md) takes them from `--assume-grain` and from a declared source's `uniqueKey`, and `suggest_equivalences(..., profiles=...)` accepts profiles built that way.
 - A column whose meaning is unknown (see the [agent server's limits](mcp-server.md#limits) for how often lineage stops) cannot be matched, so a pair of tables built on such columns may be missed.
 - An `explanation` is a name. Nothing checks yet that a rule of that name exists.
 - Every table of one set is compared with every table of the other. On large sets, narrow them with datasets or folders.
