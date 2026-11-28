@@ -15,6 +15,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 | [Rewrite rules](rewrite-rules.md) | The rule registry and the subquery lifter |
 | [GoogleSQL reference evaluator](gsql-eval.md) | A pure-Python GoogleSQL interpreter that returns BigQuery's rows or declines: values, coverage, errors and guards |
 | [Whole-pipeline analysis](pipeline-analysis.md) | Loading a project, lineage and impact, table profiles, work already done elsewhere, comparing outputs |
+| [Saved equivalences and the crosswalk](crosswalk.md) | `equivalence add` with a status (`equal`, `differs`, `missing`), an explanation, evidence and a date; which entries a proof may use; looking an entry up; `equivalence suggest`, which ranks candidate pairs from column meanings and saves nothing |
 | [Cost, change reports and the BigQuery dry run](cost-and-change-reports.md) | Dry-run checks, cost attribution, change reports and refactoring proposals |
 | [Refactor](refactor.md) | Protected and editable tables, searching for simpler pipelines, and folding chosen tables into one |
 | [Shared models](shared-models.md) | Moving a CTE repeated across Dataform models into one shared model, as a patch checked by the prover |
