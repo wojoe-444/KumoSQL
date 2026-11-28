@@ -63,6 +63,8 @@ kumosql-profile-mcp = "kumosql.profile_mcp:main"
 kumosql-mcp = "kumosql.mcp_server:main"
 kumosql-reconcile = "kumosql.reconcile_cli:reconcile_main"
 kumosql-rules = "kumosql.reconcile_cli:rules_main"
+kumosql-q = "kumosql.query_runner:main"
+kumosql-query = "kumosql.query_runner:main"
 
 [build-system]
 requires = ["setuptools>=68"]

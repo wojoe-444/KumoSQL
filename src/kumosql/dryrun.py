@@ -81,6 +81,13 @@ class DryRunResult:
     # False when a planned response carried no output schema: then ``schema`` is empty because
     # nothing was observed, not because the query has no columns.
     schema_observed: bool = True
+    # BigQuery's ``statistics.query.totalBytesProcessedAccuracy`` for the estimate: ``PRECISE``,
+    # ``UPPER_BOUND``, ``LOWER_BOUND`` or ``UNKNOWN``; ``None`` when the response did not say.
+    bytes_accuracy: str | None = None
+    # ``statistics.query.statementType`` (``SELECT``, ``INSERT``, ``SCRIPT``, ...), when reported.
+    statement_type: str | None = None
+    # The HTTP status of a refused dry run (401, 403, 404, 5xx...), so callers can tell auth from SQL errors.
+    http_status: int | None = None
 
 
 @dataclass(frozen=True)
@@ -228,6 +235,7 @@ def dry_run(
             error_reason=first.get("reason") or error.get("status"),
             error_message=error.get("message") or first.get("message") or f"HTTP {status}",
             error_location=first.get("location"),
+            http_status=status,
         )
 
     statistics = payload.get("statistics", {})
@@ -247,6 +255,8 @@ def dry_run(
         total_bytes_processed=int(processed) if processed is not None else None,
         referenced_tables=tables,
         schema_observed=observed,
+        bytes_accuracy=query_stats.get("totalBytesProcessedAccuracy") or None,
+        statement_type=query_stats.get("statementType") or None,
     )
 
 
