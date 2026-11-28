@@ -432,48 +432,149 @@ def _braced(text: str, start: int) -> str:
     return ""
 
 
-def _name_list(text: str) -> tuple[str, ...]:
-    return tuple(re.findall(r"['\"`]([^'\"`]+)['\"`]", text))
+def _without_js_comments(text: str) -> str:
+    """``text`` with each ``//`` and ``/* */`` comment outside a string replaced by one space; strings are kept whole.
+
+    A config block is JavaScript: a comment may sit between the entries of a ``uniqueKey`` list, and may hold a quote or
+    a bracket that would end the list early when read with a pattern.
+    """
+
+    out: list[str] = []
+    index, length = 0, len(text)
+    while index < length:
+        char = text[index]
+        if char in "'\"`":
+            end = index + 1
+            while end < length and text[end] != char:
+                end += 2 if text[end] == "\\" else 1
+            out.append(text[index : end + 1])
+            index = end + 1
+        elif text.startswith("//", index):
+            end = text.find("\n", index)
+            index = length if end < 0 else end
+            out.append(" ")
+        elif text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = length if end < 0 else end + 2
+            out.append(" ")
+        else:
+            out.append(char)
+            index += 1
+    return "".join(out)
+
+
+# A member's key: a name or a quoted name, at the start of the object or after a comma (in text whose strings are blanked).
+_MEMBER_RE = re.compile(r"""(?:^|[{,])\s*(?:(?P<name>[A-Za-z_$][\w$]*)|(?P<quoted>'[^']*'|"[^"]*"))\s*:""")
+_SPREAD_RE = re.compile(r"[{,]\s*\.\.\.")
+
+
+def _object_members(text: str) -> dict[str, str]:
+    """The value text of each member written directly in one JavaScript object, by key (the last of a name, as JavaScript keeps it).
+
+    ``text`` holds no comments (see :func:`_without_js_comments`). It is an object (``{...}``, maybe after the ``config``
+    of a SQLX block) or the bare members of one (``type: "table", assertions: {...}``). Members of nested objects, and a
+    ``key:`` inside a string or after ``?``, are not members of this object. A spread (``...shared``) may set any key, so
+    a member written before one is not known and left out.
+    """
+
+    body = text.strip()
+    if body.startswith("config") and body[6:].lstrip().startswith("{"):
+        body = body[6:].lstrip()
+    if not body.startswith("{"):
+        body = "{" + body + "}"
+    top = _blank_strings(_top_level(body))
+    spread = max((found.start() for found in _SPREAD_RE.finditer(top)), default=-1)
+    members: dict[str, str] = {}
+    for found in _MEMBER_RE.finditer(top):
+        if found.start() < spread:
+            continue
+        key = found.group("name") or body[found.start("quoted") + 1 : found.end("quoted") - 1]
+        members[key] = _value_at(body, found.end()).strip()
+    return members
+
+
+def _js_literal(value: str):
+    """The JavaScript literal ``value`` is (a string, a list, an object), or ``js_literals._MISSING`` when it is computed."""
+
+    from . import js_literals
+
+    parsed, end = js_literals.parse_literal(value, 0)
+    if parsed is js_literals._MISSING or value[end:].strip():
+        return js_literals._MISSING
+    return parsed
+
+
+def _key_columns(value: object) -> tuple[str, ...] | None:
+    """The columns one unique key names: a literal list of names, or one name. Anything else (an empty list, a computed
+    entry, a number) is no key, never part of one: ``["a", x]`` does not say ``a`` alone is unique."""
+
+    if isinstance(value, str):
+        return (value,) if value.strip() else None
+    if isinstance(value, list) and value and all(isinstance(c, str) and c.strip() for c in value):
+        return tuple(value)
+    return None
+
+
+def _key_lists(value: object) -> list[tuple[str, ...]]:
+    """The keys a ``uniqueKeys`` value names: a list of name lists (or of ``{uniqueKey: [...]}`` entries, as some compiled graphs have them)."""
+
+    if not isinstance(value, list):
+        return []
+    keys = []
+    for entry in value:
+        columns = _key_columns(entry.get("uniqueKey") if isinstance(entry, dict) else entry if isinstance(entry, list) else None)
+        if columns:
+            keys.append(columns)
+    return keys
+
+
+def _member_keys(members: Mapping[str, object], parse: Callable[[object], object] = lambda v: v) -> list[tuple[str, ...]]:
+    """The keys in the ``uniqueKey`` and ``uniqueKeys`` members of one object (``parse`` reads a member's value)."""
+
+    keys: list[tuple[str, ...]] = []
+    if "uniqueKey" in members and (columns := _key_columns(parse(members["uniqueKey"]))):
+        keys.append(columns)
+    if "uniqueKeys" in members:
+        keys.extend(_key_lists(parse(members["uniqueKeys"])))
+    return keys
 
 
 def _config_assertions(config: str) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
-    """``(non_null columns, unique keys)`` from ``assertions: {nonNull, uniqueKey, uniqueKeys}``."""
+    """``(non_null columns, unique keys)`` from the config's own ``assertions: {nonNull, uniqueKey, uniqueKeys}``.
 
-    match = re.search(r"\bassertions\s*:\s*\{", config)
-    if not match:
+    ``uniqueKey`` is a literal list of names (or one name); ``uniqueKeys`` a literal list of such lists. Comments, line
+    breaks and trailing commas anywhere in the block are read as JavaScript reads them. A key with a computed entry is
+    not read at all, never shortened to its literal entries; ``nonNull`` keeps its literal names, since each one is
+    asserted on its own.
+    """
+
+    block = _object_members(_without_js_comments(config)).get("assertions", "")
+    if not block.startswith("{"):
         return (), ()
-    block = _braced(config, match.end() - 1)
+    inner = _object_members(block)
     non_null: tuple[str, ...] = ()
-    found = re.search(r"\bnonNull\s*:\s*(\[[^\]]*\]|['\"`][^'\"`]*['\"`])", block)
-    if found:
-        non_null = _name_list(found.group(1))
-    return non_null, _unique_keys_in(block)
-
-
-def _unique_keys_in(text: str) -> tuple[tuple[str, ...], ...]:
-    """The literal ``uniqueKey: [...]`` and ``uniqueKeys: [[...], ...]`` lists in ``text``."""
-
-    keys: list[tuple[str, ...]] = []
-    found = re.search(r"\buniqueKey\s*:\s*(\[[^\]]*\]|['\"`][^'\"`]*['\"`])", text)
-    if found and _name_list(found.group(1)):
-        keys.append(_name_list(found.group(1)))
-    found = re.search(r"\buniqueKeys\s*:\s*\[((?:\s*\[[^\]]*\]\s*,?)+)\]", text)
-    if found:
-        keys.extend(_name_list(group) for group in re.findall(r"\[([^\]]*)\]", found.group(1)) if _name_list(group))
-    return tuple(dict.fromkeys(keys))
+    if "nonNull" in inner:
+        value = _js_literal(inner["nonNull"])
+        if isinstance(value, str):
+            value = [value]
+        elif not isinstance(value, list) and inner["nonNull"].startswith("["):
+            value = [_js_literal(item) for item in _split_top_level(inner["nonNull"][1:-1])]
+        if isinstance(value, list):
+            non_null = tuple(dict.fromkeys(c for c in value if isinstance(c, str) and c.strip()))
+    return non_null, tuple(dict.fromkeys(_member_keys(inner, _js_literal)))
 
 
 def declared_unique_keys(config: str) -> tuple[tuple[str, ...], ...]:
-    """The unique keys a declaration's config states: ``assertions: {uniqueKey, uniqueKeys}`` and a top-level ``uniqueKey``.
+    """The unique keys a declaration's config states: ``assertions: {uniqueKey, uniqueKeys}`` and a top-level ``uniqueKey``
+    (or ``uniqueKeys``).
 
     A declaration names a table the project does not build, so these are the project's claim about it, not something
-    it checks. Only literal lists of names are read.
+    it checks (Dataform 3.0.71 rejects both on a declaration, so a project it compiles states neither). Only literal
+    lists of names are read.
     """
 
     keys = list(_config_assertions(config)[1])
-    match = re.search(r"\bassertions\s*:\s*\{", config)
-    outside = config if not match else config[:match.start()] + config[match.end() - 1 + len(_braced(config, match.end() - 1)):]
-    keys.extend(_unique_keys_in(outside))
+    keys.extend(_member_keys(_object_members(_without_js_comments(config)), _js_literal))
     return tuple(dict.fromkeys(keys))
 
 
@@ -1724,6 +1825,7 @@ def load_compiled_graph(
         diagnostics.append(PipelineDiagnostic("", "compilation_error", "the compiler reported graph errors that could not be read"))
 
     models: dict[str, Model] = {}
+    generated_keys: dict[str, list[tuple[str, ...]]] = {}  # parent table key -> keys its generated uniqueness assertions check
     from .column_docs import ColumnBook
 
     book = ColumnBook()
@@ -1743,14 +1845,7 @@ def load_compiled_graph(
                 asserted = item.get("assertions") if isinstance(item.get("assertions"), dict) else {}
                 non_null = asserted.get("nonNull", [])
                 non_null = (non_null,) if isinstance(non_null, str) else tuple(c for c in non_null if isinstance(c, str))
-                unique = []
-                if isinstance(asserted.get("uniqueKey"), list):
-                    unique.append(tuple(c for c in asserted["uniqueKey"] if isinstance(c, str)))
-                if isinstance(asserted.get("uniqueKeys"), list):
-                    for entry in asserted["uniqueKeys"]:
-                        columns = entry.get("uniqueKey") if isinstance(entry, dict) else entry
-                        if isinstance(columns, list):
-                            unique.append(tuple(c for c in columns if isinstance(c, str)))
+                unique = _member_keys(asserted)
                 config_reads, config_reads_unread = _compiled_column_reads(item)
                 _keep_compiled_column_docs(book, target.key, item, file_name if isinstance(file_name, str) else "compiled graph")
                 model = Model(
@@ -1761,7 +1856,7 @@ def load_compiled_graph(
                     tuple(target_of(dep) for dep in item.get("dependencyTargets", [])),
                     tags=tuple(tag for tag in item.get("tags", []) if isinstance(tag, str)),
                     non_null=non_null,
-                    unique_keys=tuple(dict.fromkeys(k for k in unique if k)),
+                    unique_keys=tuple(dict.fromkeys(unique)),
                     operations_sql=tuple(
                         text for key_ in ("preOps", "postOps") for text in (item.get(key_) or []) if isinstance(text, str) and text.strip()
                     ),
@@ -1790,7 +1885,19 @@ def load_compiled_graph(
                         PipelineDiagnostic(key, "duplicate_model", "defined more than once; the earlier definition was replaced")
                     )
                 models[key] = model
+            if kind_key == "assertions" and isinstance(item.get("parentAction"), dict):
+                try:
+                    found = _generated_unique_key(target_of(item["parentAction"]), sql)
+                except (AttributeError, TypeError, ValueError):
+                    found = None
+                if found is not None:
+                    generated_keys.setdefault(found[0], []).append(found[1])
+    for parent, keys in generated_keys.items():
+        model = models.get(parent)
+        if model is not None and model.kind != "assertion":
+            model.unique_keys = tuple(dict.fromkeys((*model.unique_keys, *keys)))
     sources: dict[str, Target] = {}
+    source_keys: dict[str, tuple[tuple[str, ...], ...]] = {}
     for index, item in enumerate(list_of("declarations")):
         try:
             target = target_of(item.get("target", {}))
@@ -1800,6 +1907,8 @@ def load_compiled_graph(
             )
             continue
         sources[target.key] = target
+        if isinstance(item.get("assertions"), dict) and (keys := _member_keys(item["assertions"])):
+            source_keys[target.key] = tuple(dict.fromkeys(keys))
         _keep_compiled_column_docs(book, target.key, item, "compiled graph")
     project_config = graph.get("projectConfig") if isinstance(graph.get("projectConfig"), dict) else {}
 
@@ -1825,7 +1934,62 @@ def load_compiled_graph(
         column_docs=book.docs,
         column_doc_sources=book.sources,
         column_doc_unread=book.unread,
+        source_unique_keys=source_keys,
     )
+
+
+_GENERATED_EXTRA = ("joins", "group", "having", "qualify", "limit", "offset", "distinct", "with_", "with", "laterals", "windows", "order")
+
+
+def _generated_unique_key(parent: Target, sql: str) -> tuple[str, tuple[str, ...]] | None:
+    """``(parent key, columns)`` when ``sql`` is the uniqueness check Dataform generates for ``assertions: {uniqueKey}``.
+
+    ``dataform compile --json`` keeps no ``assertions`` block on a table: each ``uniqueKey`` (or entry of ``uniqueKeys``)
+    becomes an assertion action with a ``parentAction`` and exactly this query (Dataform 3.0.71)::
+
+        SELECT * FROM (SELECT a, b, COUNT(1) AS index_row_count FROM `p.ds.t` GROUP BY a, b) AS data
+        WHERE index_row_count > 1
+
+    Anything else (a filter, a join, another count, a qualified column, a table other than the parent) is not read.
+    """
+
+    import sqlglot
+
+    try:
+        outer = sqlglot.parse_one(sql, read="bigquery")
+    except sqlglot.errors.SqlglotError:
+        return None
+    if not isinstance(outer, exp.Select) or not parent.key or any(outer.args.get(name) for name in _GENERATED_EXTRA):
+        return None
+    source, where = outer.args.get("from_") or outer.args.get("from"), outer.args.get("where")
+    if len(outer.expressions) != 1 or not isinstance(outer.expressions[0], exp.Star) or where is None:
+        return None
+    if source is None or not isinstance(source.this, exp.Subquery):
+        return None
+    condition = where.this
+    if not (isinstance(condition, exp.GT) and isinstance(condition.this, exp.Column) and not condition.this.table
+            and isinstance(condition.expression, exp.Literal) and not condition.expression.is_string and condition.expression.name == "1"):
+        return None
+    inner = source.this.this
+    if not isinstance(inner, exp.Select) or any(inner.args.get(name) for name in ("where", *_GENERATED_EXTRA) if name != "group"):
+        return None
+    table, group = inner.args.get("from_") or inner.args.get("from"), inner.args.get("group")
+    if table is None or not isinstance(table.this, exp.Table) or group is None or not group.expressions:
+        return None
+    if ".".join(part.name for part in table.this.parts) != parent.key:
+        return None
+    columns = []
+    for item in group.expressions:
+        if not isinstance(item, exp.Column) or item.table or isinstance(item.this, exp.Star):
+            return None
+        columns.append(item.name)
+    *selected, count = inner.expressions
+    if not (isinstance(count, exp.Alias) and count.alias == condition.this.name and isinstance(count.this, exp.Count)
+            and not count.this.args.get("distinct") and isinstance(count.this.this, exp.Literal) and count.this.this.name == "1"):
+        return None
+    if [(s.name if isinstance(s, exp.Column) and not s.table else None) for s in selected] != columns:
+        return None
+    return parent.key, tuple(dict.fromkeys(columns))
 
 if TYPE_CHECKING:
     from .pipeline import Pipeline

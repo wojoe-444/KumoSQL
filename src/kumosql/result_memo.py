@@ -33,7 +33,8 @@ from .googlesql_types import GType, StructField
 from .table_profile import AttributeMeaning, Grain, RowScope, TableProfile
 
 #: bump when what a profile, a type or an index part contains changes: saved entries of another format are never read
-FORMAT = 1
+#: (2: a model's ``uniqueKey`` under an unexpanded ``*`` and a declaration's ``uniqueKey`` give a declared grain)
+FORMAT = 2
 
 SECTIONS = ("profiles", "types", "expression")
 
