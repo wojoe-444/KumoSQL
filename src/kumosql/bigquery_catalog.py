@@ -545,7 +545,7 @@ def get_table(project: str, dataset: str, table: str) -> dict:
     # tables.get reads metadata only, never rows, so a table that requires a partition filter is no problem.
     payload = _get(
         f"projects/{quote(project, safe='')}/datasets/{quote(dataset, safe='')}/tables/{quote(table, safe='')}",
-        {"fields": "tableReference,type,numRows,schema,tableConstraints"},
+        {"fields": "tableReference,type,numRows,schema,tableConstraints,timePartitioning,rangePartitioning,requirePartitionFilter"},
     )
     reference = payload.get("tableReference", {})
     return {
@@ -554,4 +554,29 @@ def get_table(project: str, dataset: str, table: str) -> dict:
         "numRows": payload.get("numRows"),
         "schema": payload.get("schema", {}).get("fields", []),
         "constraints": payload.get("tableConstraints"),
+        "partitioning": partitioning_of(payload),
     }
+
+
+def partitioning_of(payload: dict) -> dict | None:
+    """``{"column", "column_type", "require_filter"}`` from a ``tables.get`` answer, or ``None`` when it is not partitioned.
+
+    Ingestion-time partitioning (``timePartitioning`` without a field) is the ``_PARTITIONTIME`` pseudo-column.
+    """
+
+    time_partitioning = payload.get("timePartitioning") or {}
+    range_partitioning = payload.get("rangePartitioning") or {}
+    if not time_partitioning and not range_partitioning:
+        return None
+    types = {str(f.get("name", "")).casefold(): str(f.get("type", "")).upper() for f in (payload.get("schema") or {}).get("fields", []) if isinstance(f, dict)}
+    types = {name: {"INTEGER": "INT64"}.get(kind, kind) for name, kind in types.items()}
+    if range_partitioning:
+        column, kind = range_partitioning.get("field"), "INT64"
+    else:
+        column = time_partitioning.get("field") or "_PARTITIONTIME"
+        kind = types.get(column.casefold()) if time_partitioning.get("field") else "TIMESTAMP"
+    if not column:
+        return None
+    require = payload.get("requirePartitionFilter", time_partitioning.get("requirePartitionFilter"))
+    return {"column": column, "column_type": kind if kind in ("DATE", "TIMESTAMP", "DATETIME", "INT64") else None,
+            "require_filter": bool(require) if require is not None else None}

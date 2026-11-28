@@ -163,6 +163,8 @@ class Layout:
     partition_by: str | None = None  # the expression as written, ``None`` when the config has none
     cluster_by: tuple[str, ...] = ()
     problem: str | None = None  # why the config could not be read (then both are unknown)
+    #: ``requirePartitionFilter: true|false`` (top level or under ``bigquery``); ``None`` when absent or computed
+    require_partition_filter: bool | None = None
 
 
 def _config_layout(session: Session, key: str) -> Layout:
@@ -205,6 +207,9 @@ def _config_layout(session: Session, key: str) -> Layout:
         if not literals or leftover or any("${" in m.group(2) for m in literals):
             return Layout(problem="clusterBy is computed (a variable or a call), so its value is not known without running the project")
         layout.cluster_by = tuple(m.group(2).strip() for m in literals)
+    raw = value_of("requirePartitionFilter")
+    if raw is not None and raw.strip() in ("true", "false"):
+        layout.require_partition_filter = raw.strip() == "true"
     return layout
 
 

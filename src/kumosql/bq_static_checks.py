@@ -21,12 +21,18 @@ rule                what it finds
 ``case_branch``     a ``CASE`` branch (or ``ELSE``) that can never be reached
 ``system_time``     ``FOR SYSTEM_TIME AS OF`` on only some references to one table
 ``cte_shadow``      a CTE named like a column of another table in scope, so the column reads as the CTE's STRUCT
+``partition_pruning`` a filter on a partitioned table that BigQuery cannot prune with (``CAST(d AS STRING) IN ...``),
+                    and, as an error, a table that requires a partition filter read without one it accepts
+                    (:mod:`kumosql.partition_pruning`; silent when the partitioning is not known)
 =================== ==========================================================================================
 
 Optional hooks on the session (none is required; a missing one is a named gap, not a pass):
 
 * ``session.column_is_nullable(table_key, column) -> bool | None``: from a schema snapshot; ``None`` or no hook means the
   nullability is unknown, and ``not_in_null`` then reports that it could not decide.
+* the partitioning of a table (``partition_pruning``) comes from the session's schema snapshot, the model's Dataform config
+  and the saved BigQuery table metadata (:func:`kumosql.partition_pruning.table_partitioning`); a session without them,
+  or a table none of them describes, gets no finding.
 """
 
 from __future__ import annotations
@@ -958,6 +964,19 @@ def _owner_select(node: exp.Expression) -> exp.Expression | None:
     return parent
 
 
+# ------------------------------------------------------------------ 9. partition pruning
+
+
+def _partition_pruning(ctx: Context) -> None:
+    from . import partition_pruning
+
+    issues, gaps = partition_pruning.check_tree(ctx.tree, partition_pruning.session_lookup(ctx.session, ctx.tables))
+    for issue in issues:
+        ctx.findings.append(issue.finding())
+    for what, reason in gaps:
+        ctx.gap(what, reason)
+
+
 RULES: tuple[tuple[str, Callable[[Context], None]], ...] = (
     ("reserved_alias", _reserved_aliases),
     ("subquery", _subqueries),
@@ -967,4 +986,5 @@ RULES: tuple[tuple[str, Callable[[Context], None]], ...] = (
     ("case_branch", _case_branches),
     ("system_time", _system_time),
     ("cte_shadow", _cte_shadow),
+    ("partition_pruning", _partition_pruning),
 )

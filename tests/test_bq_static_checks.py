@@ -352,7 +352,7 @@ def test_a_cte_that_does_not_clash_is_fine_and_unknown_columns_are_a_gap():
 
 def test_every_rule_is_registered_once_and_a_crashing_rule_becomes_a_gap(monkeypatch):
     names = [name for name, _rule in RULES]
-    assert len(names) == len(set(names)) == 8
+    assert len(names) == len(set(names)) == 9
 
     def boom(ctx):
         raise ValueError("boom")

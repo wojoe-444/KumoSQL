@@ -26,6 +26,9 @@ ordinal_position  ``ordinal_position``             optional: columns are listed 
 partitioning      ``is_partitioning_column``       optional: ``YES``/``NO``, whether the table is partitioned by this column
 clustering        ``clustering_ordinal_position``  optional: the column's place in the table's clustering (blank or ``NULL`` when it
                                                    is not a clustering column)
+require filter    ``require_partition_filter``     optional: ``YES``/``NO``/``true``/``false``, the table's
+                                                   ``require_partition_filter`` option (from ``TABLE_OPTIONS``),
+                                                   repeated on each row of the table
 exported at       ``exported_at``,                 optional: when the export was made (ISO 8601 or epoch seconds); the latest value
                   ``snapshot_timestamp``,          in the file is the snapshot's age, else the file's modification time is used
                   ``snapshot_time``
@@ -76,6 +79,7 @@ _FIELDS = {
     "ordinal_position": ("ordinal_position", "position"),
     "partitioning": ("is_partitioning_column", "partitioning_column"),
     "clustering": ("clustering_ordinal_position", "clustering_position"),
+    "require_partition_filter": ("require_partition_filter", "requires_partition_filter"),
     "exported_at": ("exported_at", "snapshot_timestamp", "snapshot_time", "export_time"),
 }
 _REQUIRED = ("table", "column", "data_type")
@@ -97,6 +101,8 @@ class SnapshotColumn:
     is_partitioning: bool | None = None
     #: ``clustering_ordinal_position``: the column's place in the clustering (1, 2, ...), or ``None`` when it is not one
     clustering_position: int | None = None
+    #: the table's ``require_partition_filter`` option, or ``None`` when the file has no such column or the cell is blank
+    require_partition_filter: bool | None = None
 
     @property
     def table_name(self) -> str:
@@ -365,7 +371,7 @@ def _collect(rows: Iterator[dict], source: str, keep: Keep | None, limit: int | 
         cluster = _text(get("clustering"))
         kept.append((int(position) if position.isdigit() else len(kept), len(kept), SnapshotColumn(
             catalog, schema, table, column, data_type, _nullable(get("is_nullable")),
-            _nullable(get("partitioning")), int(cluster) if cluster.isdigit() else None)))
+            _nullable(get("partitioning")), int(cluster) if cluster.isdigit() else None, _nullable(get("require_partition_filter")))))
     if not mapping:
         raise SchemaSnapshotError(f"{source}: it has a header but no rows; {_accepted()}")
     if not kept and keep is None and limit is None:
