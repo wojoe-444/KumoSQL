@@ -341,10 +341,28 @@ class Session:
         return self.column_types().type(key, column)
 
     def column_is_nullable(self, key: str, column: str) -> bool | None:
-        """``True`` when ``key.column`` may be NULL, ``False`` when it never is, ``None`` when not known (the schema
-        snapshot's ``is_nullable``, else what the model's query fixes)."""
+        """``True`` when ``key.column`` may be NULL, ``False`` when it never is, ``None`` when not known.
 
-        return self.column_types().nullable(key, column)
+        The schema snapshot's ``is_nullable`` answers first (it describes the deployed table), then what the type checker
+        fixes in the model's query (a literal, ``COUNT``), then what the prover shows the query never writes as NULL
+        (:mod:`kumosql.inferred_facts`; tables and views only, and only a proof that rests on nothing declared).
+        """
+
+        known = self.column_types().nullable(key, column)
+        if known is None and key in self.pipeline().models:
+            from . import inferred_facts
+
+            if inferred_facts.never_null(self, key, column):
+                return False
+        return known
+
+    def query_never_null(self, sql: str, tables: Mapping[str, str | None]) -> tuple[bool, ...] | None:
+        """For each output column of ``sql`` (a subquery of a draft that reads ``tables``, spelled in lower case -> key),
+        whether the prover shows it is never NULL; ``None`` when it cannot read the query (the static checks' NOT IN rule)."""
+
+        from . import inferred_facts
+
+        return inferred_facts.query_never_null(self, sql, tables)
 
     def roles(self) -> dict:
         from .table_roles import infer_roles

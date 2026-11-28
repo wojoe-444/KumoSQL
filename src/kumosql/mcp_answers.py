@@ -59,6 +59,9 @@ class Listing:
     #: ``item -> (shown, all)``: how many underlying things one item holds, so a cut can say how many of them it hid
     unit: Callable[[Any], tuple[int, int]] | None = None
     unit_name: str = "items"
+    #: extra detail the answer is complete without (``facts``): cut before every other list, and when cut to nothing left out
+    #: with no ``_shown`` note, so it never pushes a finding or an unknown out of a full answer
+    optional: bool = False
 
     def __post_init__(self) -> None:
         if self.total is None:
@@ -72,9 +75,9 @@ class Answer:
     counts: dict[str, Any] = field(default_factory=dict)
     lists: dict[str, Listing] = field(default_factory=dict)
 
-    def add_list(self, name: str, items: list, *, total: int | None = None, offset: int = 0, primary: bool = False, keep: int = 0, unit: Callable[[Any], tuple[int, int]] | None = None, unit_name: str = "items") -> None:
+    def add_list(self, name: str, items: list, *, total: int | None = None, offset: int = 0, primary: bool = False, keep: int = 0, unit: Callable[[Any], tuple[int, int]] | None = None, unit_name: str = "items", optional: bool = False) -> None:
         if items or total:
-            self.lists[name] = Listing(list(items), total, offset, primary, keep, unit, unit_name)
+            self.lists[name] = Listing(list(items), total, offset, primary, keep, unit, unit_name, optional)
 
     def unknown(self, what: str, reason: str) -> None:
         """Something the tool could not determine. It stays in the answer, with its reason."""
@@ -131,7 +134,8 @@ def render(answer: Answer, *, max_bytes: int = DEFAULT_BYTES) -> dict:
     full = size(build(with_more=False))
     while size(build()) > max_bytes:
         # cut the plain lists first; unknowns and next steps go only when nothing else is left to cut
-        candidates = [name for name, listing in answer.lists.items() if shown[name] > 0 and not listing.keep]
+        candidates = [name for name, listing in answer.lists.items() if shown[name] > 0 and listing.optional]
+        candidates = candidates or [name for name, listing in answer.lists.items() if shown[name] > 0 and not listing.keep]
         candidates = candidates or [name for name, listing in answer.lists.items() if shown[name] > listing.keep]
         if not candidates:
             break
@@ -147,7 +151,7 @@ def render(answer: Answer, *, max_bytes: int = DEFAULT_BYTES) -> dict:
 
 
 def _put(out: dict, name: str, listing: Listing, count: int) -> None:
-    if not listing.items and not listing.total:
+    if (not listing.items and not listing.total) or (listing.optional and not count):
         return
     if count:
         out[name] = listing.items[:count]
@@ -167,7 +171,7 @@ def _more(answer: Answer, shown: dict[str, int], full: int, max_bytes: int) -> s
     for name, listing in answer.lists.items():
         if listing.primary and listing.offset + shown[name] < listing.total and (shown[name] or listing.offset):
             parts.append(f"offset={listing.offset + shown[name]} for the next {name}")
-    cut = any(shown[name] < len(listing.items) for name, listing in answer.lists.items())
+    cut = any(shown[name] < len(listing.items) and not (listing.optional and not shown[name]) for name, listing in answer.lists.items())
     if cut:
         parts.append(f"max_bytes={min(MAX_BYTES, max(full + 100, max_bytes + 1))} for everything on this page")
     if not parts:

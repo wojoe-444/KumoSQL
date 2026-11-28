@@ -13,7 +13,9 @@ from collections import Counter
 
 from . import column_meaning
 from . import boundary
+from . import inferred_facts
 from . import mcp_cost_access
+from . import parse_warning
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 from .paths import posix_path
@@ -266,7 +268,11 @@ def describe_table(session: Session, args: dict) -> Answer:
     mcp_cost_access.describe_fields(session, key, answer)  # cached full-scan size and cached access denial
 
     column_meaning.describe_notes(answer, session, key, outputs)  # declared meaning, inherited; zones unknown
+    inferred_facts.describe(answer, session, key, outputs, grain)  # never NULL, unique, row count: each with its source
+    misread = parse_warning.describe(answer, session, key)  # sqlglot reads the model's SQL differently from BigQuery
     answer.summary = _card_summary(key, model.kind, grain, len(columns), len(unknown_columns), len(reads), len(readers))
+    if misread:
+        answer.summary += " Warning: sqlglot misreads its SQL, so these answers may be wrong (see parse_warning)."
     if unknown_columns:
         answer.next(f"trace_column table={key} column={unknown_columns[0][0]} shows how far its source can be followed.")
     if readers:
