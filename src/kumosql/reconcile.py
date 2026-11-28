@@ -669,6 +669,9 @@ def plan_reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *
             raise ReconcileError(f"--ignore {name}: it is part of the key")
         else:
             ignored.append(found.name)
+    # Ignoring one name of a crosswalk pair ignores the pair, so its partner is not reported as on one side only.
+    ignored_fold |= {mapping[fold].casefold() for fold in list(ignored_fold) if fold in mapping}
+    ignored_fold |= {sides.reverse[fold].casefold() for fold in list(ignored_fold) if fold in sides.reverse}
 
     explanations: dict[str, str] = {}
     skip_left: dict[str, Link] = {}
@@ -679,7 +682,7 @@ def plan_reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *
         if link.missing:
             if link.left:
                 skip_left[link.left.casefold()] = link
-            if link.right and not link.left:
+            if link.right:
                 skip_right[link.right.casefold()] = link
     skipped: list[dict] = []
     compared: list[tuple[Column, Column]] = []

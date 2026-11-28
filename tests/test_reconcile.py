@@ -169,6 +169,9 @@ def test_ignore_is_case_insensitive_and_a_key_cannot_be_ignored(db):
     assert any("nothing_here" in note for note in data["notes"])
     with pytest.raises(ReconcileError, match="part of the key"):
         run(db, ignore="order_id")
+    for name in ("amount", "amount_usd"):  # either name of a crosswalk pair ignores the pair
+        data = run(db, ignore=name).to_json()
+        assert "amount" not in data["compared_columns"] and data["left_only_columns"] == data["right_only_columns"] == []
 
 
 def test_without_a_crosswalk_renamed_columns_are_reported_not_compared(db):
@@ -192,7 +195,9 @@ def test_a_crosswalk_file_maps_skips_missing_columns_and_names_explanations(db, 
     rules = [KnownDiffRule("notes_dropped", "TRUE", "2026-11-01")]
     data = run(db, crosswalk=str(path), rules=rules).to_json()
     assert data["column_map"] == {"amount": "amount_usd"}  # the reversed entry applies the other way round
-    assert data["skipped_columns"] == [{"column": "note", "side": "left", "reason": "missing", "explanation": "notes_dropped"}]
+    assert data["skipped_columns"] == [{"column": "note", "side": "left", "reason": "missing", "explanation": "notes_dropped"},
+                                       {"column": "note", "side": "right", "reason": "missing", "explanation": "notes_dropped"}]
+    assert data["right_only_columns"] == []
     assert "note" not in data["compared_columns"] and data["column_explanations"] == {"note": "notes_dropped"}
     assert any("other tables did not apply" in note for note in data["notes"])
     json_path = tmp_path / "crosswalk.json"

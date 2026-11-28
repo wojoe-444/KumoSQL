@@ -65,7 +65,7 @@ _DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 #: Nodes a predicate may not contain: anything that reads another table, writes, or needs a group or window.
 _FORBIDDEN = (
     exp.Query, exp.Subquery, exp.DML, exp.DDL, exp.Command, exp.Into, exp.Transaction, exp.Lock,
-    exp.AggFunc, exp.Window, exp.Parameter, exp.Placeholder, exp.Star, exp.Alias,
+    exp.AggFunc, exp.Window, exp.Parameter, exp.Placeholder, exp.Star,
     # Statements sqlglot does not class as DDL or DML.
     *(getattr(exp, name) for name in ("Drop", "TruncateTable", "Grant", "Revoke", "Alter", "Set", "Declare", "Use",
                                       "Copy", "Merge", "Pragma", "Analyze", "Describe") if hasattr(exp, name)),

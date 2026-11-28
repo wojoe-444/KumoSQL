@@ -69,7 +69,7 @@ Read it as: of 8 joined rows, 3 match, 2 differ for an agreed reason, and 3 diff
 | --- | --- |
 | `--left`, `--right` | A table (`project.dataset.table`, or `dataset.table` in the billing project on BigQuery; `table` or `schema.table` on DuckDB), a path to a `.sql` file, or an inline `SELECT ...`/`WITH ...` query. A query must be one read-only `SELECT`; it is checked before anything runs |
 | `--key a,b` | The key columns. Write `left_col=right_col` when the name differs on the right; a crosswalk mapping also applies to keys |
-| `--ignore c,d` | Columns not to compare, on either side, case ignored. A key column cannot be ignored |
+| `--ignore c,d` | Columns not to compare, on either side, case ignored; either name of a crosswalk pair ignores the pair. A key column cannot be ignored |
 | `--map FILE` or `--map saved` | A crosswalk from left to right column names (below), or the saved equivalences (`python -m kumosql equivalence list`) that link these two tables, in either direction |
 | `--rules FILE` | Known-difference rules (below), tried in the order listed |
 | `--include-samples`, `--sample-limit N` | Return a few keys of unexplained rows (below); off by default |
@@ -105,7 +105,7 @@ amount: amount_usd
 legacy_flag: null
 ```
 
-A column whose `status` is `missing`, or whose partner is null, is skipped: it is listed under `skipped_columns` (with its `explanation`) instead of being reported as only on one side. `explanation` names the rule that accounts for a column; the result lists these under `column_explanations`, and a note says when one names a rule that is not in `--rules`. Table names match when the shorter is a suffix of the longer (`orders_v1` matches `proj.sales.orders_v1`). When `--left` or `--right` is a query, entries are applied without checking table names, and a note says so.
+A column whose `status` is `missing`, or whose partner is null, is skipped on each side the link names: it is listed under `skipped_columns` (with its `explanation`) instead of being reported as only on one side. `explanation` names the rule that accounts for a column; the result lists these under `column_explanations`, and a note says when one names a rule that is not in `--rules`. Table names match when the shorter is a suffix of the longer (`orders_v1` matches `proj.sales.orders_v1`). When `--left` or `--right` is a query, entries are applied without checking table names, and a note says so.
 
 ## Known-difference rules
 

@@ -98,6 +98,7 @@ def test_names_are_unique_ignoring_case_and_the_file_shape_is_checked(tmp_path):
     "DATE_DIFF(l.updated, r.updated, DAY) <= 1",
     "flagged",
     "ABS(l.amount - r.amount) < 0.01 -- rounding",
+    "l.info = STRUCT(1 AS a)",
 ])
 def test_read_only_conditions_over_one_joined_row_are_accepted(text):
     check_predicate(text)
@@ -119,6 +120,7 @@ def test_read_only_conditions_over_one_joined_row_are_accepted(text):
     ("orders.status IS NULL", "qualified by 'orders'"),
     ("l.address.city = 'x'", "nested field"),
     ("42", "not a value"),
+    ("x = 1 AS flag", "not a statement"),
     ("'yes'", "not a value"),
     ("", "must be a SQL condition"),
     ("x = (", "not a SQL condition"),
