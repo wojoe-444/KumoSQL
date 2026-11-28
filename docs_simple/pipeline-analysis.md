@@ -62,7 +62,7 @@ A table profile describes its sources, attributes, and grain. Grain means what o
 
 A column that reads a field inside a nested record (`payload.user.id`) is described by the column and the path together. Two tables count as holding the same thing only when both read the same path of the same source column: `payload.user.id` and `payload.user.name` differ, and so do `payload.user.id` and `meta.user.id`. If a field belongs to a computed value, or to an item of an array the query unnests, the meaning stays unknown with the reason.
 
-Where the grain is not visible in a query, KumoSQL uses a key the project declares for the model (`assertions: { uniqueKey: [...] }`) and says it was declared. A key you declare for a table the project does not define is passed on only to models that keep those columns in their output. A grain worked out from the query always takes precedence over a declared one.
+Where the grain is not visible in a query, KumoSQL uses a key the project declares for the model (`assertions: { uniqueKey: [...] }`) and says it was declared. You do not pass anything extra. This also works when the model selects `*` from a table whose columns are unknown, as long as the key column is not removed with `EXCEPT`. A key that a declaration states for a table the project does not build is used the same way, and is passed on only to models that keep those columns in their output. A grain worked out from the query always takes precedence over a declared one. A key built from a variable is not read, and neither is an incremental table's merge key (`uniqueKey` outside `assertions`), because nothing checks it.
 
 Profiles and match reports include reasons and unknowns. Check whether the match supports a real replacement before changing consumers.
 

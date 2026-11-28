@@ -211,7 +211,7 @@ def _profile_pipeline(
         if memo is not None:
             from .result_memo import profile_is_cacheable
 
-            token = memo.token(pipeline, key, _grain_context(declared_grain))
+            token = memo.token(pipeline, key, _grain_context(pipeline, declared_grain))
             memo.computed_one("profiles", token, key, profile.to_json() if token is not None and profile_is_cacheable(profile) else None)
         return profile
 
@@ -223,11 +223,16 @@ def _profile_pipeline(
     return {key: result[key] for key in pipeline.models}
 
 
-def _grain_context(declared_grain: Mapping[str, Sequence[str]] | None) -> str:
-    """What the grain declarations contribute to a profile (any change to them recomputes every profile)."""
+def _grain_context(pipeline: Pipeline, declared_grain: Mapping[str, Sequence[str]] | None) -> str:
+    """What the grain declarations contribute to a profile (any change to them recomputes every profile): the caller's, and
+    the keys the project's declarations state (``Pipeline.source_unique_keys``), which a model's closure key does not hold."""
 
     try:
-        return json.dumps(sorted((str(k).lower(), [str(c) for c in ([v] if isinstance(v, str) else v)]) for k, v in (declared_grain or {}).items()))
+        stated = sorted((str(k), [list(key) for key in keys]) for k, keys in (getattr(pipeline, "source_unique_keys", None) or {}).items())
+        return json.dumps([
+            sorted((str(k).lower(), [str(c) for c in ([v] if isinstance(v, str) else v)]) for k, v in (declared_grain or {}).items()),
+            stated,
+        ])
     except (TypeError, ValueError):
         return "unreadable"
 
@@ -241,7 +246,7 @@ def _replayed_profiles(pipeline: Pipeline, declared_grain: Mapping[str, Sequence
     from .result_memo import MemoError, decode_profile
 
     found: dict[str, tuple[str, TableProfile]] = {}
-    context = _grain_context(declared_grain)
+    context = _grain_context(pipeline, declared_grain)
     for key in pipeline.models:
         token = memo.token(pipeline, key, context)
         payload = memo.lookup("profiles", token)
@@ -277,6 +282,7 @@ def profile_query(
             source_schema=dict(pipeline.source_schema),
             default_project=pipeline.default_project,
             default_dataset=pipeline.default_dataset,
+            source_unique_keys=dict(getattr(pipeline, "source_unique_keys", None) or {}),
         )
         profiler = _Profiler(scratch, declared_grain)
         return profiler.profile(key, label="<query>")
@@ -532,6 +538,19 @@ class _Profiler:
                 self.declared[str(key).lower()] = tuple(str(c) for c in cols)
         except Exception:
             self.declared = {}
+        # The keys the project's declarations state for tables it does not build (``Pipeline.source_unique_keys``), by
+        # table key, and by casefolded key for a table written in another case (a casefolded key two tables share is neither's).
+        self.stated: dict[str, tuple[tuple[str, ...], ...]] = {}
+        self._stated_folded: dict[str, tuple[tuple[str, ...], ...] | None] = {}
+        try:
+            for table, keys in (getattr(pipeline, "source_unique_keys", None) or {}).items():
+                usable = tuple(tuple(c for c in k) for k in keys if k and all(isinstance(c, str) and c for c in k))
+                if usable and table in pipeline.sources:
+                    self.stated[table] = usable
+                    folded = table.casefold()
+                    self._stated_folded[folded] = None if folded in self._stated_folded else usable
+        except Exception:
+            self.stated, self._stated_folded = {}, {}
         self._ctxs: dict[int, _Ctx] = {}
         self._grains: dict[Any, Grain] = {}
         self._scopes: dict[Any, RowScope] = {}
@@ -1008,19 +1027,79 @@ class _Profiler:
     def _asserted_grain(self, key: str) -> Grain | None:
         """The project's own ``assertions: {uniqueKey}`` of a model, used only where the query does not show its grain.
 
-        The columns must be output columns of the model. A grain derived from the query wins over it, so declaring a
-        key never changes a grain that was already known; with several keys the shortest one stands.
+        Each column must be an output column of the model. Where the outputs are not all known, a column the query does
+        not name may still be one it gives: one an unexpanded ``*`` (or ``t.*``) may hold, unless its ``EXCEPT`` drops
+        it, or any column of a query that could not be parsed. Such a column keeps the casing the project wrote. A grain
+        derived from the query wins over it, so declaring a key never changes a grain that was already known; with
+        several keys the shortest one stands.
         """
 
         model = self.p.models.get(key)
-        outputs = {name.lower(): name for name in self.analysis.outputs.get(key, ()) if name != "*"}
-        if model is None or not outputs:
+        if model is None or not model.unique_keys:
             return None
-        usable = [k for k in model.unique_keys if k and all(c.lower() in outputs for c in k)]
+        written = tuple(self.analysis.outputs.get(key, ()))
+        outputs = {name.lower(): name for name in written if name != "*"}
+        unparsed = not written and model.is_query and self.analysis.parsed.get(key) is None
+
+        def column(name: str) -> str | None:
+            if name.lower() in outputs:
+                return outputs[name.lower()]
+            if unparsed or ("*" in written and self._star_may_give(key, name)):
+                return name
+            return None
+
+        usable = []
+        for columns in model.unique_keys:
+            found = [column(c) for c in columns]
+            if found and all(found):
+                usable.append(tuple({c.lower(): c for c in found}.values()))
         if not usable:
             return None
-        best = min(usable, key=lambda k: (len(set(c.lower() for c in k)), sorted(c.lower() for c in k)))
-        return Grain(_sorted_keys([outputs[c.lower()] for c in dict.fromkeys(best)]), "declared")
+        best = min(usable, key=lambda k: (len(k), sorted(c.lower() for c in k)))
+        return Grain(_sorted_keys(best), "declared")
+
+    def _star_may_give(self, key: str, column: str) -> bool:
+        """Whether an unexpanded ``*`` of the model's output select may hold ``column``: a ``*`` or ``t.*`` whose ``EXCEPT``
+        does not name it (in a set operation, the first branch's, which names the columns). A ``*`` with ``RENAME`` or
+        ``ILIKE`` does not say which columns it gives, so it holds none here."""
+
+        query = self.analysis.parsed.get(key)
+        while isinstance(query, (exp.Subquery, exp.SetOperation)):
+            query = query.this
+        if not isinstance(query, exp.Select):
+            return False
+        name = column.lower()
+        for item in query.expressions:
+            if not _is_star(item):
+                continue
+            if star_modifier(item, "rename") or star_modifier(item, "ilike"):
+                continue
+            if name in {c.name.lower() for c in star_modifier(item, "except") or []}:
+                continue
+            return True
+        return False
+
+    def _stated_grain(self, table: str) -> Grain | None:
+        """The key the project's declaration of ``table`` states (``assertions: {uniqueKey}``, or ``uniqueKey`` in
+        ``declare()``), for a table the project does not build. With a known column list every key column must be in it;
+        with several keys the shortest one stands."""
+
+        keys = self.stated.get(table)
+        if keys is None and table not in self.p.sources and table not in self.p.models:
+            keys = self._stated_folded.get(table.casefold())
+        if not keys:
+            return None
+        schema = self.p.source_schema.get(table) if isinstance(self.p.source_schema, Mapping) else None
+        columns = {str(c).lower(): str(c) for c in schema} if isinstance(schema, Mapping) and schema else None
+        usable = []
+        for k in keys:
+            if columns is not None and not all(c.lower() in columns for c in k):
+                continue
+            usable.append(tuple({c.lower(): (columns or {}).get(c.lower(), c) for c in k}.values()))
+        if not usable:
+            return None
+        best = min(usable, key=lambda k: (len(k), sorted(c.lower() for c in k)))
+        return Grain(_sorted_keys(best), "declared")
 
     def _src_grain(self, src: _Src) -> Grain:
         if src.kind == "model":
@@ -1029,6 +1108,9 @@ class _Profiler:
             declared = self.declared.get(src.key.lower())
             if declared is not None:
                 return Grain(tuple(sorted(declared, key=str.lower)), "declared")
+            stated = self._stated_grain(src.key)
+            if stated is not None:
+                return stated
             return Grain(reason="wildcard_table" if "*" in src.key else "source_without_grain")
         if src.kind == "query":
             return self._query_grain(src.query, src.env or {})

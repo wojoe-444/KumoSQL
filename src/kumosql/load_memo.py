@@ -33,7 +33,8 @@ from typing import Any, Iterable, Mapping
 from .pipeline_types import Model, PipelineDiagnostic, Target
 
 #: bump when what a load step produces, or how an entry is saved, changes: entries of another format are never read
-FORMAT = 1
+#: (2: ``uniqueKey`` lists are read with comments, line breaks and trailing commas; a key with a computed entry is none)
+FORMAT = 2
 
 #: the memo the running load uses (set around the call by the agent-facing server's session; ``None``: nothing is reused)
 CURRENT: contextvars.ContextVar["LoadMemo | None"] = contextvars.ContextVar("kumosql_load_memo", default=None)
