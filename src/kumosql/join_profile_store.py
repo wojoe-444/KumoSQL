@@ -27,6 +27,7 @@ from typing import Iterable, Sequence
 
 from . import data_profile_store as store
 from .data_profile import DataProfile, ProfileError
+from .resilience import replace_file
 
 FOLDER = "join-profiles"
 VERSION = 1
@@ -146,7 +147,7 @@ def save_join(record: dict, directory: Path | None = None) -> Path:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             json.dump({"version": VERSION, **record}, out, indent=2)
             out.write("\n")
-        os.replace(temp, path)
+        replace_file(temp, path)
     except OSError as exc:
         raise ProfileError(f"could not save the join profile: {exc}") from None
     return path

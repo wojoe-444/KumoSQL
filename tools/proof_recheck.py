@@ -28,12 +28,13 @@ import logging
 import multiprocessing
 import os
 from pathlib import Path
-import signal
 import sys
 import time
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
+
+import time_budget  # noqa: E402
 
 
 def adapters() -> dict:
@@ -72,9 +73,8 @@ def _work(job: tuple) -> dict:
 
     adapter = _ADAPTERS[name]
     start = time.time()
-    signal.signal(signal.SIGALRM, _alarm)
     # Repeating timer: an exception raised inside a destructor (z3's __del__) is swallowed, so one alarm can be lost.
-    signal.setitimer(signal.ITIMER_REAL, int(options["seconds"] * 2 + options["prove_seconds"]), 5)
+    stop = time_budget.arm(int(options["seconds"] * 2 + options["prove_seconds"]), _alarm)
     try:
         case = adapter.case(item)
         if case is None:
@@ -93,7 +93,7 @@ def _work(job: tuple) -> dict:
     except Exception as error:
         return {"eval": name, "pair": item["pair"], "verdict": "search-error", "error": f"{type(error).__name__}: {error}"[:400]}
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        stop()
 
 
 def main(argv: list[str] | None = None) -> int:

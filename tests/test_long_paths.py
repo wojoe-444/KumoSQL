@@ -18,7 +18,14 @@ def test_extended_prefix_forms():
 
 def test_extended_path_is_unchanged_off_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(resilience.os, "name", "posix")
-    assert resilience.extended_path(tmp_path) == tmp_path
+    # Built while ``os.name`` says posix, as ``extended_path`` builds its result: pathlib picks the path class from it.
+    assert resilience.extended_path(tmp_path) == Path(tmp_path)
+
+
+def test_ordinary_text_undoes_the_extended_prefix():
+    for text in ("C:\\a\\b", "\\\\srv\\share\\a", "relative\\x"):
+        assert resilience.ordinary_path_text(resilience._extended_text(text)) == text
+        assert resilience.ordinary_path_text(text) == text
 
 
 def _files():
@@ -37,8 +44,9 @@ def test_project_with_a_very_long_path_loads_and_traces():
 
 
 def test_local_folder_with_a_very_long_path_loads(tmp_path):
+    root = resilience.extended_path(tmp_path)  # writing the files needs the prefix on Windows; loading must not
     for name, text in _files().items():
-        target = Path(tmp_path, *name.split("/"))
+        target = Path(root, *name.split("/"))
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
     pipeline = load_sqlx_project(tmp_path)

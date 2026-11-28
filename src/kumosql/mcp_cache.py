@@ -40,6 +40,7 @@ from . import load_memo, result_memo
 from .mcp_answers import Answer, render
 from .mcp_session import Session
 from .trace_memo import FORMAT, TraceMemo
+from .resilience import read_bytes_shared, replace_file
 
 CACHE_NAME = "kumosql-mcp-trace-cache"
 SESSION_NAME = "kumosql-mcp-session-cache"
@@ -106,7 +107,7 @@ def load_cache(path: Path) -> tuple[str, dict] | None:
     try:
         if not path.is_file() or path.stat().st_size > MAX_CACHE_BYTES:
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_bytes_shared(path).decode("utf-8"))  # another server may be replacing it
         header = data.get("header") if isinstance(data, dict) else None
         if header != {"format": CACHE_NAME, "version": FORMAT, **_versions()}:
             return None
@@ -142,7 +143,7 @@ def save_cache(path: Path, fingerprint: str, entries: dict) -> None:
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(body, handle, separators=(",", ":"), allow_nan=False)
-        os.replace(temp, path)
+        replace_file(temp, path)
     finally:
         temp.unlink(missing_ok=True)
     cutoff = time.time() - 86400
@@ -171,7 +172,7 @@ def load_session(path: Path) -> dict | None:
     try:
         if not path.is_file() or path.stat().st_size > MAX_CACHE_BYTES:
             return None
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_bytes_shared(path).decode("utf-8"))  # another server may be replacing it
         if not isinstance(data, dict) or data.get("header") != _session_header():
             return None
         files, taken, loader, results = data.get("files"), data.get("taken_ns"), data.get("loader"), data.get("results")
@@ -203,7 +204,7 @@ def save_session(path: Path, files: dict[str, tuple[int, int, str]], taken_ns: i
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             json.dump(body, handle, separators=(",", ":"), allow_nan=False)
-        os.replace(temp, path)
+        replace_file(temp, path)
     finally:
         temp.unlink(missing_ok=True)
 

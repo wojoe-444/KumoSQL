@@ -168,13 +168,11 @@ class UIHandler(BaseHTTPRequestHandler):
         authorities = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
         hosts = self.headers.get_all("Host", [])
         if len(hosts) != 1 or hosts[0].lower() not in authorities:
-            self._json(403, {"error": "use the local UI server address"})
-            return False
+            return self._refuse("use the local UI server address")
         origins = self.headers.get_all("Origin", [])
         if self.command in {"PUT", "POST", "DELETE"} and origins:
             if len(origins) != 1 or origins[0].lower() != f"http://{hosts[0].lower()}":
-                self._json(403, {"error": "request origin must match the local UI server"})
-                return False
+                return self._refuse("request origin must match the local UI server")
         route = self.path.split("?", 1)[0]
         if route == "/api" or route.startswith("/api/"):
             tokens = self.headers.get_all(SESSION_HEADER, [])
@@ -182,9 +180,36 @@ class UIHandler(BaseHTTPRequestHandler):
             if expected is None or len(tokens) != 1 or not secrets.compare_digest(
                 tokens[0].encode("utf-8"), expected.encode("ascii")
             ):
-                self._json(403, {"error": "reload the UI page for the current session"})
-                return False
+                return self._refuse("reload the UI page for the current session")
         return True
+
+    def _refuse(self, error: str) -> bool:
+        """Answer 403 to a request that is not dispatched, and close the connection; returns False for ``parse_request``.
+
+        A small body the request carries is read first. Closing a socket with unread bytes makes the system answer the
+        close with a TCP reset, which can destroy the 403 before the client reads it (``ConnectionAbortedError`` on
+        Windows, where it happened often enough to fail tests)."""
+
+        self._discard_body()
+        self.close_connection = True
+        self._json(403, {"error": error})
+        return False
+
+    def _discard_body(self, limit: int = 64 * 1024, seconds: float = 2.0) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0") or "0")
+        except ValueError:
+            return
+        if not 0 < length <= limit:
+            return  # none, or too large to be worth reading: the client may then see a reset, as before
+        previous = self.connection.gettimeout()
+        try:
+            self.connection.settimeout(seconds)  # a client that never sends its body does not hold the thread
+            self.rfile.read(length)
+        except OSError:
+            pass
+        finally:
+            self.connection.settimeout(previous)
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - signature set by the base class
         # Query values can hold names (a project, a table); only their keys are logged.

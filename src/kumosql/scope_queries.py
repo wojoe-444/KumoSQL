@@ -37,6 +37,7 @@ from urllib.parse import quote, urlencode
 
 from . import query_context, state
 from .sql_validation import validate_readonly_query
+from .resilience import replace_file
 
 SECTION = "scope_queries"
 #: BigQuery bills at least 10 MB per query, so a smaller cap could never run anything.
@@ -340,7 +341,7 @@ def _write_disk(entries: dict) -> None:
         handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".scope-query-", suffix=".tmp")
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             json.dump(entries, out)
-        os.replace(temp, path)
+        replace_file(temp, path)
     except OSError:
         pass  # the cache is an optimization; a failed save never fails a request
 

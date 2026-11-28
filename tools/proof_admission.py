@@ -176,13 +176,11 @@ def _adapters() -> dict:
 def _prove(job: tuple) -> tuple[str, bool]:
     """Whether the eval proves the pair (a crash or a timeout is a failure to prove)."""
 
-    import signal
-
     import proof_recheck
+    import time_budget
 
     name, item, options = job
-    signal.signal(signal.SIGALRM, proof_recheck._alarm)
-    signal.setitimer(signal.ITIMER_REAL, int(options["prove_seconds"]), 5)
+    stop = time_budget.arm(int(options["prove_seconds"]), proof_recheck._alarm)
     try:
         adapter = _adapters()[name]
         counted = getattr(adapter, "counted", None)  # an eval that scores a proven pair as something else says so
@@ -190,7 +188,7 @@ def _prove(job: tuple) -> tuple[str, bool]:
     except Exception:
         return item["pair"], False
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        stop()
 
 
 def examine(name: str, item: dict, options: dict, adapter=None, search=None, probe=None) -> dict:

@@ -236,7 +236,10 @@ def product_imports(source: Path) -> dict[str, list[int]]:
 
     found: dict[str, list[int]] = {}
     for path in sorted(source.rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        text = path.read_text(encoding="utf-8")
+        if "kumosql" not in text:
+            continue  # no import of it either: skip the parse (the prover has hundreds of modules)
+        for node in ast.walk(ast.parse(text)):
             names = []
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]

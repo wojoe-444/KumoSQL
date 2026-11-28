@@ -28,6 +28,7 @@ import sqlglot
 from sqlglot import exp
 
 from . import state
+from .resilience import replace_file
 from kumo_sql_prover.ast_utils import UnmodeledConstruct, faithful_sql, table_parts as _parts, visible_ctes
 
 MAX_DECLARATIONS = 2000
@@ -100,7 +101,7 @@ def _save(items: list[Equivalence]) -> None:
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             json.dump([item.to_json() for item in items], out, indent=1)
-        os.replace(temp, path)
+        replace_file(temp, path)
     except BaseException:
         try:
             os.unlink(temp)

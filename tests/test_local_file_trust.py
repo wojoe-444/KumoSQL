@@ -259,10 +259,10 @@ def test_git_listing_skips_paths_that_cannot_be_written_safely(tmp_path):
     run("init", "-q")
     run("config", "user.email", "t@example.com")
     run("config", "user.name", "t")
-    (repo / "definitions").mkdir()
-    (repo / "definitions" / "good.sqlx").write_text("select 1")
-    (repo / "definitions" / "aux.sqlx").write_text("select 2")
-    (repo / "definitions" / "notes:v2.sql").write_text("select 3")
-    run("add", "-A")
+    # The commit is built from blobs, not from files on disk: Windows cannot create ``aux.sqlx`` or ``notes:v2.sql``
+    # (``:`` names an alternate data stream), and a repository made elsewhere arrives with them all the same.
+    for path, text in (("definitions/good.sqlx", "select 1"), ("definitions/aux.sqlx", "select 2"), ("definitions/notes:v2.sql", "select 3")):
+        blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=repo, check=True, capture_output=True, input=text.encode()).stdout.decode().strip()
+        run("-c", "core.protectNTFS=false", "update-index", "--add", "--cacheinfo", f"100644,{blob},{path}")
     run("commit", "-q", "-m", "x")
     assert set(git_repo._tree_blobs(repo)) == {"definitions/good.sqlx"}

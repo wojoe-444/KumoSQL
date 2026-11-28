@@ -51,6 +51,8 @@ from pathlib import Path
 from typing import Callable, Sequence
 from urllib.parse import quote, urlencode
 
+from .resilience import replace_file
+
 #: exit codes, also printed by ``--help`` and listed in docs/query-runner.md
 EXIT_OK = 0
 EXIT_OTHER = 1
@@ -641,7 +643,7 @@ def write_results(path: Path, fmt: str, result: Result, meta: dict) -> None:
                 for number, row in enumerate(result.rows):
                     out.write(("\n" if number == 0 else ",\n") + json.dumps(row, ensure_ascii=False, allow_nan=False))
                 out.write("\n]}\n")
-        os.replace(temp, path)
+        replace_file(temp, path)
     except (OSError, ValueError, TypeError) as exc:
         try:
             temp.unlink()

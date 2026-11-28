@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .pipeline_types import Model, PipelineDiagnostic, Target
+from .resilience import ordinary_path_text
 
 #: bump when what a load step produces, or how an entry is saved, changes: entries of another format are never read
 #: (2: ``uniqueKey`` lists are read with comments, line breaks and trailing commas; a key with a computed entry is none)
@@ -264,7 +265,12 @@ class LoadMemo:
     def trusted_sha(self, path: Path) -> str | None:
         """The saved hash of ``path`` when its size and time match the snapshot and are not too recent to trust, else ``None``."""
 
-        known = self.files.get(os.fspath(path))
+        # On Windows the loader reads through the extended-length prefix (resilience.extended_path) and the snapshot
+        # lists the files without it: look the file up under either spelling.
+        text = os.fspath(path)
+        known = self.files.get(text)
+        if known is None:
+            known = self.files.get(ordinary_path_text(text))
         if known is None:
             return None
         try:

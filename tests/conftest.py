@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-TOOLS = Path(__file__).resolve().parent.parent / "tools"
+ROOT = Path(__file__).resolve().parent.parent
+TOOLS = ROOT / "tools"
 ORDER_FILE = Path(__file__).resolve().parent / "order.json"
 
 
@@ -103,6 +104,9 @@ def no_project_loaded(monkeypatch):
         # Parsed projects are cached in memory by content: a later test loading the same files would hit the
         # cache and never write its own snapshot into its own data folder.
         monkeypatch.setattr(module, "_PROJECT_CACHE", type(module._PROJECT_CACHE)())
+        # So is the analysis behind the graph: a later test loading the same files was shown the earlier test's copy
+        # ("graph payload from the saved copy") instead of building its own, depending on which tests ran before it.
+        monkeypatch.setattr(module, "_GRAPH_SAVED", type(module._GRAPH_SAVED)())
 
 
 @pytest.fixture(autouse=True)
@@ -183,12 +187,28 @@ def pytest_addoption(parser):
     parser.addoption("--quick", action="store_true", default=False, help="skip the slow tier (tests listed as slow in tests/order.json and the heavy files)")
 
 
+def _children_import_this_checkout():
+    """Put this checkout's ``src`` first on ``PYTHONPATH``, so a child process a test starts (``python -m kumosql mcp``)
+    runs the code under test.
+
+    ``pythonpath = ["src"]`` in pyproject.toml applies inside pytest only. A child started from the repository root
+    otherwise imports whichever ``kumosql`` is installed, which on a machine with a second editable clone is another
+    version: the agent-server tests that start several servers at once then compared that version's cache files with
+    this one's. Set once per process, before any test, the same for every test."""
+
+    src = str(ROOT / "src")
+    current = os.environ.get("PYTHONPATH", "")
+    if src not in current.split(os.pathsep):
+        os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [src, current]))
+
+
 def pytest_configure(config):
-    """Run DuckDB single-threaded without the pandas probe, and record every run in the shared test history
-    (tools/test_history.py; a no-op without a history folder)."""
+    """Run DuckDB single-threaded without the pandas probe, make child processes import this checkout, and record
+    every run in the shared test history (tools/test_history.py; a no-op without a history folder)."""
 
     _single_threaded_duckdb()
     _no_pandas_probe()
+    _children_import_this_checkout()
     sys.path.insert(0, str(TOOLS))
     try:
         import test_history

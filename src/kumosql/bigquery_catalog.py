@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from . import console
 from .dryrun import access_token
 from .state import data_dir, get_section, set_section
+from .resilience import replace_file
 
 _API = "https://bigquery.googleapis.com/bigquery/v2"
 
@@ -72,7 +73,7 @@ def _save_disk() -> None:
         handle, temp = tempfile.mkstemp(dir=path.parent, prefix=".catalog-", suffix=".tmp")
         with os.fdopen(handle, "w", encoding="utf-8") as out:
             json.dump(_memory, out)
-        os.replace(temp, path)
+        replace_file(temp, path)
     except OSError:
         pass  # the cache is an optimization; never fail a request over it
 

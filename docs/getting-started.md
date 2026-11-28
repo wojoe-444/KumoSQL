@@ -39,7 +39,7 @@ python -m pip install --force-reinstall --no-deps "kumo-sql-prover @ git+https:/
 python -m pip freeze | grep -i prover      # the line ends in the pinned sha
 ```
 
-`tests/test_prover_aliases.py` fails when the installed prover has modules the alias list does not know. See [the prover split](prover-split.md#the-pin-and-bumping-it).
+`python tools/prover_pin.py` says whether the installed prover is the pinned commit, and prints this command with the right SHA when it is not; `python tools/run_tests.py` checks the same before any test runs (see [working on KumoSQL itself](#working-on-kumosql-itself)), and `tests/test_prover_aliases.py` fails when the installed prover has modules the alias list does not know. See [the prover split](prover-split.md#the-pin-and-bumping-it).
 
 Optional extras add capabilities; install them the same way, for example `python -m pip install "kumosql[smt,execution]"`:
 
@@ -190,7 +190,14 @@ python tools/run_tests.py        # parallel; --evals for the benchmark floors on
 python -m pytest                 # serial
 ```
 
-`tools/run_tests.py` uses pytest-xdist on every CPU (about 9 minutes instead of 35 on 4 CPUs); see the README's testing section. Use `python -m pytest`, not bare `pytest`, so the repository root is importable. The default run skips the `slow` marker. CI runs the suite on the oldest and newest supported `sqlglot`; `python tools/test_sqlglot_matrix.py` reproduces that locally.
+`tools/run_tests.py` uses pytest-xdist on every CPU (about 9 minutes instead of 35 on 4 CPUs); see the README's testing section. Use `python -m pytest`, not bare `pytest`, so the repository root is importable. The default run skips the `slow` marker. No CI runs through GitHub: `python tools/run_tests.py --gate` is the check before a merge ([test history](test-history.md#the-pull-request-gate)), against the one supported `sqlglot==30.21.0`.
+
+Before any test runs, `tools/run_tests.py` checks that the installed prover is the commit `pyproject.toml` pins. When it is not, the run stops with one message that names both commits and the reinstall command (exit code 4) instead of a scatter of failures from the wrong prover; `--any-prover` runs anyway. A prover installed from a local folder (`pip install -e path/to/Kumo_SQL_Prover`) is not compared.
+
+On Windows the suite needs nothing extra: no administrator setting for long paths (KumoSQL reads and writes through the `\\?\` extended-length prefix), and the proof tools' time limits work without `SIGALRM`. Two things to check on a machine with Python installed for one user:
+
+- **Compiled sqlglot.** pip can leave `sqlglotc` beside a second copy of sqlglot (one in Python's own `site-packages`, one in the user's `%APPDATA%\Python`), and the copy Python imports then runs pure Python although `pip list` shows `sqlglotc`. The run says so in its first lines (`sqlglotc is installed in ..., but Python imports sqlglot from ...`); `python tools/run_tests.py --install-compiled` reinstalls it beside the sqlglot in use.
+- **Which KumoSQL is imported.** pytest imports this checkout's `src` first, and `tests/conftest.py` puts it first on `PYTHONPATH` for the processes tests start (`python -m kumosql mcp ...`), so the tests always test the checkout. Plain `python -c "import kumosql"` outside pytest can import another editable install instead; `python -m pip show kumosql` names its folder.
 
 Most of the suite is thousands of small tests, so keep a test's fixed cost low. Load DuckDB rows with `kumosql.duckdb_load.insert_rows` (one statement of literals instead of one `execute` per row) and reuse one connection across a helper's trials (`CREATE OR REPLACE TABLE` gives fresh tables, and a new connection costs about 10 ms). Open a tiny in-memory database with `kumosql.duckdb_load.small_database()` (one DuckDB thread, since a few rows gain nothing from more, and a caller's own `threads=` wins) rather than `duckdb.connect(":memory:")`; leave large file-backed benchmark databases to set their own threads. Start a test HTTP server with `serve_forever(poll_interval=0.01)`, or its `shutdown()` waits up to half a second. `tests/conftest.py` gives each test its own state directory without making a `tmp_path` unless the test asks for one.
 
