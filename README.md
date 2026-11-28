@@ -573,6 +573,10 @@ python tools/transformation_bench.py tpch tpcds job --json results.json
 
 `python -m kumosql profile-table project.dataset.table` (or `--file data.csv`, or `--duckdb FILE TABLE`) summarizes what is stored in a table, like BigQuery's data profile scan, which is a managed Dataplex service and not open source: the row count and, per column, nulls, distinct values, min, max, mean, quartiles, string lengths and the most common values. It writes read-only SQL, runs BigQuery queries under the dry run and byte cap used for every other BigQuery query (`--dry-run` shows the estimate and runs nothing), and saves the profile in the data folder. `python -m kumosql profile-mcp` serves the saved profiles to agents as read-only MCP resources. A profile quotes real values; `--no-values` leaves them out. See [docs/data-profiling.md](docs/data-profiling.md).
 
+## Reconciling two tables by key
+
+`python -m kumosql reconcile --left A --right B --key id --rules rules.yml` joins two tables (or `.sql` files or queries) on a key in one read-only query, a single BigQuery job under the dry run and byte cap, and sorts every row: matched, explained by the first named known-difference rule whose SQL predicate holds, or unexplained. It counts the keys only on each side and the differences per column (NULL-safe), maps renamed columns with a crosswalk or the saved equivalences, and returns sample keys of unexplained rows only when asked. `python -m kumosql rules check` re-runs the rules and flags one that no longer explains anything or explains far more rows than when it was verified, and `prove-sql-equivalent --emit-rule` writes an "except when P" predicate as a rule. See [docs/reconcile.md](docs/reconcile.md).
+
 ## Agent-facing server
 
 `python -m kumosql mcp PROJECT` is one stdio MCP server that loads a Dataform project once and answers one question per call, in about 2 KB with counts, explicit unknowns and a next step: describe a table, trace a column, assess a change, find an existing table, find the table to use, compare two queries, check a draft query, profile a table (BigQuery only on request, a dry run first), and find where rows are dropped on the way to a column. It is read-only and also serves the saved data profiles. See [docs/mcp-server.md](docs/mcp-server.md).
@@ -592,7 +596,7 @@ Every command prints `--help`.
 | `python -m kumosql.ui` | Local browser UI (`--project DIR`, `--git URL`, `--branch`, `--refresh`, `--jobs FILE`, `--port` (0 picks a free port), `--print-port`, `--exit-on-stdin-close`, `--no-browser`) |
 | `python -m kumosql rewrite-sql` | Apply rules with verification, optional idempotence, planner and synthetic checks |
 | `python -m kumosql lift-subqueries` | Lift `FROM`/`JOIN` subqueries into CTEs (`--report` prints a summary) |
-| `python -m kumosql prove-sql-equivalent` | Structural equivalence proof for two queries, then the SMT prover; unwraps `CREATE TABLE/VIEW AS`; `--conditional` lists the facts that would make an unproven pair equivalent (exit 3); `--explain-difference` prints "except when P" for a refuted pair |
+| `python -m kumosql prove-sql-equivalent` | Structural equivalence proof for two queries, then the SMT prover; unwraps `CREATE TABLE/VIEW AS`; `--conditional` lists the facts that would make an unproven pair equivalent (exit 3); `--explain-difference` prints "except when P" for a refuted pair; `--emit-rule` (`--rule-name`, `--rule-output FILE`) writes P as a known-difference rule |
 | `python -m kumosql prove-sql-smt` | Z3 equivalence proof for two queries; `--conditional` and `--explain-difference` as above |
 | `python -m kumosql prove-sql-sqlsolver` | Algebraic proof, then optional SQLSolver (`--backend`, `--check` tests the setup) |
 | `python -m kumosql refactor DIR [--protect M] [--editable M]` | Find simpler pipelines that keep the protected tables proved equivalent |
@@ -601,6 +605,8 @@ Every command prints `--help`.
 | `python -m kumosql reduce-project DIR --keep NAME` | Return the smallest Dataform project that keeps the named outputs proved unchanged, as a patch (`--patch -`, `--write`) |
 | `python -m kumosql shared-model DIR [ID]` | List CTEs repeated across Dataform models, or write the patch that moves one into a shared model, checked by the prover |
 | `python -m kumosql profile-table TABLE` | Profile a table's values (BigQuery `project.dataset.table`, `--file`, or `--duckdb`): nulls, distinct, min, max, quartiles, top values; `--dry-run`, `--sample-percent`, `--no-values` |
+| `python -m kumosql reconcile --left A --right B --key K` | Compare two tables by key in one read-only query: matched, explained by `--rules`, or unexplained rows; `--ignore`, `--map FILE\|saved`, `--include-samples`, `--dry-run`, `--duckdb FILE` (exit 1 when rows are unexplained) |
+| `python -m kumosql rules check\|list --rules FILE` | Re-run known-difference rules on current data and flag stale or grown ones (exit 1), or list them |
 | `python -m kumosql profile-mcp` | Serve saved data profiles to agents as read-only MCP resources over stdio |
 | `python -m kumosql mcp PROJECT` | One read-only MCP server for agents: loads the project once and answers one question per call in about 2 KB (`describe_table`, `trace_column`, `impact`, `find_existing`, `find_tables`, `compare_queries`, `check_query`, `profile_table`, `list_tables`, `clean_query`, `rows_filtered`), plus the saved data profiles |
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |

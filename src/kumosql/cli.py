@@ -75,7 +75,22 @@ def prove_main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="When the pair is not proven, print a verified predicate P such that the queries are equivalent except when P holds",
     )
+    parser.add_argument(
+        "--emit-rule",
+        action="store_true",
+        help="With the predicate P, also print it as a known-difference rule (YAML) for python -m kumosql reconcile --rules; "
+        "implies --explain-difference",
+    )
+    parser.add_argument("--rule-name", help="Name of the emitted rule (default: except_when_ and a short hash); implies --emit-rule")
+    parser.add_argument(
+        "--rule-output",
+        type=Path,
+        help="Write the emitted rule to this .yml, .yaml or .json file instead of printing it; implies --emit-rule",
+    )
     args = parser.parse_args(argv)
+    emit_rule = bool(args.emit_rule or args.rule_name or args.rule_output)
+    if args.rule_output and args.rule_output.suffix.lower() not in (".yml", ".yaml", ".json"):
+        parser.error("--rule-output must end in .yml, .yaml or .json")
 
     left_sql = args.left.read_text(encoding="utf-8")
     right_sql = args.right.read_text(encoding="utf-8")
@@ -100,16 +115,41 @@ def prove_main(argv: list[str] | None = None) -> int:
     print(result.reason)
     for diagnostic in result.diagnostics:
         print(f"diagnostic: {diagnostic}")
-    if args.explain_difference and not result.proven and not args.respect_row_order:
+    if (args.explain_difference or emit_rule) and not result.proven and not args.respect_row_order:
         from kumo_sql_prover.difference_surface import describe, except_when
 
         found = except_when(left_sql, right_sql)
         if found is not None:
             for line in describe(found):
                 print(line)
+        if emit_rule:
+            _emit_rule(found, args.rule_name, args.rule_output)
+    elif emit_rule:
+        why = "the queries were proven equivalent" if result.proven else "--respect-row-order turns the difference search off"
+        print(f"rule: none emitted: {why}", file=sys.stderr)
     if args.verifier_sql and result.verifier_sql:
         args.verifier_sql.write_text(result.verifier_sql + "\n", encoding="utf-8")
     return 0 if result.proven else 2
+
+
+def _emit_rule(found: dict | None, name: str | None, output: Path | None) -> None:
+    """Print (or write to ``output``) the difference predicate as a known-difference rule; say why when there is none."""
+
+    from .reconcile_rules import RuleError, dump_rules, rule_from_except_when, save_rules
+
+    if found is None:
+        print("rule: none emitted: the search found no verified difference predicate", file=sys.stderr)
+        return
+    try:
+        rule = rule_from_except_when(found, name=name)
+    except RuleError as exc:
+        print(f"rule: none emitted: {exc}", file=sys.stderr)
+        return
+    if output:
+        save_rules([rule], output)
+        print(f"rule: {rule.name} written to {output}")
+    else:
+        sys.stdout.write(dump_rules([rule]))
 
 
 def evidence_summary_main(argv: list[str] | None = None) -> int:

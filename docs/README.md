@@ -22,6 +22,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 | [Project reduction](project-reduction.md) | The smallest Dataform project that still produces the outputs you keep, as a proved patch on the `.sqlx` files |
 | [GoogleSQL type inference](type-inference.md) | The output column types of a BigQuery query, STRUCT and ARRAY included, without running it: the catalog, unknown, coercion and supertype rules, set operations, pipe syntax, findings and the scan tool |
 | [Data profiling](data-profiling.md) | Per-column statistics of a table's values (nulls, distinct, min, max, quartiles, most common values) on BigQuery or DuckDB, saved profiles, and the read-only MCP resources agents read |
+| [Reconciling two tables by key](reconcile.md) | `python -m kumosql reconcile`: join two tables on a key in one read-only query and sort every row as matched, explained by a named known-difference rule, or unexplained; `rules check` flags rules that went stale, and `--explain-difference` can emit its predicate as a rule |
 | [Agent-facing server](mcp-server.md) | `python -m kumosql mcp`: one stdio MCP server that loads a project once and answers one question per call (describe a table, trace a column, assess a change, find an existing table) in about 2 KB, with counts, explicit unknowns and a next step |
 | [Incremental models](incremental.md) | Whether an incremental run equals a full refresh |
 | [Join ordering and cardinality](joinorder.md) | Sub-join size estimates and join orders, in pure Python |
