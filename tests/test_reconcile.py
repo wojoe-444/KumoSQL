@@ -6,12 +6,17 @@ KumoSQL sends on DuckDB, translated, the way the data profile tests do.
 """
 
 import json
+import math
+import re
 
 import duckdb
 import pytest
 import sqlglot
+from sqlglot import exp
+from sqlglot.dialects.bigquery import BigQuery
+from sqlglot.dialects.duckdb import DuckDB
 
-from kumosql import data_sources, dryrun, equivalences, reconcile_cli, scope_queries, state
+from kumosql import data_profile, data_sources, dryrun, equivalences, reconcile_cli, scope_queries, state
 from kumosql.reconcile import (
     BigQueryExecutor, ByteCapExceeded, Column, DuckDBExecutor, ReconcileError, build_reconcile_sql, check_rules,
     estimate_bytes, load_crosswalk, plan_reconcile, reconcile,
@@ -415,12 +420,24 @@ def test_python_dash_m_runs_both_commands(database, capsys):
 # ------------------------------------------------------------------ BigQuery
 
 
-BQ_TABLES = {"`proj.ds.orders_v1`": "orders_v1", "`proj.ds.orders_v2`": "orders_v2", "`ds.orders_v2`": "orders_v2"}
-BQ_TYPES = {"INTEGER": "INT64", "VARCHAR": "STRING", "DOUBLE": "FLOAT64", "BOOLEAN": "BOOL", "INTEGER[]": "INT64"}
+BQ_TYPES = {"INTEGER": "INT64", "BIGINT": "INT64", "VARCHAR": "STRING", "DOUBLE": "FLOAT64", "BOOLEAN": "BOOL"}
+
+
+def bq_field(node):
+    """The BigQuery schema field a DuckDB column stands for: STRUCTs as RECORD with their fields, lists as REPEATED."""
+
+    mode = "REPEATED" if node.repeated else "NULLABLE"
+    if node.children is not None:
+        return dryrun.Field(node.name, "RECORD", mode, tuple(bq_field(child) for child in node.children))
+    kind = node.type.upper()
+    return dryrun.Field(node.name, "NUMERIC" if kind.startswith("DECIMAL") else BQ_TYPES.get(kind, kind), mode)
 
 
 class FakeBigQuery:
-    """Answers BigQuery's dry runs and runs from DuckDB, translating the BigQuery SQL KumoSQL sends."""
+    """Answers BigQuery's dry runs and runs from DuckDB, translating the BigQuery SQL KumoSQL sends.
+
+    ``proj.ds.NAME`` (or ``ds.NAME``) is the DuckDB table NAME. DuckDB runs the translated SQL, so BigQuery's own
+    semantics (NaN never equal to itself, say) are not reproduced: those are checked on the SQL text instead."""
 
     def __init__(self, connection, monkeypatch, fail=lambda sql: None, estimate=1234):
         self.connection, self.fail, self.estimate = connection, fail, estimate
@@ -431,15 +448,23 @@ class FakeBigQuery:
         monkeypatch.setattr(scope_queries, "dry_run", self.bytes)
 
     def duckdb_sql(self, sql):
-        for quoted, name in BQ_TABLES.items():
-            sql = sql.replace(quoted, name)
-        return sqlglot.transpile(sql, read="bigquery", write="duckdb")[0]
+        tree = sqlglot.parse_one(re.sub(r"`(?:[\w-]+\.)?\w+\.(\w+)`", r"\1", sql), read="bigquery")
+        # DuckDB has no LIMIT inside an aggregate: ARRAY_AGG(x ORDER BY o LIMIT n) is array_slice(ARRAY_AGG(x ORDER BY o), 1, n)
+        for aggregate in list(tree.find_all(exp.ArrayAgg)):
+            if isinstance(aggregate.this, exp.Limit):
+                inner = aggregate.copy()
+                inner.set("this", aggregate.this.this.copy())
+                outer = aggregate.parent if isinstance(aggregate.parent, exp.IgnoreNulls) else aggregate
+                if outer is not aggregate:  # ARRAY_AGG(... IGNORE NULLS ...) is parsed as IGNORE NULLS around the aggregate
+                    inner = exp.IgnoreNulls(this=inner)
+                outer.replace(exp.Anonymous(this="array_slice", expressions=[
+                    inner, exp.Literal.number(1), aggregate.this.expression.copy()]))
+        return tree.sql(dialect="duckdb")
 
     def schema(self, sql, project, *, location=None, token=None, transport=None):
         self.planned.append((sql, project))
         rows = self.connection.execute(f"DESCRIBE {self.duckdb_sql(sql)}").fetchall()
-        fields = tuple(dryrun.Field(str(r[0]), BQ_TYPES.get(str(r[1]), str(r[1])),
-                                    "REPEATED" if str(r[1]).endswith("[]") else "NULLABLE") for r in rows)
+        fields = tuple(bq_field(data_profile._duckdb_node(str(r[0]), str(r[1]))) for r in rows)
         return dryrun.DryRunResult(ok=True, schema=fields, total_bytes_processed=0)
 
     def bytes(self, sql, column=None, *, project=None, max_bytes=None):
@@ -473,7 +498,9 @@ def test_bigquery_runs_the_comparison_as_one_capped_job_with_the_same_answer(db,
     assert len(fake.planned) == 2  # the two column lists, read with free dry runs
     sql = fake.sent[0][0]
     sqlglot.parse_one(sql, read="bigquery")
-    assert "`proj.ds.orders_v1`" in sql and "COUNTIF(" in sql and "l.`amount` IS DISTINCT FROM r.`amount_usd`" in sql
+    assert "`proj.ds.orders_v1`" in sql and "COUNTIF(" in sql and "l.`status` IS DISTINCT FROM r.`status`" in sql
+    assert ("ELSE ABS(l.`amount` - r.`amount_usd`) > GREATEST(1e-12, 1e-09 * GREATEST(ABS(l.`amount`), ABS(r.`amount_usd`)))"
+            in sql and "IS_NAN(l.`amount`)" in sql)  # FLOAT64 agrees within the default tolerance
     assert bigquery["dialect"] == "bigquery" and bigquery["bytes_billed"] == 10_485_760
 
 
@@ -524,3 +551,311 @@ def test_bigquery_compares_arrays_and_structs_as_json_and_samples_with_array_agg
     assert "TO_JSON_STRING(l.`info`) IS DISTINCT FROM TO_JSON_STRING(r.`info`)" in sql
     assert "ARRAY_AGG(IF(kumo_hl AND NOT kumo_hr AND kumo_mis AND kumo_rule = 0, STRUCT(kumo_k0 AS `id`), NULL) " \
            "IGNORE NULLS ORDER BY kumo_k0 LIMIT 3)" in sql
+
+
+# ---------------------------------------------------------------- SQL guards
+
+
+#: Words no generated query may use as an unquoted alias, on either engine.
+RESERVED = ({word.casefold() for word in BigQuery.Generator.RESERVED_KEYWORDS}
+            | {word.casefold().removesuffix("_p") for word in DuckDB.Generator.RESERVED_KEYWORDS})
+
+
+def _conjuncts(node):
+    if isinstance(node, exp.And):
+        return _conjuncts(node.left) + _conjuncts(node.right)
+    if isinstance(node, exp.Paren):
+        return _conjuncts(node.this)
+    return [node]
+
+
+def sql_guard_problems(sql, dialect):
+    """The mistakes hand-written comparisons keep making, found in a generated query: an unquoted alias that is a
+    reserved word, a FULL OUTER JOIN whose condition is not column = column equalities between its two sides, and any
+    DISTINCT (BigQuery can group neither a STRUCT nor an array). ``IS DISTINCT FROM`` is a comparison, not a DISTINCT."""
+
+    problems = []
+    for node in sqlglot.parse_one(sql, read=dialect).walk():
+        if isinstance(node, (exp.Alias, exp.TableAlias)):
+            ident = node.args.get("alias") if isinstance(node, exp.Alias) else node.this
+            if isinstance(ident, exp.Identifier) and not ident.quoted and ident.name.casefold() in RESERVED:
+                problems.append(f"reserved word as an alias: {ident.name}")
+        if isinstance(node, exp.Distinct):
+            problems.append("DISTINCT")
+        if isinstance(node, exp.Join) and node.side.upper() == "FULL":
+            on = node.args.get("on")
+            terms = _conjuncts(on) if on is not None else []
+            if not terms or not all(isinstance(term, exp.EQ) and isinstance(term.left, exp.Column)
+                                    and isinstance(term.right, exp.Column) and term.left.table != term.right.table
+                                    for term in terms):
+                problems.append("FULL OUTER JOIN without an equality condition")
+    return problems
+
+
+def test_the_sql_guard_catches_the_mistakes_it_looks_for():
+    assert sql_guard_problems("SELECT 1 AS rows FROM a FULL OUTER JOIN b ON TRUE", "bigquery") == [
+        "reserved word as an alias: rows", "FULL OUTER JOIN without an equality condition"]
+    assert sql_guard_problems("SELECT DISTINCT s FROM t", "bigquery") == ["DISTINCT"]
+    assert sql_guard_problems("SELECT 1 AS unique FROM a FULL JOIN b ON a.x = b.x AND a.y > b.y", "duckdb") == [
+        "reserved word as an alias: unique", "FULL OUTER JOIN without an equality condition"]
+    assert sql_guard_problems("SELECT 1 AS `rows` FROM a AS l FULL JOIN b AS r ON l.x = r.y AND (l.z = r.w)",
+                              "bigquery") == []
+
+
+# ------------------------------------------------------------ float tolerance
+
+
+NAN, INF = math.nan, math.inf
+FLOATS = [  # id, left, right
+    (1, 0.1 + 0.2, 0.3), (2, 1e-13, 0.0), (3, 1e-11, 0.0), (4, NAN, NAN), (5, NAN, 1.0), (6, INF, INF),
+    (7, INF, -INF), (8, INF, 1e308), (9, None, None), (10, None, 0.0), (11, 1e9, 1e9 + 0.5), (12, 100.0, 100.001),
+    (13, -0.0, 0.0), (14, NAN, None), (15, -1e308, 1e308), (16, 5.0, 5.0), (17, 1.0, 1.0 + 1e-10),
+]
+
+
+def float_differs(a, b, absolute, relative):
+    """The documented rule, in Python: what every engine must answer."""
+
+    if a is None or b is None:
+        return (a is None) != (b is None)
+    if math.isnan(a) or math.isnan(b):
+        return not (math.isnan(a) and math.isnan(b))
+    if a == b:
+        return False
+    if math.isinf(a) or math.isinf(b):
+        return True
+    return abs(a - b) > max(absolute, relative * max(abs(a), abs(b)))
+
+
+def float_tables(connection):
+    for name, index in (("fa", 1), ("fb", 2)):
+        connection.execute(f"CREATE TABLE {name} (id INTEGER, x DOUBLE)")
+        connection.executemany(f"INSERT INTO {name} VALUES (?, ?)", [(row[0], row[index]) for row in FLOATS])
+
+
+def differing_ids(data):
+    return {key["id"] for key in data["samples"]["by_column"].get("x", [])}
+
+
+@pytest.mark.parametrize("absolute,relative", [(1e-12, 1e-9), (0.0, 0.0), (0.01, 0.0), (0.0, 1e-3)])
+def test_floats_agree_within_the_tolerance_and_nan_null_and_infinity_follow_the_rule(db, absolute, relative):
+    float_tables(db)
+    data = reconcile("fa", "fb", "id", DuckDBExecutor(db), float_tolerance=absolute, float_relative=relative,
+                     include_samples=True, sample_limit=100).to_json()
+    expected = {i for i, a, b in FLOATS if float_differs(a, b, absolute, relative)}
+    assert differing_ids(data) == expected and data["column_mismatches"].get("x", 0) == len(expected)
+    assert data["float_tolerance"] == {"absolute": absolute, "relative": relative}
+    exact = absolute == relative == 0
+    assert data["comparisons"]["x"] == ({"method": "exact"} if exact else {
+        "method": "tolerance", "absolute": absolute, "relative": relative, "source": "default"})
+
+
+def test_the_default_tolerance_allows_rounding_noise_and_nothing_more(db):
+    float_tables(db)
+    data = reconcile("fa", "fb", "id", DuckDBExecutor(db), include_samples=True, sample_limit=100).to_json()
+    assert differing_ids(data) == {3, 5, 7, 8, 10, 12, 14, 15}  # 0.1 + 0.2 = 0.3, 1e-13 = 0 and 1e9 + 0.5 = 1e9 agree
+    assert data["comparisons"]["x"] == {"method": "tolerance", "absolute": 1e-12, "relative": 1e-9, "source": "default"}
+
+
+def test_bigquery_settles_nan_and_infinity_before_subtracting_and_gives_the_same_answer(db, monkeypatch):
+    float_tables(db)
+    fake = FakeBigQuery(db, monkeypatch)
+    data = reconcile("proj.ds.fa", "proj.ds.fb", "id", BigQueryExecutor("bill-proj", 50_000_000), include_samples=True,
+                     sample_limit=100).to_json()
+    assert data["column_mismatches"] == {"x": 8} and data["matched_rows"] == len(FLOATS) - 8
+    assert differing_ids(data) == {3, 5, 7, 8, 10, 12, 14, 15}
+    sql = fake.sent[0][0]
+    # NaN = NaN is FALSE on BigQuery (TRUE on DuckDB): the NaN branch, not equality, makes two NaNs agree there.
+    assert ("WHEN l.`x` = r.`x` THEN FALSE WHEN IS_NAN(l.`x`) OR IS_INF(l.`x`) OR IS_NAN(r.`x`) OR IS_INF(r.`x`) "
+            "THEN NOT (IS_NAN(l.`x`) AND IS_NAN(r.`x`)) ELSE ABS(l.`x` - r.`x`) > GREATEST(1e-12, 1e-09 * "
+            "GREATEST(ABS(l.`x`), ABS(r.`x`))) END") in sql
+    assert sql.index("WHEN l.`x` IS NULL OR r.`x` IS NULL") < sql.index("IS_NAN(l.`x`)") < sql.index("ABS(l.`x` - r.`x`)")
+    assert sql_guard_problems(sql, "bigquery") == []
+
+
+def priced_tables(connection):
+    for name in ("pa", "pb"):
+        connection.execute(f"CREATE TABLE {name} (id INTEGER, price DOUBLE, qty INTEGER, amount DECIMAL(10, 2), "
+                           "rate DOUBLE, label VARCHAR)")
+    connection.executemany("INSERT INTO pa VALUES (?, ?, ?, ?, ?, ?)",
+                           [(1, 10.0, 5, "1.00", 0.3, "x"), (2, 10.0, 5, "2.00", 1.0, "y")])
+    connection.executemany("INSERT INTO pb VALUES (?, ?, ?, ?, ?, ?)",
+                           [(1, 10.004, 6, "1.01", 0.1 + 0.2, "x"), (2, 10.02, 5, "2.00", 1.0005, "y")])
+
+
+def test_a_column_can_have_its_own_tolerance_and_numeric_columns_stay_exact(db):
+    priced_tables(db)
+    executor = DuckDBExecutor(db)
+    data = reconcile("pa", "pb", "id", executor).to_json()
+    assert data["column_mismatches"] == {"price": 2, "amount": 1, "qty": 1, "rate": 1}
+    assert data["comparisons"] == {
+        "price": {"method": "tolerance", "absolute": 1e-12, "relative": 1e-9, "source": "default"},
+        "qty": {"method": "exact"}, "amount": {"method": "exact"},  # integers and DECIMAL/NUMERIC are exact by default
+        "rate": {"method": "tolerance", "absolute": 1e-12, "relative": 1e-9, "source": "default"},
+        "label": {"method": "exact"},
+    }
+    own = reconcile("pa", "pb", "id", executor, tolerance="price=0.01, qty=1, amount=0.05, rate=0:1e-3").to_json()
+    assert own["column_mismatches"] == {"price": 1}  # 10.02 is more than a cent from 10.0; 10.004 is not
+    assert own["comparisons"]["price"] == {"method": "tolerance", "absolute": 0.01, "relative": 0.0, "source": "--tolerance"}
+    assert own["comparisons"]["rate"] == {"method": "tolerance", "absolute": 0.0, "relative": 0.001, "source": "--tolerance"}
+    assert own["comparisons"]["amount"]["absolute"] == 0.05 and own["comparisons"]["qty"]["absolute"] == 1.0
+    mapping = reconcile("pa", "pb", "id", executor, tolerance={"PRICE": (0.0, 0.01), "rate": "exact"}).to_json()
+    assert mapping["column_mismatches"] == {"rate": 2, "amount": 1, "qty": 1}  # 0.1 + 0.2 is not exactly 0.3
+    assert mapping["comparisons"]["rate"] == {"method": "exact"}
+    note = reconcile("pa", "pb", "id", executor, ignore="price", tolerance=["price=0.01"]).to_json()["notes"]
+    assert any("--tolerance price" in item and "not compared" in item for item in note)
+
+
+@pytest.mark.parametrize("options,message", [
+    ({"tolerance": "label=0.1"}, "not a number"), ({"tolerance": "id=1"}, "part of the key"),
+    ({"tolerance": "nope=1"}, "neither side"), ({"tolerance": "price"}, "column=ABSOLUTE"),
+    ({"tolerance": "price=-1"}, "0 or more"), ({"tolerance": "price=abc"}, "write a number"),
+    ({"tolerance": "price=inf"}, "0 or more"), ({"tolerance": "price=1,PRICE=2"}, "twice"),
+    ({"float_tolerance": -1}, "--float-tolerance"), ({"float_relative": math.nan}, "--float-relative"),
+])
+def test_a_tolerance_that_cannot_apply_is_refused(db, options, message):
+    priced_tables(db)
+    with pytest.raises(ReconcileError, match=message):
+        reconcile("pa", "pb", "id", DuckDBExecutor(db), **options)
+
+
+def test_reconcile_and_rules_check_commands_take_tolerances(tmp_path, capsys):
+    path = tmp_path / "prices.duckdb"
+    connection = duckdb.connect(str(path))
+    priced_tables(connection)
+    connection.close()
+    base = ["--duckdb", str(path), "--left", "pa", "--right", "pb", "--key", "id"]
+    assert reconcile_cli.reconcile_main([*base, "--tolerance", "price=0.01", "--tolerance", "qty=1,amount=0.05,rate=0:1e-3"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["column_mismatches"] == {"price": 1} and data["comparisons"]["qty"]["source"] == "--tolerance"
+    assert reconcile_cli.reconcile_main([*base, "--float-tolerance", "0", "--float-relative", "0", "--ignore", "price"]) == 1
+    data = json.loads(capsys.readouterr().out)
+    assert data["comparisons"]["rate"] == {"method": "exact"} and data["column_mismatches"]["rate"] == 2
+    rules = rules_file(tmp_path, KnownDiffRule("price_drift", "ABS(l.price - r.price) < 0.05", "2026-11-01", verified_count=2))
+    assert reconcile_cli.rules_main(["check", "--rules", rules, *base, "--tolerance", "price=0.01"]) == 0
+    assert json.loads(capsys.readouterr().out)["rules"][0]["current_count"] == 2  # rows 1 (qty) and 2 (price)
+    assert reconcile_cli.reconcile_main([*base, "--tolerance", "label=1"]) == 2
+    assert "not a number" in capsys.readouterr().err
+
+
+# -------------------------------------------------------- STRUCTs and arrays
+
+
+def nested_tables(connection):
+    """The right side declares the STRUCT fields in the other order, at the top and inside the array elements."""
+
+    connection.execute("CREATE TABLE na (id INTEGER, s STRUCT(x INTEGER, y DOUBLE), tags INTEGER[], "
+                       "items STRUCT(p INTEGER, q VARCHAR)[])")
+    connection.execute("CREATE TABLE nb (id INTEGER, s STRUCT(y DOUBLE, x INTEGER), tags INTEGER[], "
+                       "items STRUCT(q VARCHAR, p INTEGER)[])")
+    connection.execute("""INSERT INTO na VALUES
+        (1, {'x': 1, 'y': 2.5}, [1, 2], [{'p': 1, 'q': 'a'}]),
+        (2, {'x': 1, 'y': NULL}, [], []),
+        (3, NULL, NULL, NULL),
+        (4, NULL, [1, 2], [{'p': 1, 'q': NULL}]),
+        (5, {'x': 1, 'y': 1.0}, [1], [{'p': 1, 'q': 'a'}])""")
+    connection.execute("""INSERT INTO nb VALUES
+        (1, {'y': 2.5, 'x': 1}, [1, 2], [{'q': 'a', 'p': 1}]),
+        (2, {'y': NULL, 'x': 1}, [], []),
+        (3, NULL, NULL, NULL),
+        (4, {'y': NULL, 'x': NULL}, [2, 1], [{'q': NULL, 'p': 1}]),
+        (5, {'y': 1.0000000001, 'x': 1}, NULL, [{'q': 'b', 'p': 1}])""")
+
+
+NESTED = {
+    # same fields in another order agree; NULL fields agree; a NULL STRUCT is not a STRUCT of NULLs; array order counts;
+    # a float inside a STRUCT is compared exactly
+    "column_mismatches": {"s": 2, "tags": 2, "items": 1},
+    "matched_rows": 3,
+    "comparisons": {
+        "s": {"method": "whole_value", "fields": "reordered", "floats_inside": True},
+        "tags": {"method": "whole_value", "fields": "same", "floats_inside": False},
+        "items": {"method": "whole_value", "fields": "reordered", "floats_inside": False},
+    },
+}
+
+
+def nested_answer(data):
+    return {key: data[key] for key in NESTED}
+
+
+def test_duckdb_compares_structs_and_arrays_as_whole_values_fields_by_name(db):
+    nested_tables(db)
+    data = reconcile("na", "nb", "id", DuckDBExecutor(db), include_samples=True).to_json()
+    assert nested_answer(data) == NESTED
+    assert data["samples"]["by_column"] == {"s": [{"id": 4}, {"id": 5}], "tags": [{"id": 4}, {"id": 5}],
+                                            "items": [{"id": 5}]}
+    assert any(note.startswith("s hold floating-point values inside") and "does not reach inside" in note
+               for note in data["notes"])
+    sql = build_reconcile_sql("na", "nb", "id", DuckDBExecutor(db), include_samples=True)
+    assert 'l."s" IS DISTINCT FROM r."s"' in sql and "TO_JSON(L." not in sql.upper()
+    assert sql_guard_problems(sql, "duckdb") == []
+
+
+def test_bigquery_compares_json_text_with_the_fields_put_in_one_order_and_agrees_with_duckdb(db, monkeypatch):
+    nested_tables(db)
+    fake = FakeBigQuery(db, monkeypatch)
+    data = reconcile("proj.ds.na", "proj.ds.nb", "id", BigQueryExecutor("bill-proj", 50_000_000)).to_json()
+    assert nested_answer(data) == NESTED
+    sql = fake.sent[0][0]
+    assert ("TO_JSON_STRING(l.`s`) IS DISTINCT FROM TO_JSON_STRING(IF(r.`s` IS NULL, NULL, STRUCT(r.`s`.`x` AS `x`, "
+            "r.`s`.`y` AS `y`)))") in sql
+    assert ("TO_JSON_STRING(IF(r.`items` IS NULL, NULL, ARRAY(SELECT AS STRUCT kumo_e0.`p` AS `p`, kumo_e0.`q` AS `q` "
+            "FROM UNNEST(r.`items`) AS kumo_e0 WITH OFFSET AS kumo_o0 ORDER BY kumo_o0)))") in sql
+    assert "TO_JSON_STRING(l.`tags`) IS DISTINCT FROM TO_JSON_STRING(r.`tags`)" in sql  # same shape: nothing rebuilt
+    assert sql_guard_problems(sql, "bigquery") == [] and len(fake.sent) == 1
+    # Why the rebuild is needed: JSON text keeps the declared field order, so the same values read differently.
+    plain = sqlglot.transpile("SELECT TO_JSON_STRING(l.s) = TO_JSON_STRING(r.s) FROM na AS l JOIN nb AS r ON l.id = r.id "
+                              "WHERE l.id = 1", read="bigquery", write="duckdb")[0]
+    assert db.execute(plain).fetchall() == [(False,)]
+
+
+def test_struct_fields_that_differ_by_name_are_said_to_differ_on_both_engines(db, monkeypatch):
+    nested_tables(db)
+    db.execute("CREATE TABLE nc AS SELECT * FROM (VALUES (1, {'u': 1, 'v': 2.5}), (3, NULL)) t(id, s)")
+    duck = reconcile("na", "nc", "id", DuckDBExecutor(db), ignore="tags,items").to_json()
+    FakeBigQuery(db, monkeypatch)
+    bigquery = reconcile("proj.ds.na", "proj.ds.nc", "id", BigQueryExecutor("bill-proj", 50_000_000),
+                         ignore="tags,items").to_json()
+    for data in (duck, bigquery):
+        assert data["column_mismatches"] == {"s": 1} and data["comparisons"]["s"]["fields"] == "differ"
+        assert any(note.startswith("s: the two sides' STRUCT fields differ") for note in data["notes"])
+
+
+def test_a_struct_cannot_be_a_key_or_take_a_tolerance(db, monkeypatch):
+    nested_tables(db)
+    with pytest.raises(ReconcileError, match="key column s is STRUCT"):
+        reconcile("na", "nb", "s", DuckDBExecutor(db))
+    with pytest.raises(ReconcileError, match="cannot reach inside"):
+        reconcile("na", "nb", "id", DuckDBExecutor(db), tolerance="s=0.1")
+    FakeBigQuery(db, monkeypatch)
+    with pytest.raises(ReconcileError, match="key column tags"):
+        reconcile("proj.ds.na", "proj.ds.nb", "tags", BigQueryExecutor("bill-proj", 50_000_000))
+    db.execute("CREATE TABLE fk AS SELECT 1.5::DOUBLE AS id, 1 AS v")
+    notes = reconcile("fk", "fk", "id", DuckDBExecutor(db)).to_json()["notes"]
+    assert any("key column id is floating-point" in note for note in notes)
+
+
+@pytest.mark.parametrize("dialect", ["duckdb", "bigquery"])
+def test_every_generated_comparison_passes_the_sql_guards(db, monkeypatch, dialect):
+    nested_tables(db)
+    priced_tables(db)
+    db.execute('CREATE TABLE ra AS SELECT id, s AS "rows", tags AS "select" FROM na')  # reserved words as column names
+    db.execute('CREATE TABLE rb AS SELECT id, s AS "rows", tags AS "select" FROM nb')
+    if dialect == "duckdb":
+        executor, names = DuckDBExecutor(db), ("orders_v1", "orders_v2", "pa", "pb", "na", "nb", "ra", "rb")
+    else:
+        FakeBigQuery(db, monkeypatch)
+        executor = BigQueryExecutor("bill-proj", 50_000_000)
+        names = tuple(f"proj.ds.{name}" for name in ("orders_v1", "orders_v2", "pa", "pb", "na", "nb", "ra", "rb"))
+    queries = [
+        build_reconcile_sql(names[0], names[1], "order_id", executor, crosswalk=MAP, rules=[REFUNDS, TESTS],
+                            include_samples=True, standalone=True),
+        build_reconcile_sql(names[2], names[3], "id", executor, tolerance="price=0.01", include_samples=True),
+        build_reconcile_sql(names[4], names[5], "id", executor, include_samples=True,
+                            rules=[KnownDiffRule("any", "l.id IS NULL OR r.id IS NULL", "2026-11-01")]),
+        build_reconcile_sql(names[6], names[7], "id", executor, include_samples=True),
+    ]
+    for sql in queries:
+        assert sql_guard_problems(sql, dialect) == [], sql
+        assert sql.count("FULL OUTER JOIN") == 1

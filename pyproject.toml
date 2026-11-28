@@ -67,6 +67,7 @@ kumosql-q = "kumosql.query_runner:main"
 kumosql-query = "kumosql.query_runner:main"
 kumosql-workbook = "kumosql.bi_workbook.cli:main"
 kumosql-notebook = "kumosql.notebook_text:main"
+kumosql-key-check = "kumosql.reconcile_cli:key_check_main"
 
 [build-system]
 requires = ["setuptools>=68"]
