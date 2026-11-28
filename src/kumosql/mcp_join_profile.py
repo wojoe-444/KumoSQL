@@ -22,23 +22,21 @@ need not hold the warehouse table's rows.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from typing import Sequence
 
 from . import data_profile
 from . import join_profile_store as joins
-from .data_profile import ByteCapExceeded, ProfileError, _ident, _text_type
+from .data_profile import ByteCapExceeded, ProfileError
+from .join_sql import (  # noqa: F401 - the SQL and its reading live in join_sql; re-exported here
+    DEFAULT_TOP, MAX_KEYS, SUMMARY, JoinProfile, _int, _rate, build_sql, grouped_cte, join_cte, key_aliases,
+    profile_join, read_rows, side_cte, stats_cte, summary_numbers,
+)
 from .mcp_answers import Answer, ToolError, clip, tool
 from .mcp_profile import DATA_NOTE, _local_executor, _physical_name
 from .mcp_session import Session
 
-MAX_KEYS = 6
-DEFAULT_TOP = 5
 MAX_TOP = 20
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-#: the order of the numbers in the summary row of the query
-SUMMARY = ("lr", "ln", "lk", "ld", "lx", "rr", "rn", "rk", "rd", "rx", "mk", "lm", "rm", "jr")
 
 
 # ------------------------------------------------------------------- arguments
@@ -74,126 +72,6 @@ def parse_split(text: str | None) -> tuple[str, str] | None:
     if side not in ("left", "right") or not _NAME.match(column):
         raise ToolError("split_by is one column name, optionally left.column or right.column", ["Example: split_by=order_week (a column of the left table)."])
     return side, column
-
-
-# ------------------------------------------------------------------------ the SQL
-
-
-def build_sql(left_sql: str, right_sql: str, pairs: Sequence[tuple[str, str]], dialect: str, split: tuple[str, str] | None = None, top: int = DEFAULT_TOP,
-              *, lines: bool = False) -> str | list[str]:
-    """The one query (``lines=True``: its pieces, one common table expression each, for an answer that may have to cut it).
-
-    Each side is grouped by its key once; everything else reads those two small results.
-    """
-
-    q = lambda name: _ident(name, dialect)  # noqa: E731
-    ks = [f"k{i}" for i in range(len(pairs))]
-    ok = " AND ".join(f"{k} IS NOT NULL" for k in ks)
-    group = ", ".join(ks)
-
-    def side(prefix: str, table_sql: str, columns: Sequence[str]) -> str:
-        extra = f", {q(split[1])} AS s" if split and split[0] == {"l": "left", "r": "right"}[prefix] else ""
-        return f"{prefix} AS (SELECT {', '.join(f'{q(c)} AS {k}' for c, k in zip(columns, ks))}{extra} FROM {table_sql})"
-
-    def grouped(prefix: str) -> str:
-        return f"{prefix}g AS (SELECT {group}, COUNT(*) AS n, ({ok}) AS ok FROM {prefix} GROUP BY {group})"
-
-    def stats(prefix: str) -> str:
-        return (f"{prefix}s AS (SELECT SUM(n) AS r, SUM(CASE WHEN ok THEN 0 ELSE n END) AS nu, SUM(CASE WHEN ok THEN 1 ELSE 0 END) AS k, "
-                f"SUM(CASE WHEN ok THEN n - 1 ELSE 0 END) AS d, MAX(CASE WHEN ok THEN n ELSE 0 END) AS x FROM {prefix}g)")
-
-    on = " AND ".join(f"a.{k} = b.{k}" for k in ks)
-    parts = [side("l", left_sql, [p[0] for p in pairs]), side("r", right_sql, [p[1] for p in pairs]), grouped("l"), grouped("r"), stats("l"), stats("r"),
-             f"j AS (SELECT COUNT(*) AS mk, SUM(a.n) AS lm, SUM(b.n) AS rm, SUM(a.n * b.n) AS jr FROM lg a JOIN rg b ON {on})"]
-    numbers = [f"ls.{c} AS l{n}" for c, n in (("r", "r"), ("nu", "n"), ("k", "k"), ("d", "d"), ("x", "x"))]
-    numbers += [f"rs.{c} AS r{n}" for c, n in (("r", "r"), ("nu", "n"), ("k", "k"), ("d", "d"), ("x", "x"))]
-    numbers += [f"j.{c} AS {c}" for c in ("mk", "lm", "rm", "jr")]
-    final = f"SELECT 'summary' AS kind, '' AS v, {', '.join(numbers)} FROM ls, rs, j"
-    if split:
-        mine, other = ("l", "rg") if split[0] == "left" else ("r", "lg")
-        sel_on = " AND ".join(f"x.{k} = o.{k}" for k in ks)
-        parts.append(f"sp AS (SELECT CAST(x.s AS {_text_type(dialect)}) AS v, COUNT(*) AS t, SUM(CASE WHEN o.n IS NULL THEN 1 ELSE 0 END) AS u "
-                     f"FROM {mine} x LEFT JOIN {other} o ON {sel_on} GROUP BY x.s ORDER BY u DESC, v LIMIT {int(top)})")
-        final += f" UNION ALL SELECT 'split', v, t, u{', NULL' * (len(SUMMARY) - 2)} FROM sp"
-    if lines:
-        return ["WITH " + parts[0] + ","] + [part + "," for part in parts[1:-1]] + [parts[-1], final]
-    return "WITH " + ", ".join(parts) + " " + final
-
-
-# --------------------------------------------------------------------- the result
-
-
-@dataclass
-class JoinProfile:
-    left: str
-    right: str
-    keys: list[tuple[str, str]]
-    dialect: str
-    generated_at: str
-    sides: dict
-    matched_keys: int
-    join_rows: int
-    split_by: tuple[str, str] | None = None
-    unmatched_by: list[dict] = field(default_factory=list)
-    estimated_bytes: int | None = None
-    bytes_billed: int | None = None
-
-    @property
-    def cardinality(self) -> str:
-        """``1:1``, ``1:N`` (a left row can match several right rows), ``N:1`` (several left rows share a key; the right is unique), ``N:M`` or ``unknown``.
-
-        Judged on whole tables: a side is unique when no non-null key value repeats on it.
-        """
-
-        left, right = self.sides["left"], self.sides["right"]
-        if not left["distinct_keys"] or not right["distinct_keys"]:
-            return "unknown"
-        return {(True, True): "1:1", (True, False): "1:N", (False, True): "N:1", (False, False): "N:M"}[(left["duplicate_rows"] == 0, right["duplicate_rows"] == 0)]
-
-    def to_json(self) -> dict:
-        return {"left": self.left, "right": self.right, "keys": [list(k) for k in self.keys], "dialect": self.dialect, "generated_at": self.generated_at,
-                "sides": self.sides, "matched_keys": self.matched_keys, "join_rows": self.join_rows, "cardinality": self.cardinality,
-                "split_by": list(self.split_by) if self.split_by else None, "unmatched_by": self.unmatched_by,
-                "estimated_bytes": self.estimated_bytes, "bytes_billed": self.bytes_billed}
-
-
-def _int(value: object) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _rate(part: int, whole: int) -> float | None:
-    return round(part / whole, 6) if whole else None
-
-
-def read_rows(rows: list[dict], left: str, right: str, pairs: Sequence[tuple[str, str]], dialect: str, split: tuple[str, str] | None,
-              top: int = DEFAULT_TOP) -> JoinProfile:
-    """The result rows of :func:`build_sql` as a :class:`JoinProfile`."""
-
-    summary = next((row for row in rows if row.get("kind") == "summary"), None)
-    if summary is None:
-        raise ProfileError("the join profile query returned no summary row")
-    n = {name: _int(summary.get(name)) for name in SUMMARY}
-    sides = {}
-    for side, p in (("left", "l"), ("right", "r")):
-        rows_, matched = n[p + "r"], n["lm" if side == "left" else "rm"]
-        sides[side] = {"rows": rows_, "null_key_rows": n[p + "n"], "distinct_keys": n[p + "k"], "duplicate_rows": n[p + "d"], "max_rows_per_key": n[p + "x"],
-                       "matched_rows": matched, "match_rate": _rate(matched, rows_), "null_key_rate": _rate(n[p + "n"], rows_)}
-    found = sorted(({"value": row.get("v"), "rows": _int(row.get("lr")), "unmatched": _int(row.get("ln"))} for row in rows if row.get("kind") == "split"),
-                   key=lambda item: (-item["unmatched"], str(item["value"])))
-    found = [item for item in found if item["unmatched"] > 0][:top]
-    return JoinProfile(left, right, list(pairs), dialect, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), sides, n["mk"], n["jr"], split, found)
-
-
-def profile_join(left: str, right: str, pairs: Sequence[tuple[str, str]], executor, split: tuple[str, str] | None = None, top: int = DEFAULT_TOP) -> JoinProfile:
-    """Run the one query with ``executor`` (a :class:`kumosql.data_profile.Executor`) and read it. Raises :class:`ProfileError`."""
-
-    sql = build_sql(executor.table_sql(left), executor.table_sql(right), pairs, executor.dialect, split, top)
-    result = read_rows(executor.run(sql), left, right, pairs, executor.dialect, split, top)
-    result.estimated_bytes, result.bytes_billed = executor.estimated_bytes, executor.bytes_billed
-    return result
 
 
 # ------------------------------------------------------------------- the answer

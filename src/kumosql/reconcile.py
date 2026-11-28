@@ -3,7 +3,10 @@
     python -m kumosql reconcile --left proj.ds.orders_v1 --right proj.ds.orders_v2 --key order_id --rules rules.yml
 
 The two sides are joined on the key (``FULL OUTER JOIN``). A joined row *matches* when both sides have
-it and every compared column agrees (``IS NOT DISTINCT FROM``, so two NULLs agree). Any other row
+it and every compared column agrees, NULL-safely (two NULLs agree; a NULL and a value differ). Floating-point
+columns agree within a tolerance (:data:`DEFAULT_FLOAT_RELATIVE` of the larger value, at least
+:data:`DEFAULT_FLOAT_ABSOLUTE`; NaN agrees with NaN and an infinity only with the same infinity); other
+columns, and anything inside a STRUCT or an array, must be equal. Any other row
 (only on the left, only on the right, or a column differs) is tested against the known-difference
 rules of :mod:`kumosql.reconcile_rules` in the order they are listed: the first rule whose predicate
 holds explains it, and a row no rule explains is *unexplained*. All of it, with the per-column and
@@ -41,7 +44,8 @@ from .scope_queries import MAX_QUERY_CHARS
 from .sql_validation import quote_table_path, validate_readonly_query
 
 __all__ = [
-    "BigQueryExecutor", "ByteCapExceeded", "Column", "Crosswalk", "DEFAULT_GROWTH_FACTOR", "DEFAULT_MIN_GROWTH",
+    "BigQueryExecutor", "ByteCapExceeded", "Column", "Crosswalk", "DEFAULT_FLOAT_ABSOLUTE", "DEFAULT_FLOAT_RELATIVE",
+    "DEFAULT_GROWTH_FACTOR", "DEFAULT_MIN_GROWTH",
     "DEFAULT_SAMPLE_LIMIT", "DuckDBExecutor", "Input", "Link", "MAX_SAMPLE_LIMIT", "Plan", "ReconcileError",
     "ReconcileResult", "RuleError", "RulesCheckResult", "build_reconcile_sql", "check_rules", "estimate_bytes",
     "load_crosswalk", "plan_reconcile", "reconcile", "resolve_input",
@@ -51,11 +55,17 @@ DEFAULT_SAMPLE_LIMIT = 5
 MAX_SAMPLE_LIMIT = 100
 DEFAULT_GROWTH_FACTOR = 2.0
 DEFAULT_MIN_GROWTH = 10
+#: Two floats agree when they differ by at most max(DEFAULT_FLOAT_ABSOLUTE, DEFAULT_FLOAT_RELATIVE x the larger magnitude):
+#: the last digits that summing in another order changes are allowed, the ninth significant digit is not.
+DEFAULT_FLOAT_RELATIVE = 1e-9
+DEFAULT_FLOAT_ABSOLUTE = 1e-12
 MAX_LABEL = 200
 MARKER = "kumo_in"  # the column each side carries so the join can tell "no row" from "a row of NULLs"
 _PLAIN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _QUERY_START = re.compile(r"^[\s(]*(select|with)\b", re.IGNORECASE)
-_COMPLEX = ("ARRAY", "STRUCT", "RECORD", "JSON", "GEOGRAPHY", "RANGE")
+_COMPLEX = ("ARRAY", "STRUCT", "RECORD", "JSON", "GEOGRAPHY", "RANGE", "MAP", "UNION", "LIST")
+_FLOAT = re.compile(r"^(FLOAT\d*|DOUBLE( PRECISION)?|REAL)$")
+_FLOAT_WORD = re.compile(r"\b(FLOAT\d*|DOUBLE|REAL)\b", re.IGNORECASE)
 
 
 class ReconcileError(ValueError):
@@ -91,18 +101,20 @@ def _literal(text: str) -> str:
     return "'" + text.replace("'", "''") + "'"
 
 
-def _readonly(sql: str) -> None:
+_NARROW = "Compare fewer columns (--ignore), leave sample keys off, or shorten the --left/--right SQL"
+
+
+def _readonly(sql: str, what: str = "the comparison query", narrow: str = _NARROW) -> None:
     """The check every query KumoSQL runs passes, with its length limit stated plainly when that is what fails."""
 
     if len(sql) > MAX_QUERY_CHARS:
         raise ReconcileError(
-            f"the comparison query is {len(sql):,} characters, over the {MAX_QUERY_CHARS:,}-character limit on every "
-            "read-only query KumoSQL runs. Compare fewer columns (--ignore), leave sample keys off, or shorten the "
-            "--left/--right SQL")
+            f"{what} is {len(sql):,} characters, over the {MAX_QUERY_CHARS:,}-character limit on every "
+            f"read-only query KumoSQL runs. {narrow}")
     try:
         validate_readonly_query(sql)
     except ValueError:
-        raise ReconcileError("the comparison query did not pass the read-only check, so it was not run") from None
+        raise ReconcileError(f"{what} did not pass the read-only check, so it was not run") from None
 
 
 # ----------------------------------------------------------------- executors
@@ -110,17 +122,50 @@ def _readonly(sql: str) -> None:
 
 @dataclass(frozen=True)
 class Column:
-    """One output column of a side: its name, type text and, for BigQuery, whether it is REPEATED."""
+    """One output column of a side: its name, type text, whether it is an array, and a STRUCT's fields, in order."""
 
     name: str
     type: str = ""
     repeated: bool = False
+    fields: tuple["Column", ...] = ()
 
     @property
     def complex(self) -> bool:
-        """An array, STRUCT, JSON or GEOGRAPHY: BigQuery compares these as their JSON text."""
+        """An array, STRUCT, JSON, GEOGRAPHY or map: compared as one whole value, never within a tolerance."""
 
-        return self.repeated or self.type.strip().upper().startswith(_COMPLEX)
+        text = self.type.strip().upper()
+        return self.repeated or bool(self.fields) or text.startswith(_COMPLEX) or text.endswith("]")
+
+    @property
+    def is_float(self) -> bool:
+        """FLOAT64 on BigQuery; FLOAT, DOUBLE or REAL on DuckDB."""
+
+        return not self.complex and bool(_FLOAT.match(re.sub(r"\(.*\)", "", self.type).strip().upper()))
+
+    @property
+    def numeric(self) -> bool:
+        """A number column: integers, NUMERIC/BIGNUMERIC/DECIMAL and floats."""
+
+        return not self.complex and data_profile.classify(self.type) == "numeric"
+
+    @property
+    def floats_inside(self) -> bool:
+        """A STRUCT or array that holds floating-point values somewhere inside it."""
+
+        if not self.complex:
+            return False
+        if self.fields:
+            return any(item.is_float or item.floats_inside for item in self.fields)
+        return bool(_FLOAT_WORD.search(self.type))
+
+
+def _from_node(node: data_profile.Node, type_text: str | None = None) -> Column:
+    return Column(node.name, type_text if type_text is not None else node.type, node.repeated,
+                  tuple(_from_node(child) for child in node.children or ()))
+
+
+def _from_field(item) -> Column:
+    return Column(item.name, item.type, item.mode == "REPEATED", tuple(_from_field(inner) for inner in item.fields))
 
 
 class DuckDBExecutor(data_profile.DuckDBExecutor):
@@ -139,7 +184,7 @@ class DuckDBExecutor(data_profile.DuckDBExecutor):
             rows = self.connection.execute(f"DESCRIBE SELECT * FROM {source} AS kumo_src").fetchall()
         except Exception as exc:  # noqa: BLE001 - surface DuckDB's reason
             raise ReconcileError(f"DuckDB could not read the columns: {_first_line(exc)}") from None
-        return [Column(str(row[0]), str(row[1])) for row in rows]
+        return [_from_node(data_profile._duckdb_node(str(row[0]), str(row[1])), str(row[1])) for row in rows]
 
     def run(self, sql: str) -> list[dict]:
         try:
@@ -187,7 +232,7 @@ class BigQueryExecutor(data_profile.BigQueryExecutor):
             raise ReconcileError(f"BigQuery rejected the input: {result.error_message}")
         if not result.schema_observed or not result.schema:
             raise ReconcileError("BigQuery's dry run returned no columns for the input")
-        return [Column(item.name, item.type, item.mode == "REPEATED") for item in result.schema]
+        return [_from_field(item) for item in result.schema]
 
     def estimate(self, sql: str) -> int | None:
         return _wrapped(super().estimate, sql)
@@ -228,10 +273,10 @@ def _query(text: str, flag: str) -> str:
     return sql
 
 
-def resolve_input(spec: str, executor, side: str = "left") -> Input:
+def resolve_input(spec: str, executor, side: str = "left", flag: str | None = None) -> Input:
     """A table name, a path to a ``.sql`` file, or an inline ``SELECT``/``WITH`` query."""
 
-    flag = f"--{side}"
+    flag = flag or f"--{side}"
     if not isinstance(spec, str) or not spec.strip():
         raise ReconcileError(f"{flag} needs a table name, a .sql file or a SELECT query")
     text = spec.strip()
@@ -438,6 +483,10 @@ class Plan:
     standalone: bool = False
     crosswalk: str | None = None
     sql: str = ""
+    #: one per compared pair: the SQL that is true when it differs, and how it is compared
+    differs: list[str] = field(default_factory=list)
+    comparisons: list[dict] = field(default_factory=list)
+    float_tolerance: tuple[float, float] = (DEFAULT_FLOAT_ABSOLUTE, DEFAULT_FLOAT_RELATIVE)
 
 
 def _names(value: Iterable[str] | str | None) -> list[str]:
@@ -537,24 +586,205 @@ def _rule_sql(rule: KnownDiffRule, sides: _Sides, dialect: str, needed: dict[str
     return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts) + ")"
 
 
-def _differs(left: Column, right: Column, dialect: str) -> str:
+# ------------------------------------------------------------- comparisons
+
+
+def _amount(value: object, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ReconcileError(f"{what} must be a number of 0 or more")
+    return float(value)
+
+
+def _parse_amount(name: str, value: object) -> tuple[float, float]:
+    """``0.01`` (absolute), ``"0.01:1e-6"`` (absolute and relative), ``(0.01, 1e-6)`` or ``"exact"``."""
+
+    what = f"--tolerance {name}"
+    if isinstance(value, (tuple, list)) and len(value) == 2:
+        return _amount(value[0], f"{what} (absolute)"), _amount(value[1], f"{what} (relative)")
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text == "exact":
+            return 0.0, 0.0
+        absolute, _, relative = text.partition(":")
+        try:
+            numbers = float(absolute), float(relative) if relative.strip() else 0.0
+        except ValueError:
+            raise ReconcileError(f"{what}={value}: write a number (absolute), ABSOLUTE:RELATIVE, or exact") from None
+        return _amount(numbers[0], f"{what} (absolute)"), _amount(numbers[1], f"{what} (relative)")
+    return _amount(value, what), 0.0
+
+
+def _tolerance_specs(value: object) -> dict[str, tuple[str, float, float]]:
+    """Per-column tolerances by folded name: ``"amount=0.01, rate=0:1e-6, score=exact"``, a list of those, or a mapping."""
+
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        items = [(str(name).strip().strip("`"), amount) for name, amount in value.items()]
+    else:
+        items = []
+        for text in [value] if isinstance(value, str) else list(value):
+            for part in str(text).split(","):
+                if not part.strip():
+                    continue
+                name, sep, amount = part.partition("=")
+                if not sep or not name.strip() or not amount.strip():
+                    raise ReconcileError(f"--tolerance {part.strip()!r}: write column=ABSOLUTE, column=ABSOLUTE:RELATIVE "
+                                         "or column=exact")
+                items.append((name.strip().strip("`"), amount.strip()))
+    specs: dict[str, tuple[str, float, float]] = {}
+    for name, amount in items:
+        if not name:
+            raise ReconcileError("--tolerance names no column")
+        if name.casefold() in specs:
+            raise ReconcileError(f"--tolerance gives {name} twice")
+        specs[name.casefold()] = (name, *_parse_amount(name, amount))
+    return specs
+
+
+def _number(value: float) -> str:
+    return repr(float(value))
+
+
+def _within(a: str, b: str, left: Column, right: Column, dialect: str, absolute: float, relative: float) -> str:
+    """True when the two numbers differ by more than the tolerance; never NULL.
+
+    Two NULLs agree and a NULL differs from a value; NaN agrees with NaN; an infinity agrees only with the same
+    infinity; otherwise ``|a - b| > max(absolute, relative x max(|a|, |b|))`` differs (with both 0: any difference)."""
+
+    nan, inf = ("IS_NAN", "IS_INF") if dialect == "bigquery" else ("isnan", "isinf")
+    whens = [f"WHEN {a} IS NULL OR {b} IS NULL THEN ({a} IS NULL) <> ({b} IS NULL)", f"WHEN {a} = {b} THEN FALSE"]
+    special = [f"{fn}({x})" for x, column in ((a, left), (b, right)) if column.is_float for fn in (nan, inf)]
+    if special:  # NaN never equals itself on BigQuery, and inf - inf is NaN: settle both before subtracting
+        both_nan = f"NOT ({nan}({a}) AND {nan}({b}))" if left.is_float and right.is_float else "TRUE"
+        whens.append(f"WHEN {' OR '.join(special)} THEN {both_nan}")
+    if relative:
+        tail = f"ELSE ABS({a} - {b}) > GREATEST({_number(absolute)}, {_number(relative)} * GREATEST(ABS({a}), ABS({b})))"
+    elif absolute:
+        tail = f"ELSE ABS({a} - {b}) > {_number(absolute)}"
+    else:
+        tail = "ELSE TRUE"
+    return "CASE " + " ".join(whens) + f" {tail} END"
+
+
+def _shape(left: Column, right: Column) -> str:
+    """``same`` (the same STRUCT fields in the same order and spelling at every level), ``reordered`` (the same
+    fields, letter case aside, but in another order or case somewhere) or ``differ`` (the fields or nesting differ)."""
+
+    if not left.fields and not right.fields:
+        return "same" if left.repeated == right.repeated else "differ"
+    names = [item.name.casefold() for item in left.fields]
+    others = {item.name.casefold(): item for item in right.fields}
+    if (left.repeated != right.repeated or len(set(names)) != len(names) or len(others) != len(right.fields)
+            or set(names) != set(others)):
+        return "differ"
+    shape = "same" if [item.name for item in left.fields] == [item.name for item in right.fields] else "reordered"
+    for item in left.fields:
+        inner = _shape(item, others[item.name.casefold()])
+        if inner == "differ":
+            return "differ"
+        if inner == "reordered":
+            shape = "reordered"
+    return shape
+
+
+def _rebuilt(expr: str, source: Column, target: Column, depth: int = 0) -> str:
+    """BigQuery: ``expr`` (shaped like ``source``) rebuilt with its STRUCT fields in ``target``'s order and spelling, at
+    every level, so ``TO_JSON_STRING`` writes both sides alike. NULL stays NULL; array elements keep their order."""
+
+    if not source.fields:
+        return expr
+    q = lambda name: _ident(name, "bigquery")  # noqa: E731
+    by_name = {item.name.casefold(): item for item in source.fields}
+
+    def members(base: str) -> str:
+        parts = []
+        for item in target.fields:
+            own = by_name[item.name.casefold()]
+            parts.append(f"{_rebuilt(f'{base}.{q(own.name)}', own, item, depth + 1)} AS {q(item.name)}")
+        return ", ".join(parts)
+
+    if source.repeated:
+        element, offset = f"kumo_e{depth}", f"kumo_o{depth}"
+        return (f"IF({expr} IS NULL, NULL, ARRAY(SELECT AS STRUCT {members(element)} FROM UNNEST({expr}) AS {element} "
+                f"WITH OFFSET AS {offset} ORDER BY {offset}))")
+    return f"IF({expr} IS NULL, NULL, STRUCT({members(expr)}))"
+
+
+def refuse_complex_key(column: Column) -> None:
+    """A key is joined and grouped on: BigQuery can do neither with a STRUCT, an array, JSON or GEOGRAPHY."""
+
+    if column.complex:
+        raise ReconcileError(f"the key column {column.name} is {column.type or 'a nested value'}: BigQuery cannot join or "
+                             "group on a STRUCT, array, JSON or GEOGRAPHY value, so neither engine does here. Key on its "
+                             "fields instead, with a query such as SELECT s.id AS s_id, * FROM ...")
+
+
+def _tolerances(compared: Sequence[tuple[Column, Column]], specs: dict[str, tuple[str, float, float]],
+                defaults: tuple[float, float]) -> tuple[list[tuple[float, float, str] | None], set[str]]:
+    """The tolerance each compared pair gets (``None``: exact equality), and the --tolerance names that were used."""
+
+    chosen: list[tuple[float, float, str] | None] = []
+    used: set[str] = set()
+    for left, right in compared:
+        fold = next((name.casefold() for name in (left.name, right.name) if name.casefold() in specs), None)
+        if fold is not None:
+            used.add(fold)
+            name, absolute, relative = specs[fold]
+            if left.complex or right.complex:
+                raise ReconcileError(f"--tolerance {name}: {left.name} is a STRUCT or array, compared as one whole value; "
+                                     "a tolerance cannot reach inside it")
+            if not (left.numeric and right.numeric):
+                raise ReconcileError(f"--tolerance {name}: {left.name} is not a number on both sides "
+                                     f"({left.type or '?'} and {right.type or '?'})")
+            chosen.append((absolute, relative, "--tolerance"))
+        elif left.numeric and right.numeric and (left.is_float or right.is_float):
+            chosen.append((*defaults, "default"))
+        else:
+            chosen.append(None)
+    return chosen, used
+
+
+def _compare(left: Column, right: Column, dialect: str, tolerance: tuple[float, float, str] | None) -> tuple[str, dict]:
+    """The SQL that is true when the two columns differ on a joined row, and how it compares (for the result)."""
+
     a, b = f"l.{_ident(left.name, dialect)}", f"r.{_ident(right.name, dialect)}"
-    if dialect == "bigquery" and (left.complex or right.complex):
-        return f"TO_JSON_STRING({a}) IS DISTINCT FROM TO_JSON_STRING({b})"
-    return f"{a} IS DISTINCT FROM {b}"
+    if left.complex or right.complex:
+        shape = _shape(left, right)
+        how = {"method": "whole_value", "fields": shape, "floats_inside": left.floats_inside or right.floats_inside}
+        if dialect == "bigquery":  # BigQuery cannot compare arrays at all, nor STRUCTs that hold them: compare the JSON text
+            other = _rebuilt(b, right, left) if shape == "reordered" else b
+            return f"TO_JSON_STRING({a}) IS DISTINCT FROM TO_JSON_STRING({other})", how
+        return f"{a} IS DISTINCT FROM {b}", how  # DuckDB compares nested values itself, STRUCT fields by name
+    if tolerance is not None:
+        absolute, relative, source = tolerance
+        if not (absolute or relative):
+            how = {"method": "exact"}
+        else:
+            how = {"method": "tolerance", "absolute": absolute, "relative": relative, "source": source}
+        return _within(a, b, left, right, dialect, absolute, relative), how
+    return f"{a} IS DISTINCT FROM {b}", {"method": "exact"}
+
+
+def json_rows(condition: str, fields: Sequence[tuple[str, str]], order: str, limit: int, dialect: str, alias: str) -> str:
+    """An aggregate: up to ``limit`` objects ``{name: expr, ...}`` of the rows where ``condition`` holds, in ``order``, as
+    JSON text (``[{"id": 7}, ...]``; NULL or ``null`` when there are none). Never a ``DISTINCT``."""
+
+    if dialect == "bigquery":
+        members = ", ".join(f"{expr} AS {_ident(name, 'bigquery')}" for name, expr in fields)
+        return (f"TO_JSON_STRING(ARRAY_AGG(IF({condition}, STRUCT({members}), NULL) IGNORE NULLS ORDER BY {order} "
+                f"LIMIT {limit})) AS {alias}")
+    pairs = ", ".join(f"{_literal(name)}, {expr}" for name, expr in fields)
+    return (f"CAST(to_json(array_slice(list(json_object({pairs}) ORDER BY {order}) FILTER (WHERE {condition}), 1, "
+            f"{limit})) AS VARCHAR) AS {alias}")
 
 
 def _sample(condition: str, plan: Plan, alias: str) -> str:
     """Up to ``sample_limit`` keys of the rows where ``condition`` holds, as JSON text: ``[{"id": 7}, ...]``."""
 
     order = ", ".join(f"kumo_k{i}" for i in range(len(plan.keys)))
-    if plan.dialect == "bigquery":
-        fields = ", ".join(f"kumo_k{i} AS {_ident(left, 'bigquery')}" for i, (left, _) in enumerate(plan.keys))
-        return (f"TO_JSON_STRING(ARRAY_AGG(IF({condition}, STRUCT({fields}), NULL) IGNORE NULLS ORDER BY {order} "
-                f"LIMIT {plan.sample_limit})) AS {alias}")
-    pairs = ", ".join(f"{_literal(left)}, kumo_k{i}" for i, (left, _) in enumerate(plan.keys))
-    return (f"CAST(to_json(array_slice(list(json_object({pairs}) ORDER BY {order}) FILTER (WHERE {condition}), 1, "
-            f"{plan.sample_limit})) AS VARCHAR) AS {alias}")
+    fields = [(left, f"kumo_k{i}") for i, (left, _) in enumerate(plan.keys)]
+    return json_rows(condition, fields, order, plan.sample_limit, plan.dialect, alias)
 
 
 def _build_sql(plan: Plan, rule_sql: Sequence[str], needed: dict[str, dict[str, Column]]) -> str:
@@ -569,7 +799,7 @@ def _build_sql(plan: Plan, rule_sql: Sequence[str], needed: dict[str, dict[str, 
     not_null_r = " AND ".join(f"{q(b)} IS NOT NULL" for _, b in plan.keys)
     flags = [f"l.{MARKER} IS NOT NULL AS kumo_hl", f"r.{MARKER} IS NOT NULL AS kumo_hr",
              f"({null_l}) AS kumo_nl", f"({null_r}) AS kumo_nr"]
-    flags += [f"{_differs(a, b, d)} AS kumo_m{i}" for i, (a, b) in enumerate(plan.compared)]
+    flags += [f"{text} AS kumo_m{i}" for i, text in enumerate(plan.differs)]
     flags += [f"{text} AS kumo_p{j}" for j, text in enumerate(rule_sql, 1)]
     if plan.include_samples:
         flags += [f"COALESCE(l.{q(a)}, r.{q(b)}) AS kumo_k{i}" for i, (a, b) in enumerate(plan.keys)]
@@ -617,15 +847,21 @@ def _build_sql(plan: Plan, rule_sql: Sequence[str], needed: dict[str, dict[str, 
 
 def plan_reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *, ignore: Iterable[str] | str = (),
                    crosswalk: object = None, rules: object = None, include_samples: bool = False,
-                   sample_limit: int = DEFAULT_SAMPLE_LIMIT, standalone: bool = False) -> Plan:
+                   sample_limit: int = DEFAULT_SAMPLE_LIMIT, standalone: bool = False,
+                   float_tolerance: float = DEFAULT_FLOAT_ABSOLUTE, float_relative: float = DEFAULT_FLOAT_RELATIVE,
+                   tolerance: object = None) -> Plan:
     """Resolve both sides, the key, the columns to compare and the rules, and write the one comparison query.
 
+    Floating-point columns agree within ``max(float_tolerance, float_relative x the larger magnitude)``;
+    ``tolerance`` sets a column's own (:func:`_tolerance_specs`), and gives a NUMERIC or integer column one.
     Raises :class:`ReconcileError` (or :class:`~kumosql.reconcile_rules.RuleError`) with what to change."""
 
     dialect = executor.dialect
     if include_samples and (isinstance(sample_limit, bool) or not isinstance(sample_limit, int)
                             or not 1 <= sample_limit <= MAX_SAMPLE_LIMIT):
         raise ReconcileError(f"the sample limit must be a whole number from 1 to {MAX_SAMPLE_LIMIT}")
+    defaults = (_amount(float_tolerance, "--float-tolerance"), _amount(float_relative, "--float-relative"))
+    specs = _tolerance_specs(tolerance)
     lin, rin = resolve_input(left, executor, "left"), resolve_input(right, executor, "right")
     key_specs = _key_specs(keys)
     ignore_names = _names(ignore)
@@ -655,6 +891,11 @@ def plan_reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *
         rc = rmap.get(rname.casefold())
         if rc is None:
             raise ReconcileError(f"the right side has no key column {rname!r}; it has {_listed(rcols)}")
+        for column in (lc, rc):
+            refuse_complex_key(column)
+        if lc.is_float or rc.is_float:
+            notes.append(f"the key column {lc.name} is floating-point: rows join only when the values are exactly equal "
+                         "(the float tolerance applies to compared columns, never to the key)")
         key_pairs.append((lc.name, rc.name))
     key_l = {a.casefold() for a, _ in key_pairs}
     key_r = {b.casefold() for _, b in key_pairs}
@@ -752,9 +993,32 @@ def plan_reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *
     if right_only:
         notes.append(f"{len(right_only)} column(s) only on the right were not compared")
 
+    chosen, used = _tolerances(compared, specs, defaults)
+    for fold, (name, _absolute, _relative) in specs.items():
+        if fold in used:
+            continue
+        if fold in key_l | key_r:
+            raise ReconcileError(f"--tolerance {name}: it is part of the key, which joins on exact equality")
+        if lmap.get(fold) is None and rmap.get(fold) is None:
+            raise ReconcileError(f"--tolerance {name}: neither side has this column")
+        notes.append(f"--tolerance {name}: the column is not compared, so its tolerance does not apply")
+    differs, comparisons = [], []
+    for (a, b), tol in zip(compared, chosen):
+        text, how = _compare(a, b, dialect, tol)
+        differs.append(text)
+        comparisons.append(how)
+    inside = [a.name for (a, _), how in zip(compared, comparisons) if how.get("floats_inside")]
+    if inside:
+        notes.append(f"{', '.join(inside)} hold floating-point values inside a STRUCT or array: those are compared "
+                     "exactly, as part of the whole value; the float tolerance does not reach inside")
+    for (a, _), how in zip(compared, comparisons):
+        if how.get("fields") == "differ":
+            notes.append(f"{a.name}: the two sides' STRUCT fields differ in name or nesting, so a row with a value on "
+                         "both sides cannot match; compare the fields themselves with --left/--right queries")
+
     plan = Plan(lin, rin, dialect, key_pairs, compared, left_only, right_only, ignored, skipped, rule_list,
                 column_explanations, notes, include_samples, sample_limit, standalone,
-                walk.source if walk else None)
+                walk.source if walk else None, differs=differs, comparisons=comparisons, float_tolerance=defaults)
     plan.sql = _build_sql(plan, rule_sql, needed)
     _readonly(plan.sql)
     return plan
@@ -825,6 +1089,8 @@ class ReconcileResult:
     duplicate_keys: dict[str, int]
     null_keys: dict[str, int]
     column_explanations: dict[str, str] = field(default_factory=dict)
+    comparisons: dict[str, dict] = field(default_factory=dict)
+    float_tolerance: dict[str, float] = field(default_factory=dict)
     samples_included: bool = False
     samples: dict | None = None
     crosswalk: str | None = None
@@ -843,6 +1109,8 @@ class ReconcileResult:
             "left": self.left, "right": self.right, "dialect": self.dialect, "keys": list(self.keys),
             "ignored_columns": list(self.ignored_columns), "skipped_columns": list(self.skipped_columns),
             "compared_columns": list(self.compared_columns), "column_map": dict(self.column_map),
+            "float_tolerance": dict(self.float_tolerance),
+            "comparisons": {name: dict(how) for name, how in self.comparisons.items()},
             "left_only_columns": list(self.left_only_columns), "right_only_columns": list(self.right_only_columns),
             "left_rows": self.left_rows, "right_rows": self.right_rows,
             "keys_only_left": self.keys_only_left, "keys_only_right": self.keys_only_right, "keys_both": self.keys_both,
@@ -898,6 +1166,8 @@ def _result(plan: Plan, row: dict, executor) -> ReconcileResult:
         left=plan.left.spec, right=plan.right.spec, dialect=plan.dialect, keys=[a for a, _ in plan.keys],
         ignored_columns=list(plan.ignored), skipped_columns=list(plan.skipped),
         compared_columns=[a.name for a, _ in plan.compared], column_map=column_map,
+        float_tolerance={"absolute": plan.float_tolerance[0], "relative": plan.float_tolerance[1]},
+        comparisons={a.name: dict(how) for (a, _), how in zip(plan.compared, plan.comparisons)},
         left_only_columns=list(plan.left_only), right_only_columns=list(plan.right_only),
         left_rows=n("left_rows"), right_rows=n("right_rows"),
         keys_only_left=n("only_left"), keys_only_right=n("only_right"), keys_both=n("both_sides"),
@@ -919,17 +1189,22 @@ def _execute(plan: Plan, executor) -> dict:
 
 def reconcile(left: str, right: str, keys: Iterable[str] | str, executor, *, ignore: Iterable[str] | str = (),
               crosswalk: object = None, rules: object = None, include_samples: bool = False,
-              sample_limit: int = DEFAULT_SAMPLE_LIMIT) -> ReconcileResult:
+              sample_limit: int = DEFAULT_SAMPLE_LIMIT, float_tolerance: float = DEFAULT_FLOAT_ABSOLUTE,
+              float_relative: float = DEFAULT_FLOAT_RELATIVE, tolerance: object = None) -> ReconcileResult:
     """Compare ``left`` and ``right`` joined on ``keys`` in one query and sort every row (see the module docstring).
 
     ``left`` and ``right`` are table names, ``.sql`` files or inline ``SELECT``/``WITH`` queries; ``keys`` is
     ``"a,b"`` or ``["a", "left_b=right_b"]``; ``ignore`` names columns not to compare; ``crosswalk`` is a
     crosswalk file, ``"saved"`` or data (:func:`load_crosswalk`); ``rules`` a rules file or a list of
-    :class:`~kumosql.reconcile_rules.KnownDiffRule`. Raises :class:`ReconcileError`, :class:`ByteCapExceeded`
-    when a BigQuery dry run is over the cap, and :class:`~kumosql.reconcile_rules.RuleError`."""
+    :class:`~kumosql.reconcile_rules.KnownDiffRule`. ``float_tolerance`` (absolute) and ``float_relative`` set how
+    close two floats must be; ``tolerance`` gives single columns their own (``"amount=0.01"``, ``"rate=0:1e-6"``,
+    ``"score=exact"``, or a mapping). The result's ``comparisons`` says how each column was compared. Raises
+    :class:`ReconcileError`, :class:`ByteCapExceeded` when a BigQuery dry run is over the cap, and
+    :class:`~kumosql.reconcile_rules.RuleError`."""
 
     plan = plan_reconcile(left, right, keys, executor, ignore=ignore, crosswalk=crosswalk, rules=rules,
-                          include_samples=include_samples, sample_limit=sample_limit)
+                          include_samples=include_samples, sample_limit=sample_limit, float_tolerance=float_tolerance,
+                          float_relative=float_relative, tolerance=tolerance)
     return _result(plan, _execute(plan, executor), executor)
 
 
@@ -989,7 +1264,9 @@ def _growth(rule: KnownDiffRule, current: int, growth_factor: float, min_growth:
 
 def check_rules(left: str, right: str, keys: Iterable[str] | str, executor, rules: object, *,
                 ignore: Iterable[str] | str = (), crosswalk: object = None,
-                growth_factor: float = DEFAULT_GROWTH_FACTOR, min_growth: int = DEFAULT_MIN_GROWTH) -> RulesCheckResult:
+                growth_factor: float = DEFAULT_GROWTH_FACTOR, min_growth: int = DEFAULT_MIN_GROWTH,
+                float_tolerance: float = DEFAULT_FLOAT_ABSOLUTE, float_relative: float = DEFAULT_FLOAT_RELATIVE,
+                tolerance: object = None) -> RulesCheckResult:
     """Run every rule against current data in one query and flag the stale ones.
 
     ``current_count`` is the rows a rule explains in first-match order (what :func:`reconcile` reports);
@@ -1007,7 +1284,8 @@ def check_rules(left: str, right: str, keys: Iterable[str] | str, executor, rule
     if not rule_list:
         raise ReconcileError("there are no rules to check")
     plan = plan_reconcile(left, right, keys, executor, ignore=ignore, crosswalk=crosswalk, rules=rule_list,
-                          standalone=True)
+                          standalone=True, float_tolerance=float_tolerance, float_relative=float_relative,
+                          tolerance=tolerance)
     row = _execute(plan, executor)
     result = _result(plan, row, executor)
     checked = []
