@@ -581,6 +581,10 @@ python tools/transformation_bench.py tpch tpcds job --json results.json
 
 `python -m kumosql mcp PROJECT` is one stdio MCP server that loads a Dataform project once and answers one question per call, in about 2 KB with counts, explicit unknowns and a next step: describe a table, trace a column, assess a change, find an existing table, find the table to use, compare two queries, check a draft query, profile a table (BigQuery only on request, a dry run first), and find where rows are dropped on the way to a column. It is read-only and also serves the saved data profiles. See [docs/mcp-server.md](docs/mcp-server.md).
 
+## BI workbooks and notebooks
+
+`python -m kumosql workbook show|find|tables|patch FILE` reads a Tableau workbook (`.twb`, or the `.twb` inside a `.twbx`) as compact text: data sources, custom SQL and the warehouse tables it reads, calculated fields with readable formulas, filters, sheets and dashboards. `find FILE "Profit Ratio"` says in one call which sheets use a field and what its formula is. `patch` renames a field, swaps a data source, or sets a color or number format; each patch is parsed again and diffed, and is written only with `--apply` or `--output`. `python -m kumosql notebook timeline FILE` prints a Jupyter notebook's cells, outputs and errors under a hard size cap. See [docs/bi-workbooks.md](docs/bi-workbooks.md).
+
 ## BigQuery test bed
 
 `examples/bq_testbed/` builds a deliberately messy, low-cost model layer over a public dataset and runs a query workload to build up job history. See [docs/bigquery-testbed.md](docs/bigquery-testbed.md) for setup, cost guards and access roles.
@@ -609,6 +613,9 @@ Every command prints `--help`.
 | `python -m kumosql rules check\|list --rules FILE` | Re-run known-difference rules on current data and flag stale or grown ones (exit 1), or list them |
 | `python -m kumosql profile-mcp` | Serve saved data profiles to agents as read-only MCP resources over stdio |
 | `python -m kumosql mcp PROJECT` | One read-only MCP server for agents: loads the project once and answers one question per call in about 2 KB (`describe_table`, `trace_column`, `impact`, `find_existing`, `find_tables`, `compare_queries`, `check_query`, `profile_table`, `list_tables`, `clean_query`, `rows_filtered`), plus the saved data profiles |
+| `python -m kumosql workbook show\|find\|tables FILE` | A Tableau workbook (`.twb`, `.twbx`) as text (`--sheet`, `--datasource`, `--json`); `find FILE FIELD` gives a field's formula and the sheets that use it, `find FILE --table T` who reads a warehouse table; `tables` lists the tables each data source reads |
+| `python -m kumosql workbook patch FILE rename-field\|swap-datasource\|set-color\|set-format ...` | Change a workbook in place, checked by parsing it again and diffing the structured view; preview by default, writes only with `--apply` (the file) or `--output PATH` |
+| `python -m kumosql notebook timeline FILE` | A Jupyter notebook's cells, outputs and errors as a compact timeline under a hard cap (`--max-chars`, `--cells`, `--errors-only`, `--json`) |
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |
 | `python -m kumosql equivalence list\|add\|remove` | Saved "column X of table A is column Y of table B" declarations |
 | `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate |
