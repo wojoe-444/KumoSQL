@@ -453,33 +453,88 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def equivalence_main(argv: list[str] | None = None) -> int:
+    """``python -m kumosql equivalence list|add|remove|suggest``: the saved declarations and crosswalk records."""
+
     import argparse
     import json
     import sys
+    from pathlib import Path
 
-    parser = argparse.ArgumentParser(prog="python -m kumosql equivalence", description="Saved column equivalences between tables")
+    def say(text: str) -> None:
+        # a console that cannot write ≡ (cp1252 on Windows) must not turn a saved entry into a reported error
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            print(text.replace("≡", "==").encode("ascii", "backslashreplace").decode("ascii"))
+
+    statuses = saved.STATUSES
+    parser = argparse.ArgumentParser(
+        prog="python -m kumosql equivalence",
+        description="Saved column equivalences between tables, and the crosswalk records (differs, missing) beside them",
+    )
     sub = parser.add_subparsers(dest="action", required=True)
-    sub.add_parser("list")
-    add = sub.add_parser("add", help="LEFT RIGHT [LEFTCOL=RIGHTCOL ...] [--whole]")
-    add.add_argument("left")
-    add.add_argument("right")
-    add.add_argument("columns", nargs="*", help="pairs written LEFTCOL=RIGHTCOL")
+    listing = sub.add_parser("list", help="print the saved entries as JSON")
+    listing.add_argument("--status", choices=statuses, help="only entries of this status")
+    listing.add_argument("--table", help="only entries naming this table on either side (full name or its last parts)")
+    listing.add_argument("--column", help="only entries naming this column")
+    add = sub.add_parser("add", help="LEFT RIGHT [LEFTCOL=RIGHTCOL ...] [--whole] [--status S]")
+    add.add_argument("left", help="a table; - when only RIGHT exists (with --status missing)")
+    add.add_argument("right", help="a table; - when only LEFT exists (with --status missing)")
+    add.add_argument("columns", nargs="*", help="pairs written LEFTCOL=RIGHTCOL; LEFTCOL= or =RIGHTCOL for a missing column")
     add.add_argument("--whole", action="store_true", help="the two tables hold the same rows (other columns keep their names)")
-    remove = sub.add_parser("remove")
-    remove.add_argument("right")
+    add.add_argument("--status", choices=statuses, default="equal",
+                     help="equal (default; proofs assume it), differs (the values are known to differ) or missing "
+                          "(no counterpart); only equal ever enters a proof")
+    add.add_argument("--explanation", metavar="RULE", help="the known-difference rule behind a differs or missing entry")
+    add.add_argument("--evidence", metavar="TEXT", help="a query or a link that shows the entry holds")
+    add.add_argument("--verified-at", metavar="YYYY-MM-DD", help="the date someone checked the entry")
+    remove = sub.add_parser("remove", help="RIGHT [--left LEFT] [--status S]")
+    remove.add_argument("right", help="the right table (for a table with no counterpart, the table)")
+    remove.add_argument("--left", help="only the entries from this left table")
+    remove.add_argument("--status", choices=statuses, help="only entries of this status (default: every status)")
+    suggest = sub.add_parser("suggest", help="--project DIR --left SPEC --right SPEC: propose pairs, never save them")
+    suggest.add_argument("--project", required=True, metavar="DIR", help="Dataform or SQL folder, or compiled graph JSON")
+    suggest.add_argument("--left", action="append", required=True, metavar="SPEC",
+                         help="the left tables: names, datasets, folders, prefixes or globs, comma-separated or repeated")
+    suggest.add_argument("--right", action="append", required=True, metavar="SPEC", help="the right tables, as --left")
+    suggest.add_argument("--source-schema", type=Path, metavar="FILE", help="source schema JSON, as for pipeline-report")
+    suggest.add_argument("--top", type=int, default=20, metavar="N", help="the most suggestions to print (default 20)")
+    suggest.add_argument("--min-score", type=float, default=0.3, metavar="X", help="the lowest score to print (default 0.3)")
     args = parser.parse_args(argv)
     try:
         if args.action == "list":
-            json.dump([i.to_json() for i in saved.load()], sys.stdout, indent=2)
+            if args.table or args.column:
+                entries = saved.lookup(args.table, args.column, status=args.status)
+            else:
+                entries = [i.to_json() for i in saved.load_all() if args.status is None or i.status == args.status]
+            json.dump(entries, sys.stdout, indent=2)
             sys.stdout.write("\n")
         elif args.action == "add":
             pairs = [pair.split("=", 1) for pair in args.columns]
             if any(len(pair) != 2 for pair in pairs):
                 raise ValueError("write column pairs as LEFTCOL=RIGHTCOL")
-            item = saved.add({"left": args.left, "right": args.right, "columns": pairs, "whole": args.whole})
-            print(f"saved {item.label}")
+            item = saved.add({
+                "left": args.left, "right": args.right, "columns": pairs, "whole": args.whole, "status": args.status,
+                "explanation": args.explanation, "evidence": args.evidence, "verified_at": args.verified_at,
+            })
+            say(f"saved {item.label}")
+        elif args.action == "remove":
+            print("removed" if saved.remove(args.right, args.left, args.status) else "nothing to remove")
         else:
-            print("removed" if saved.remove(args.right) else "nothing to remove")
+            from .crosswalk import select_tables, suggest_equivalences
+            from .mcp_session import load_project
+            from .resilience import PipelineLoadError
+
+            try:
+                pipeline = load_project(Path(args.project), args.source_schema)
+            except (OSError, PipelineLoadError) as error:
+                raise ValueError(f"could not load {args.project}: {error}") from None
+            lefts, left_how = select_tables(pipeline, args.left)
+            rights, right_how = select_tables(pipeline, args.right)
+            result = suggest_equivalences(pipeline, lefts, rights, top=args.top, min_score=args.min_score)
+            result["selection"] = {"left": left_how, "right": right_how}
+            json.dump(result, sys.stdout, indent=2)
+            sys.stdout.write("\n")
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

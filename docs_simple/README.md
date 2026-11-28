@@ -23,6 +23,7 @@ This folder is the plain-language companion to [the full documentation](../docs/
 | Load a Dataform git repository | [Dataform repositories](dataform-repositories.md) |
 | Clean up one query | [Rewrite rules](rewrite-rules.md) |
 | Find dependencies and repeated work | [Pipeline analysis](pipeline-analysis.md) |
+| Write down how an old set of tables maps to a new one, or get suggested pairs | [Saved equivalences and the crosswalk](../docs/crosswalk.md) (full reference only) |
 | Review cost or a proposed change | [Cost and change reports](cost-and-change-reports.md) |
 | Reduce the number of models | [Refactor](refactor.md) |
 | Simplify an explicit set of table definitions | [Table minimization](table-minimization.md) |
