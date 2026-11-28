@@ -240,6 +240,20 @@ The exit status is 0 when the key is unique and never NULL (and, with `--join`, 
 
 `key-check` is the command-line face of the agent server's [`join_profile`](mcp-server.md#join_profile-and-key-measurements) plus duplicate groups. Both group each side by its key once and read every number from those groups, built from the same SQL pieces in [`kumosql.join_sql`](../src/kumosql/join_sql.py), so each table is read once and the shared numbers agree. Unlike `join_profile`, `key-check` saves nothing.
 
+## Load timestamps: a suggested `--ignore`
+
+A column such as `_loaded_at` or `etl_updated_at` is rewritten whenever a table is rebuilt, so it differs on every key even when the data agrees, and every row comes out unexplained. After a run, the result lists such columns under `audit_column_suggestions` (`kumosql.audit_columns`, ported from KingyoOrchestrator's audit-column heuristic):
+
+```json
+"audit_column_suggestions": [
+  {"column": "_loaded_at", "confidence": "low", "evidence": "counts", "pairs": 1,
+   "reason": "differs on 40 of the 40 keys on both sides while the other compared columns differ on 1 at most (one comparison). ...",
+   "suggested": "--ignore _loaded_at", "applied": false}
+]
+```
+
+A column is suggested when its type is `TIMESTAMP` or `DATETIME` (a `DATE` only with a load-like name such as `etl_load_date`; with no type, its name), it differs on at least 95% of the keys on both sides, and the other compared columns' differences, added up, touch at most the other 5%. One run is one comparison, so the confidence is `low`. **Nothing is applied**: the column is still compared and its rows still count as unexplained until you rerun with `--ignore`. The suggestion is `--ignore` rather than a known-difference rule on purpose: a rule explains whole rows, so it would also hide any other difference on those rows.
+
 ## Checking the rules later
 
 ```

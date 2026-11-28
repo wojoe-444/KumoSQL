@@ -31,7 +31,8 @@ practice. A match is therefore strong evidence that the compared columns
 hold the same rows, not a proof. Differences of representation are differences: ``1`` versus
 ``1.0`` after a type change, or a nested ``STRUCT`` whose field order
 changed. Use ``normalize`` for expected noise such as float rounding, and
-``ignore_columns`` for load timestamps.
+``ignore_columns`` for load timestamps (:mod:`kumosql.audit_columns` proposes
+them from saved results; it never applies them).
 """
 
 from __future__ import annotations
@@ -659,6 +660,12 @@ def compare_snapshots(
 ) -> list[ModelDiff]:
     """Compare the saved results of two :meth:`ComparisonPlan.fingerprint_sql` runs."""
 
+    return summarize_comparison(join_snapshots(before_rows, after_rows))
+
+
+def join_snapshots(before_rows: Iterable[Mapping], after_rows: Iterable[Mapping]) -> list[dict]:
+    """Two saved fingerprint runs joined into the rows a :meth:`ComparisonPlan.compare_sql` run returns."""
+
     def index(rows: Iterable[Mapping]) -> dict[tuple[str, str], Mapping]:
         return {(str(row["model"]), str(row["column_name"])): row for row in rows}
 
@@ -681,7 +688,7 @@ def compare_snapshots(
                 "matches": b is not None and a is not None and b_count == a_count and b_sum == a_sum,
             }
         )
-    return summarize_comparison(joined)
+    return joined
 
 
 def _int(value) -> int | None:

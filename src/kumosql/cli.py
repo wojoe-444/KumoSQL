@@ -15,7 +15,7 @@ from kumo_sql_prover.sqlx import looks_like_sqlx
 from .synthetic_check import attach_synthetic_check
 from .evidence_summary import DEFAULT_MIN_CHANGED, summarize_evidence
 from .dryrun import check_rewrite, dry_run
-from .fingerprint import Location, compare_snapshots, plan_output_comparison, summarize_comparison
+from .fingerprint import Location, join_snapshots, plan_output_comparison, summarize_comparison
 from .scopes import Scope, delete_scope, discover_fields, get_scope, list_scopes, parse_scope, save_scope
 from .coverage import Thresholds, sample_impact_reports, score_verdicts
 from .pipeline import load_compiled_graph, load_sqlx_project
@@ -821,19 +821,27 @@ def compare_outputs_main(argv: list[str] | None = None) -> int:
     )
     summarize.add_argument("results", type=Path, help="Results of the compare query, or the before fingerprints")
     summarize.add_argument("after", type=Path, nargs="?", help="The after fingerprints, when comparing snapshots")
+    summarize.add_argument(
+        "--previous",
+        type=Path,
+        help="An earlier run, to confirm audit-column suggestions: the earlier compare results, or, with two "
+        "fingerprint files, the snapshot taken before the first one",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "summarize":
         first = json.loads(args.results.read_text(encoding="utf-8"))
         if args.after:
-            diffs = compare_snapshots(first, json.loads(args.after.read_text(encoding="utf-8")))
+            joined = join_snapshots(first, json.loads(args.after.read_text(encoding="utf-8")))
         else:
-            diffs = summarize_comparison(first)
+            joined = first
+        diffs = summarize_comparison(joined)
         if not diffs:
             print("error: the results hold no comparison rows, so nothing was compared", file=sys.stderr)
             return 2
         for diff in diffs:
             print(f"{diff.model}: {diff.status}" + (f" ({diff.note})" if diff.note else ""))
+        _print_audit_suggestions(joined, first if args.after else None, args.previous)
         return 0 if all(diff.matches for diff in diffs) else 1
 
     def location(side: str) -> Location:
@@ -889,6 +897,27 @@ def compare_outputs_main(argv: list[str] | None = None) -> int:
         print(f"diagnostic: {diagnostic.model}: {diagnostic.code}: {diagnostic.message}", file=sys.stderr)
     print(sql)
     return 0
+
+
+def _print_audit_suggestions(joined: list, first_snapshot: list | None, previous: Path | None) -> None:
+    """Audit columns the results point to, as suggestions only: the comparison above is unchanged."""
+
+    from .audit_columns import confirm, propose_from_comparison
+
+    found = propose_from_comparison(joined)
+    if previous is not None:
+        earlier = json.loads(previous.read_text(encoding="utf-8"))
+        # With snapshots, the earlier pair is (previous, first): consecutive, as the two pairs share a snapshot.
+        earlier_rows = join_snapshots(earlier, first_snapshot) if first_snapshot is not None else earlier
+        found = confirm(propose_from_comparison(earlier_rows), found)
+    for model, candidates in found.items():
+        for candidate in candidates:
+            pairs = "two runs agree" if candidate.confidence == "high" else "one run; --previous can confirm it"
+            print(
+                f"suggestion: {model}: {candidate.column} looks like an audit column ({candidate.confidence} confidence, "
+                f"{pairs}): {candidate.reason}. To skip it, rerun with --ignore-column {candidate.column}. "
+                "Nothing was applied."
+            )
 
 
 def _split(value: str | None) -> list[str]:

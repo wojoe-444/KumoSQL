@@ -87,6 +87,36 @@ On the real fixture repository (`kumosql-dataform-fixture`, commit f056260, read
 
 Known limits: a model whose result depends on tie-breaking (an `ORDER BY` or `ROW_NUMBER` with equal keys) can differ between two evaluations; the simulator compares what DuckDB returns and does not detect that.
 
+## Which tables could become incremental
+
+`python -m kumosql incremental-report PROJECT --advise` (`kumosql.incremental_fit`) asks the opposite question: for each `type: "table"` action, which are rebuilt in full on every run, could it be incremental, and what blocks it? It is read-only and runs nothing; add `--json` for the full answer, `--source-schema` for real source columns, and `--table-bytes sizes.json` (with `--changed-fraction`) for cost figures.
+
+For each table a model reads (its *parent*), the advice names one pattern, or the blockers:
+
+| Pattern | When it applies | What a run recomputes |
+| --- | --- | --- |
+| `partition_aligned` | the table's partition column is the parent's partition (or watermark) column passed through row by row, directly or through `DATE()`, also through CTEs and subqueries; every `GROUP BY`, window and `DISTINCT` over the parent includes it. An unpartitioned table gets a suggested `partitionBy` | only the newest partitions |
+| `partition_other_column` | the declared partition column is another column of the parent (`order_date` while the parent changes by `last_upd_ts`) | the partitions the changed rows fall in, old and new |
+| `keyed_merge` | every `GROUP BY`, window and `DISTINCT` over the parent is keyed by one parent column kept in the output (including the latest row per key with `ROW_NUMBER() ... = 1`), or the query keeps rows one by one with the parent's unique key | the keys that changed, merged on `uniqueKey` |
+| `outer_join_dimension` | the parent is the nullable side of one `LEFT`/`RIGHT` join on one equality, in a plain row-by-row query | the rows whose join key changed |
+
+Each pattern also needs a **watermark** on the parent, a column that tells new or changed rows from old ones: its `partitionBy` column, a `TIMESTAMP` column from `--source-schema`, or a column named like one (`*_at`, `*_ts`), in that order, with the basis shown. A merge key comes from the table's `GROUP BY`, from the parent's `uniqueKey` (on its declaration or `assertions`), or, as `incremental-report` assumes, from a column named `id` (marked "assumed").
+
+Blockers are named with the shape that causes them and a fix, for example:
+
+```
+blocked order_count: aggregate without a partition key: count(*) over all of orders with no GROUP BY, so any change rewrites the one result row; fix: group by a key column that you also select, or by the partition column; a small table can stay a full refresh
+blocked ranked: non-monotone window over the whole table: row_number() OVER (...) has no PARTITION BY, so one new row can change every row; fix: PARTITION BY the partition column or one selected key column
+```
+
+The other codes are `group_not_keyed`, `window_not_keyed`, `distinct_not_keyed`, `limit`, `read_twice` (a self-join, a CTE over the parent used twice, a subquery over it beside the `FROM`), `subquery_expression`, `set_operation`, `nullable_side` (an outer join on more than one column, or not row by row), `no_unique_key`, `partition_outside_parent`, `unresolved_partition`, `no_watermark` ("source has no watermark column") and `nondeterministic` (`RAND()`, `GENERATE_UUID()`, or the clock outside an output column; a clock value as an output column is an audit column and only gets a note). A table is a `candidate` when every parent fits, `partial` when some do (a change in the others still needs a full refresh; R6 proves an append over joins only while the joined tables never change), `blocked`, or `no_suggestion` (it reads no table, or its SQLX uses JavaScript the advisor does not evaluate).
+
+**It suggests; it never says the incremental version is equivalent.** For a single-parent candidate whose shape has a plain Dataform rendering, the advice sketches the conversion (the config and the `when(incremental(), ...)` condition) and asks the proof rules about the sketch, on the sources `incremental-report` would infer. When one applies, the advice says "checkable with incremental-report once converted" and names the rule and contract; the check that counts is `incremental-report` on the model you write. For example, `select customer_id, sum(amount) as total, max(last_upd_ts) as last_upd from orders group by customer_id` gets `keyed_merge` on `customer_id` and the sketch `customer_id IN (SELECT customer_id FROM orders WHERE last_upd_ts >= COALESCE((SELECT MAX(last_upd) FROM ${self()}), TIMESTAMP '1970-01-01'))`, which R5 proves under `append_only`; `tests/test_incremental_fit.py` converts it and `incremental-report` proves it there, and finds a divergence under `late_and_duplicate`. A daily total grouped by `DATE(ts)` gets a day-reload sketch that no rule covers, and the advice says that only the counterexample search applies.
+
+**Cost figures** (`--table-bytes`) are bytes scanned per run, in the vocabulary of `kumosql.savings`, and the three bases never mix. The `estimate` is KingyoOrchestrator's KPI model: each parent is read over the share its pattern touches (`changed_fraction`, 1/365 by default, widened by `late_spread` 2 or `key_span` 3), in full when the parent declares no `partitionBy` (BigQuery prunes a filtered read only by partition), a merge also reads the table itself, and every table referenced bills at least 10 MiB; the assumptions are listed as caveats. The `upper_bound` is the saving a run cannot exceed: a rebuild bills at most its tables' bytes, an incremental run at least 10 MiB per table it references. `measured` is always null here: a measured saving needs before and after windows of real runs of a deployed change, recorded in the savings ledger. An estimate below zero (small tables, where the 10 MiB minimum dominates) is kept as a regression, never clamped.
+
+**Limits.** The patterns are ported from KingyoOrchestrator's offline prototype (`incremental/analysis.py`, `flatten.py`, `outer_join.py`, the rules of `docs/incremental-supported-sql.md`), whose soundness argument is about recomputing partitions or keys, not about Dataform's `MERGE`; the Dataform rendering is a sketch. Unqualified columns in a join resolve only with `--source-schema`; without it such a column is not traced and the pattern is not found. Whether a suggested merge key is unique above a join is not checked. Deletes in a parent are invisible to a watermark. Multi-table candidates get no sketch.
+
 ## Test coverage for R7, key growth, script variables and ties
 
 Four test files pin the rules that the corpus only exercises through whole models. Each documented rule has a positive case and a near miss that differs from it in exactly one condition, so a rule that is widened by accident fails a test.

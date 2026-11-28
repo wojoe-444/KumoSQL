@@ -180,11 +180,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seeds", type=int, default=20, help="Random change sequences tried per model and contract")
     parser.add_argument("--limit", type=int, help="Only the first N incremental models")
     parser.add_argument("--json", action="store_true", help="Machine-readable output")
+    parser.add_argument(
+        "--advise",
+        action="store_true",
+        help="Instead: for each full-refresh table, which incremental pattern it could use and what blocks it "
+        "(suggestions only; read-only, nothing runs)",
+    )
+    parser.add_argument(
+        "--table-bytes",
+        type=Path,
+        help='With --advise: JSON of table sizes in bytes, e.g. {"orders": 5e11}, for per-run cost figures',
+    )
+    parser.add_argument(
+        "--changed-fraction",
+        type=float,
+        help="With --advise: share of a table's partitions that change per run, for the cost estimate (default 1/365)",
+    )
     args = parser.parse_args(argv)
     if not args.root.is_dir():
         print("incremental-report: project folder not found", file=sys.stderr)
         return 2
     overrides = json.loads(args.source_schema.read_text(encoding="utf-8")) if args.source_schema else None
+    if args.advise:
+        return _advise(args, overrides)
+    if args.table_bytes or args.changed_fraction is not None:
+        parser.error("--table-bytes and --changed-fraction go with --advise")
     rows = scan_project(args.root, source_schema=overrides, seeds=args.seeds, limit=args.limit)
     summary = summarise(rows)
     if args.json:
@@ -197,6 +217,23 @@ def main(argv: list[str] | None = None) -> int:
     for row in rows:
         if row.outcome == "diverges":
             print(f"  diverges [{row.contract}] {row.model}: {row.detail} ({row.statements} source statements)")
+    return 0
+
+
+def _advise(args: argparse.Namespace, overrides: dict | None) -> int:
+    from .incremental_fit import CostAssumptions, advise_project, report_json, report_text
+
+    sizes = json.loads(args.table_bytes.read_text(encoding="utf-8")) if args.table_bytes else None
+    if sizes is not None and not (isinstance(sizes, dict) and all(isinstance(v, (int, float)) and v >= 0 for v in sizes.values())):
+        print("incremental-report: --table-bytes must be a JSON object of table name to bytes", file=sys.stderr)
+        return 2
+    try:
+        assumptions = CostAssumptions(**({"changed_fraction": args.changed_fraction} if args.changed_fraction is not None else {}))
+    except ValueError as exc:
+        print(f"incremental-report: {exc}", file=sys.stderr)
+        return 2
+    advice = advise_project(args.root, source_schema=overrides, table_bytes=sizes, assumptions=assumptions, limit=args.limit)
+    print(json.dumps(report_json(advice), indent=1) if args.json else report_text(advice))
     return 0
 
 

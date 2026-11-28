@@ -39,6 +39,7 @@ from sqlglot import exp
 from sqlglot.tokens import TokenType
 
 from . import data_profile
+from .audit_columns import propose_from_reconcile
 from .reconcile_rules import KnownDiffRule, RuleError, load_rules, parse_rules
 from .scope_queries import MAX_QUERY_CHARS
 from .sql_validation import quote_table_path, validate_readonly_query
@@ -1097,6 +1098,8 @@ class ReconcileResult:
     estimated_bytes: int | None = None
     bytes_billed: int | None = None
     notes: list[str] = field(default_factory=list)
+    # Timestamp columns that look like load times (kumosql.audit_columns): --ignore candidates, never applied.
+    audit_column_suggestions: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -1126,6 +1129,7 @@ class ReconcileResult:
             "samples_included": self.samples_included, "samples": self.samples,
             "estimated_bytes": self.estimated_bytes, "bytes_billed": self.bytes_billed,
             "notes": list(self.notes),
+            "audit_column_suggestions": [dict(row) for row in self.audit_column_suggestions],
         }
 
 
@@ -1178,6 +1182,8 @@ def _result(plan: Plan, row: dict, executor) -> ReconcileResult:
         rules=rules, duplicate_keys=duplicates, null_keys=nulls, column_explanations=dict(plan.explanations),
         samples_included=plan.include_samples, samples=samples, crosswalk=plan.crosswalk,
         estimated_bytes=executor.estimated_bytes, bytes_billed=executor.bytes_billed, notes=notes,
+        audit_column_suggestions=propose_from_reconcile([(a.name, a.type or b.type) for a, b in plan.compared],
+                                                        column_counts, n("both_sides")),
     )
 
 

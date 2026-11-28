@@ -28,6 +28,10 @@ python -m kumosql incremental-report path/to/project
 
 The scan checks incremental Dataform actions under the three contracts. By default it infers source columns and assumes an `id` key and timestamp-shaped columns. These are assumptions to review. Use `--source-schema` to supply real source information; see command help for the file format.
 
+## Which tables could become incremental
+
+`python -m kumosql incremental-report path/to/project --advise` looks at the tables that are rebuilt in full every run and says, for each, which incremental pattern could fit (new partitions only, partitions found from changed rows, recompute changed keys, or recompute rows whose dimension changed) and what blocks the rest, such as a total over the whole table or a source with no timestamp. These are suggestions: when a proof rule covers the suggested shape it says the conversion can be checked with `incremental-report`, and that check is the one that counts. With `--table-bytes` it adds per-run cost figures, an estimate and an upper bound kept apart; nothing is measured. See the [full reference](../docs/incremental.md#which-tables-could-become-incremental).
+
 ## How the search picks changes
 
 When the checker looks for a counterexample it generates random source changes. Some new rows arrive a few hours to a day later than the previous newest row, not just one hour later. That matters for models that delete and reload a short window: if a run adds rows that are further apart than the window, the older ones are never loaded. A separate random stream decides the gaps, so the other choices stay the same as before. The generator can only find problems; failing to find one never counts as a proof. See the [full reference](../docs/incremental.md) for the exact rates and tests.
