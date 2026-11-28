@@ -16,7 +16,7 @@ from sqlglot import exp
 from sqlglot.dialects.bigquery import BigQuery
 from sqlglot.dialects.duckdb import DuckDB
 
-from kumosql import data_profile, data_sources, dryrun, equivalences, reconcile_cli, scope_queries, state
+from kumosql import bq_static_checks, data_profile, data_sources, dryrun, equivalences, reconcile_cli, scope_queries, state
 from kumosql.reconcile import (
     BigQueryExecutor, ByteCapExceeded, Column, DuckDBExecutor, ReconcileError, build_reconcile_sql, check_rules,
     estimate_bytes, load_crosswalk, plan_reconcile, reconcile,
@@ -556,8 +556,10 @@ def test_bigquery_compares_arrays_and_structs_as_json_and_samples_with_array_agg
 # ---------------------------------------------------------------- SQL guards
 
 
-#: Words no generated query may use as an unquoted alias, on either engine.
-RESERVED = ({word.casefold() for word in BigQuery.Generator.RESERVED_KEYWORDS}
+#: Words no generated query may use as an unquoted alias, on either engine: GoogleSQL's documented list (the one
+#: ``q run`` checks drafts against), sqlglot's BigQuery list, and DuckDB's (spelled with a ``_p`` suffix by its grammar).
+RESERVED = ({word.casefold() for word in bq_static_checks.RESERVED_KEYWORDS}
+            | {word.casefold() for word in BigQuery.Generator.RESERVED_KEYWORDS}
             | {word.casefold().removesuffix("_p") for word in DuckDB.Generator.RESERVED_KEYWORDS})
 
 
@@ -576,8 +578,9 @@ def sql_guard_problems(sql, dialect):
 
     problems = []
     for node in sqlglot.parse_one(sql, read=dialect).walk():
-        if isinstance(node, (exp.Alias, exp.TableAlias)):
-            ident = node.args.get("alias") if isinstance(node, exp.Alias) else node.this
+        if isinstance(node, (exp.Alias, exp.TableAlias, exp.Unnest)):
+            ident = {exp.Alias: lambda: node.args.get("alias"), exp.TableAlias: lambda: node.this,
+                     exp.Unnest: lambda: node.args.get("offset")}[type(node)]()
             if isinstance(ident, exp.Identifier) and not ident.quoted and ident.name.casefold() in RESERVED:
                 problems.append(f"reserved word as an alias: {ident.name}")
         if isinstance(node, exp.Distinct):
@@ -600,6 +603,8 @@ def test_the_sql_guard_catches_the_mistakes_it_looks_for():
         "reserved word as an alias: unique", "FULL OUTER JOIN without an equality condition"]
     assert sql_guard_problems("SELECT 1 AS `rows` FROM a AS l FULL JOIN b AS r ON l.x = r.y AND (l.z = r.w)",
                               "bigquery") == []
+    assert sql_guard_problems("SELECT o FROM UNNEST([1]) AS e WITH OFFSET AS rows", "bigquery") == [
+        "reserved word as an alias: rows"]
 
 
 # ------------------------------------------------------------ float tolerance
