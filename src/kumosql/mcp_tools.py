@@ -13,6 +13,7 @@ from collections import Counter
 
 from . import column_meaning
 from . import boundary
+from . import definition_conflicts
 from . import mcp_cost_access
 from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
@@ -243,6 +244,8 @@ def describe_table(session: Session, args: dict) -> Answer:
         answer.fields["data_profile"] = "none saved"
     if (note := _project_check(session, key)) is not None:
         answer.fields["project_check"] = note
+    if (conflicts := definition_conflicts.table_notes(session, key)) is not None:  # columns another model defines differently
+        answer.fields["definition_conflicts"] = conflicts
     answer.counts = {
         "columns": len(columns), "meaning_unknown": len(unknown_columns), "reads": len(reads), "read_by": len(readers),
         "own_filters": len(own_filters), "unused_columns": len(unused),
@@ -572,7 +575,8 @@ def _impact_summary(change: str, label: str, effects: Counter, unknown: int, res
     "Does a table for this already exist, or one I can roll up? Compares what a table of the project (or a proposed query) "
     "means, at which grain and over which rows, with every other table. When nothing can be compared it says so in a few "
     "lines and names what blocks the comparison. With expression=... it instead finds every model that computes a SQL "
-    "expression or CASE ladder, as copies grouped into variants with what differs.",
+    "expression or CASE ladder, as copies grouped into variants with what differs. With term=... it lists every definition of one "
+    "column name (a business term such as revenue) across models and Malloy fields, and how they differ.",
     {
         "table": {"type": "string", "description": "A table of the project to look for duplicates and roll-up sources of."},
         "sql": {"type": "string", "description": "Or a proposed SELECT query, written against the project's tables."},
@@ -580,6 +584,11 @@ def _impact_summary(change: str, label: str, effects: Counter, unknown: int, res
             "type": "string",
             "description": "Or one SQL expression or CASE ladder: which models compute it, grouped into variants with what differs "
             "(alias, qualifier, spacing and, where order cannot matter, branch order are ignored).",
+        },
+        "term": {
+            "type": "string",
+            "description": "Or one column name, such as revenue: each distinct definition of it (meaning, row filters, grain, tables) "
+            "and what differs between them, for example only a WHERE filter or a constant.",
         },
     },
     required=(),
@@ -590,6 +599,12 @@ def find_existing(session: Session, args: dict) -> Answer:
 
     pipeline = session.pipeline()
     table, sql = args.get("table"), args.get("sql")
+    if args.get("term"):
+        if table or sql or args.get("expression"):
+            raise ToolError("give exactly one of table, sql, expression and term", ["term: one column name to compare the definitions of."])
+        from .definition_conflicts import term_answer
+
+        return term_answer(session, args)
     if args.get("expression"):
         if table or sql:
             raise ToolError("give exactly one of table, sql and expression", ["expression: a SQL expression or CASE ladder to look for in every model."])
@@ -597,7 +612,7 @@ def find_existing(session: Session, args: dict) -> Answer:
 
         return find_expression(session, args)
     if bool(table) == bool(sql):
-        raise ToolError("give exactly one of table, sql and expression", ["table: a table of the project; sql: a proposed query; expression: a SQL expression or CASE ladder."])
+        raise ToolError("give exactly one of table, sql, expression and term", ["table: a table of the project; sql: a proposed query; expression: a SQL expression or CASE ladder; term: a column name."])
     if sql and len(sql) > 50_000:
         raise ToolError("the query is too long (50,000 characters at most)")
     roles = session.roles()

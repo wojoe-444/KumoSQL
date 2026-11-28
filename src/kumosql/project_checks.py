@@ -9,6 +9,9 @@ Checks that need only the loaded project (no BigQuery, no schema snapshot, no da
 * ``declared_in_several_datasets``: one table name declared in two or more datasets. A one-argument ``ref("name")`` to it is
   ambiguous; Dataform needs the dataset too.
 * ``defined_twice``: two files that publish the same table (the loader kept the later one).
+* ``definition_conflicts``: one column name (a business term such as ``revenue``) that models, or Malloy fields of the same
+  name, define differently: different aggregates, filters, constants or source columns (:mod:`kumosql.definition_conflicts`).
+  Pass-throughs of the same column and key-like names are not findings.
 
 Identical declarations repeated are one table (the loader folds them), so they are not a finding. The same findings are one
 line in ``describe_table`` for the table concerned and a note in ``check_query`` when the draft reads such a table.
@@ -25,6 +28,8 @@ from .mcp_answers import Answer, ToolError, clip, offset_wanted, tool
 from .mcp_session import Session
 
 EXAMPLES = 3
+#: the most bytes of examples one check lists, so that a long list still leaves room for the counts and the fix
+EXAMPLE_BYTES = 800
 
 #: check code -> (what it means, how to fix it)
 CHECKS = {
@@ -43,6 +48,10 @@ CHECKS = {
     "defined_twice": (
         "two files publish the same table",
         "Give one of the files another name or schema; only one definition is kept.",
+    ),
+    "definition_conflicts": (
+        "column name is defined differently in several models",
+        "Rename the columns that mean something else (revenue_paid), or share one definition; find_existing term=NAME shows how they differ.",
     ),
 }
 
@@ -67,9 +76,26 @@ def _builds_a_table(model) -> bool:
 
 
 def findings(session: Session) -> list[Finding]:
-    """Every static finding of the loaded project, in a fixed order (computed once per session)."""
+    """Every static finding of the loaded project, in a fixed order (computed once per session).
+
+    The definition conflicts are not among them: they need the table profiles, so they are computed only when asked for
+    (:func:`definition_findings`), and a ``check_query`` on a draft does not wait for them.
+    """
 
     return session._once("project_findings", lambda: _find(session))
+
+
+def definition_findings(session: Session) -> list[Finding]:
+    """One finding per business term defined differently in several models, the conflicts that matter most first."""
+
+    from . import definition_conflicts
+
+    def compute() -> list[Finding]:
+        report = definition_conflicts.session_report(session)
+        return [Finding("definition_conflicts", "", term.summary(), tuple(sorted({m.table for e in term.definitions for m in e.members})))
+                for term in report.conflicts]
+
+    return session._once("definition_findings", compute)
 
 
 def _find(session: Session) -> list[Finding]:
@@ -178,13 +204,13 @@ def draft_notes(session: Session, keys: set[str]) -> list[tuple[str, str]]:
     "Check the project for repository problems",
     "What is wrong with the repository itself, before any warehouse is asked? Static checks on the loaded project: a name both "
     "declared as a source and built as a model, a disabled model that enabled models read, a table name declared in several "
-    "datasets, two files that publish one table. Counts per check with three examples and the fix. It never reads the warehouse, "
-    "so whether tables exist or are stale there is not checked.",
+    "datasets, two files that publish one table, one column name (such as revenue) that models define differently. Counts per "
+    "check with three examples and the fix. It never reads the warehouse, so whether tables exist or are stale there is not checked.",
     {"check": {"type": "string", "enum": list(CHECKS), "description": "Only this check's findings (the examples then list as many as fit)."}},
 )
 def project_checks(session: Session, args: dict) -> Answer:
     wanted = args.get("check")
-    items = findings(session)
+    items = findings(session) + definition_findings(session)
     counts = {code: sum(1 for i in items if i.check == code) for code in CHECKS}
     shown = [code for code in CHECKS if counts[code] and (not wanted or code == wanted)]
     offset = offset_wanted(args)
@@ -193,7 +219,13 @@ def project_checks(session: Session, args: dict) -> Answer:
     for code in shown:
         about = [i for i in items if i.check == code]
         limit = 20 if wanted else EXAMPLES
-        rows.append({"check": code, "count": len(about), "what": CHECKS[code][0], "examples": [clip(i.line, 150) for i in about[:limit]], "fix": CHECKS[code][1]})
+        examples: list[str] = []
+        for item in about[:limit]:  # one check asked for lists as many as fit beside the rest of the answer
+            line = clip(item.line, 150)
+            if examples and sum(len(e) + 3 for e in examples) + len(line) > EXAMPLE_BYTES:
+                break
+            examples.append(line)
+        rows.append({"check": code, "count": len(about), "what": CHECKS[code][0], "examples": examples, "fix": CHECKS[code][1]})
     total = sum(counts.values())
 
     answer = Answer("")
@@ -203,6 +235,14 @@ def project_checks(session: Session, args: dict) -> Answer:
     from . import column_meaning
 
     column_meaning.zone_unknown(answer, session)  # TIMESTAMP/DATETIME columns with no declared zone: unknown, not a finding
+    from . import definition_conflicts
+
+    report = definition_conflicts.session_report(session)
+    for item in report.unknown[:2]:
+        answer.unknown(clip(item["what"], 80), clip(item["reason"], 160))
+    if (unchecked := report.counts()["unchecked"]):
+        answer.unknown(f"{unchecked} column name{'s' if unchecked != 1 else ''} in several tables not compared for definition conflicts",
+                       "the meaning of at least one of the columns is unknown")
     answer.unknown("whether the deployed tables match the repository", "the warehouse is not read: a table that was never built, is older than its model or has a different partitioning is not visible here")
     if total:
         parts = ", ".join(f"{n} {CHECKS[code][0]}" for code, n in counts.items() if n)

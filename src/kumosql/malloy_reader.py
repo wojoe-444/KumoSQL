@@ -15,7 +15,10 @@ Each source is a dict: ``name``, ``table`` (the string inside ``table('...')``, 
 that extends another it is the table of the one it extends; ``None`` when it cannot be known), ``extends`` (the source it is
 built on, or ``None``), ``primary_key`` (the column named by ``primary_key:``, as written), ``columns`` (the sorted names
 the source's definitions, filters, keys and joins refer to, including those of the sources it extends) and ``joins`` (one dict
-per join: ``name``, ``kind``, ``table`` or ``source`` it joins, and the ``columns`` read from it).
+per join: ``name``, ``kind``, ``table`` or ``source`` it joins, and the ``columns`` read from it). ``fields`` lists each
+``dimension:`` and ``measure:`` definition (``kind``, ``name``, ``expression`` as written on one line with comments removed,
+``line``), a source's own definition replacing an inherited one of the same name, and ``filters`` the source's ``where:``
+conditions, inherited ones first.
 
 The reader is an approximation, not a Malloy compiler. It does not know which names are columns: ``columns`` holds every name an
 expression uses that the source does not define itself (a name defined by a dimension or measure is left out unless its own
@@ -71,10 +74,12 @@ class MalloySources(list):
 
 
 class _Token:
-    __slots__ = ("kind", "text", "line")
+    __slots__ = ("kind", "text", "line", "start", "end")
 
-    def __init__(self, kind: str, text: str, line: int) -> None:
+    def __init__(self, kind: str, text: str, line: int, start: int = 0, end: int = 0) -> None:
         self.kind, self.text, self.line = kind, text, line
+        #: where the token sits in the file's text, so a definition's expression can be quoted as written
+        self.start, self.end = start, end
 
     def is_(self, text: str) -> bool:
         return self.kind in ("punct", "word") and self.text == text
@@ -98,13 +103,13 @@ def _tokens(text: str, unknown: list[dict]) -> list[_Token]:
             unknown.append({"what": f"line {line}", "reason": "a comment that never closes; the rest of the file was not read"})
             break
         elif kind == "tstring":
-            found.append(_Token("string", chunk[3:-3], line))
+            found.append(_Token("string", chunk[3:-3], line, match.start(), match.end()))
         elif kind == "string":
-            found.append(_Token("string", chunk[1:-1], line))
+            found.append(_Token("string", chunk[1:-1], line, match.start(), match.end()))
         elif kind == "quoted":
-            found.append(_Token("word", chunk[1:-1], line))
+            found.append(_Token("word", chunk[1:-1], line, match.start(), match.end()))
         else:
-            found.append(_Token(kind, chunk, line))
+            found.append(_Token(kind, chunk, line, match.start(), match.end()))
         line += chunk.count("\n")
         pos = match.end()
     return found
@@ -161,7 +166,7 @@ def _read(text: str, known: Mapping[str, dict], result: MalloySources) -> None:
         if keyword == "import":
             result.imports.extend(t.text for t in statement if t.kind == "string")
         elif keyword == "source" or keyword == "explore":
-            _read_source(statement[2:], statement[0].line, raw, order, result)
+            _read_source(statement[2:], statement[0].line, raw, order, result, text)
         elif any(t.is_("table") and i + 1 < len(statement) and statement[i + 1].is_("(") for i, t in enumerate(statement)):
             result.unknown.append({"what": f"line {statement[0].line}", "reason": f"a {keyword}: over an inline table() is not analysed"})
     resolved: dict[str, dict] = {}
@@ -171,7 +176,7 @@ def _read(text: str, known: Mapping[str, dict], result: MalloySources) -> None:
         result.append(resolved[name])
 
 
-def _read_source(tokens: list[_Token], line: int, raw: dict, order: list, result: MalloySources) -> None:
+def _read_source(tokens: list[_Token], line: int, raw: dict, order: list, result: MalloySources, source: str = "") -> None:
     """``name is <base> [extend { ... }]`` (a statement may define several sources)."""
 
     if len(tokens) < 3 or tokens[0].kind != "word" or not tokens[1].is_("is"):
@@ -182,7 +187,8 @@ def _read_source(tokens: list[_Token], line: int, raw: dict, order: list, result
     brace = next((i for i, t in enumerate(tokens) if depths[i] == 0 and t.is_("{")), None)
     head = tokens[2 : brace if brace is not None else len(tokens)]
     head = [t for t in head if not (t.kind == "word" and t.text in ("extend", "include", "refine")) and not t.is_("+")]
-    entry = {"name": name, "table": None, "extends": None, "primary_key": None, "columns": set(), "joins": [], "defined": set(), "unknown": [], "line": line}
+    entry = {"name": name, "table": None, "extends": None, "primary_key": None, "columns": set(), "joins": [], "defined": set(), "unknown": [], "line": line,
+             "fields": [], "filters": []}
     base = _base(head)
     if base[0] == "table":
         entry["table"] = base[1]
@@ -193,7 +199,7 @@ def _read_source(tokens: list[_Token], line: int, raw: dict, order: list, result
         entry["unknown"].append(reason)
         result.unknown.append({"what": name, "reason": reason})
     if brace is not None:
-        _read_block(entry, tokens[brace:], result)
+        _read_block(entry, tokens[brace:], result, source)
     if name in raw:
         result.unknown.append({"what": name, "reason": "defined twice in the file; the later definition was used"})
     else:
@@ -217,7 +223,7 @@ def _base(head: list[_Token]) -> tuple[str, str]:
     return "unknown", "a source whose definition the reader does not recognise"
 
 
-def _read_block(entry: dict, block: list[_Token], result: MalloySources) -> None:
+def _read_block(entry: dict, block: list[_Token], result: MalloySources, source: str = "") -> None:
     """The statements inside ``extend { ... }``: keys, dimensions, measures, joins, filters, views."""
 
     inner = block[1:-1] if block and block[-1].is_("}") else block[1:]
@@ -227,6 +233,11 @@ def _read_block(entry: dict, block: list[_Token], result: MalloySources) -> None
         if depths[i] == 0 and t.kind == "word" and t.text in _BLOCK_KEYWORDS and i + 1 < len(inner) and inner[i + 1].is_(":")
     ]
     statements = [(inner[s].text, inner[s + 2 : (starts[n + 1] if n + 1 < len(starts) else len(inner))]) for n, s in enumerate(starts)]
+    if source:
+        block_end = block[-1].start if block and block[-1].is_("}") else len(source)
+        for n, s in enumerate(starts):
+            stop = inner[starts[n + 1]].start if n + 1 < len(starts) else block_end
+            _record_texts(entry, inner[s].text, inner[s + 1], inner[s + 2 : (starts[n + 1] if n + 1 < len(starts) else len(inner))], stop, source)
     # first pass: the names this source defines, so a use of one is not taken for a column
     definitions: list[tuple[str, str | None, list[_Token]]] = []
     for keyword, body in statements:
@@ -255,6 +266,36 @@ def _read_block(entry: dict, block: list[_Token], result: MalloySources) -> None
             entry["defined"].add(name)
     # a name the source defines is not a column, unless its own definition reads a column of that name (``amount is amount``)
     entry["columns"] = {c for c in entry["columns"] if c not in entry["defined"] or c in entry.get("self_read", ())}
+
+
+def _written(source: str, start: int, stop: int) -> str:
+    """The text between two offsets on one line: comments gone, runs of white space one space, a trailing separator dropped."""
+
+    pieces: list[str] = []
+    for match in _TOKEN.finditer(source[start:stop]):
+        if match.lastgroup in ("ws", "comment"):
+            if pieces and pieces[-1] != " ":
+                pieces.append(" ")
+        else:
+            pieces.append(match.group())
+    return "".join(pieces).strip().rstrip(",;").strip()
+
+
+def _record_texts(entry: dict, keyword: str, colon: _Token, body: list[_Token], stop: int, source: str) -> None:
+    """Each ``dimension:`` and ``measure:`` definition and each ``where:`` filter of a block, as written."""
+
+    if keyword == "where":
+        text = _written(source, colon.end, stop)
+        if text:
+            entry["filters"].append(text)
+        return
+    if keyword not in ("dimension", "measure"):
+        return
+    depths = _depths(body) or [0] * len(body)
+    marks = [i for i, t in enumerate(body) if depths[i] == 0 and t.kind == "word" and i + 1 < len(body) and body[i + 1].is_("is") and not (i and body[i - 1].is_("."))]
+    for k, m in enumerate(marks):
+        end = body[marks[k + 1]].start if k + 1 < len(marks) else stop
+        entry["fields"].append({"kind": keyword, "name": body[m].text, "expression": _written(source, body[m + 1].end, end), "line": body[m].line})
 
 
 def _split(keyword: str, body: list[_Token]) -> list[tuple[str | None, list[_Token]]]:
@@ -335,6 +376,7 @@ def _resolve(name: str, raw: dict, known: Mapping[str, dict], done: dict, result
     defines = set(entry["defined"])
     joins = list(entry["joins"])
     table, primary, reasons = entry["table"], entry["primary_key"], list(entry["unknown"])
+    fields, filters = list(entry.get("fields", ())), list(entry.get("filters", ()))
     if parent_name:
         parent = None
         if parent_name in raw and parent_name not in trail and parent_name != name:
@@ -352,6 +394,9 @@ def _resolve(name: str, raw: dict, known: Mapping[str, dict], done: dict, result
             columns = {c for c in columns if c not in inherited or c in entry.get("self_read", ())} | set(parent.get("columns", ()))
             defines |= inherited
             joins = [*parent.get("joins", ()), *joins]
+            own = {field["name"] for field in fields}
+            fields = [field for field in parent.get("fields", ()) if field["name"] not in own] + fields
+            filters = [*parent.get("filters", ()), *filters]
             if parent.get("table") is None:
                 reasons.append(f"the table of {parent_name} is unknown")
     # a joined source's key and table come from the file when it defines the source
@@ -370,5 +415,6 @@ def _resolve(name: str, raw: dict, known: Mapping[str, dict], done: dict, result
     done[name] = {
         "name": name, "table": table, "extends": parent_name, "primary_key": primary,
         "columns": sorted(columns, key=str.casefold), "joins": out_joins, "unknown": reasons, "defines": sorted(defines),
+        "fields": fields, "filters": filters,
     }
     return done[name]

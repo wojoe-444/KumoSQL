@@ -68,6 +68,18 @@ Where the grain is not visible in a query, KumoSQL uses a key the project declar
 
 Profiles and match reports include reasons and unknowns. Check whether the match supports a real replacement before changing consumers.
 
+## One name, several meanings
+
+People assume that a column called `revenue` means the same number in every table. Often it does not: one model sums only paid orders, another sums every order, a third sums a different column. This command lists the names that are computed differently:
+
+```sh
+python -m kumosql definition-conflicts --project path/to/project
+```
+
+For each name you get the different definitions, the tables that use each one, and what differs between them, in words such as "differ only in WHERE status = 'paid'", "differ only in a constant: 1.1 vs 1.2" or "different source columns". A column that is simply passed from one table to the next is not reported, and neither is a total of a column at a coarser level (summing `amount` per customer is still `amount`). Keys and bookkeeping columns such as `order_id` or `created_at` are skipped unless you add `--include-keys`. Add `--malloy folder` to compare the measures and dimensions of your Malloy files too, and `--json` for the full list.
+
+The limit: it compares how the SQL is written, not the data. Two filters written differently might still keep the same rows, and a column whose meaning KumoSQL cannot follow is counted as "not compared" rather than guessed. Details are in the [reference](../docs/pipeline-analysis.md#one-name-several-definitions).
+
 ## Why missing schemas matter
 
 `SELECT *` over an external table needs that table's column list. Without it, KumoSQL cannot reliably trace the columns. Saved catalog data can fill the gap. A live lookup in BigQuery can too, but it is off by default so that nothing reaches the network unless you ask: tick the checkbox in Settings, pass `--fetch-schema` to the pipeline report command, or set `KUMOSQL_SCHEMA_FETCH=1`. Without it, those columns simply stay unknown. The lookup covers tables the project reads but does not define, and also sources the project declares without listing their columns. When you pass `--fetch-schema`, the command prints one line saying how many tables it fetched, how many failed and why (no credentials, no access, not found, no project in the name), so a lookup that did nothing is never silent.

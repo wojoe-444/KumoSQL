@@ -35,6 +35,7 @@ __all__ = [
     "RowScope",
     "TableProfile",
     "profile_pipeline",
+    "profile_queries",
     "profile_query",
 ]
 
@@ -288,6 +289,47 @@ def profile_query(
         return profiler.profile(key, label="<query>")
     except Exception as exc:
         return _failed("<query>", exc)
+
+
+def profile_queries(
+    pipeline: Pipeline, queries: Mapping[str, str], *, declared_grain: Mapping[str, Sequence[str]] | None = None
+) -> dict[str, TableProfile]:
+    """Profile several queries that are not in the pipeline, keyed like ``queries``. Never raises.
+
+    The same as :func:`profile_query` for each one, but the tables they read are analysed once for all of them
+    (a semantic layer's fields are many small queries over a few tables).
+    """
+
+    if not queries:
+        return {}
+    try:
+        models: dict[str, Model] = {}
+        for sql in queries.values():
+            models.update(_upstream_models(pipeline, sql))
+        keys: dict[str, str] = {}
+        for number, (name, sql) in enumerate(queries.items()):
+            key = f"{_QUERY_KEY}{number}"
+            while key in pipeline.models:
+                key += "_"
+            keys[name] = key
+            models[key] = Model(Target("", "", key), "table", sql if isinstance(sql, str) else "")
+        scratch = Pipeline(
+            models,
+            sources=dict(pipeline.sources),
+            source_schema=dict(pipeline.source_schema),
+            default_project=pipeline.default_project,
+            default_dataset=pipeline.default_dataset,
+        )
+        profiler = _Profiler(scratch, declared_grain)
+    except Exception as exc:  # never raise on odd input
+        return {name: _failed("<query>", exc) for name in queries}
+    found: dict[str, TableProfile] = {}
+    for name, key in keys.items():
+        try:
+            found[name] = profiler.profile(key, label="<query>")
+        except Exception as exc:  # noqa: BLE001 - one query that cannot be profiled does not stop the others
+            found[name] = _failed("<query>", exc)
+    return found
 
 
 def _upstream_models(pipeline: Pipeline, sql: object) -> dict[str, Model]:

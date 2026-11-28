@@ -620,6 +620,7 @@ Every command prints `--help`.
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |
 | `python -m kumosql equivalence list\|add\|remove` | Saved "column X of table A is column Y of table B" declarations |
 | `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate |
+| `python -m kumosql definition-conflicts --project DIR` | Column names (business terms such as `revenue`) that models, or Malloy measures of the same name, compute differently, ranked, with what differs ("differ only in WHERE status = 'paid'"); `--malloy DIR`, `--term NAME`, `--include-keys`, `--variants`, `--json` ([details](docs/pipeline-analysis.md#one-name-several-definitions)) |
 | `python -m kumosql scopes` | Manage saved scopes (`list`, `add`, `remove`, `fields`, `refresh`) |
 | `python -m kumosql compare-outputs` | Generate SQL that compares pipeline outputs before and after a refactor |
 | `python -m kumosql dry-run` | BigQuery planning and schema check, no query execution |

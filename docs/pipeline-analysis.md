@@ -161,6 +161,70 @@ for item in result.rollups:
     print(item.table, item.attribute, item.derivability, item.conditions, item.missing)
 ```
 
+## One name, several definitions
+
+Analysts and agents assume that `revenue` in one table is `revenue` in another. `python -m kumosql definition-conflicts` finds the column names (business terms) that different models compute differently, so that assumption can be checked before two numbers are compared. It is the reverse of `find_existing expression=...`, which finds one expression under many names. It does not propose which columns of two table sets hold the same values; saved equivalences record that, and a saved entry is shown on the conflict it concerns (below).
+
+```sh
+python -m kumosql definition-conflicts --project path/to/dataform [--malloy semantic/] [--json]
+```
+
+For a project where `stg_orders` passes `amount` through as `revenue`, `rev_paid` sums it over paid orders (and `rev_report` reads that), `rev_gross` sums it over all orders, `rev_net` sums `net_amount`, a Malloy measure `revenue is amount.sum() { where: status = 'paid' }` reads `raw.orders`, and a saved `differs` record pairs `rev_paid` with `rev_gross`:
+
+```text
+1 term with several definitions (1 computed, 0 pass-through), of 1 name used in more than one table; 3 key-like names skipped.
+
+1. revenue: 3 definitions in 6 tables (computed)
+   1. SUM(raw.orders.amount) WHERE raw.orders.status = 'paid': ds.rev_paid (per customer_id), ds.rev_report (per customer_id; carried), sales.malloy:orders (Malloy measure)
+   2. SUM(raw.orders.amount): ds.rev_gross (per customer_id), ds.stg_orders (as raw.orders.amount)
+   3. SUM(raw.orders.net_amount): ds.rev_net (per customer_id)
+   2 vs 1: differ only in WHERE raw.orders.status = 'paid' (in 1 only)
+   3 vs 2: different source columns: raw.orders.net_amount vs raw.orders.amount
+   saved: p.ds.rev_paid.revenue and p.ds.rev_gross.revenue are recorded as differing in the saved equivalences [paid only]
+```
+
+**How it decides.** A term is a column name with case ignored (`--variants` also groups `revenue_usd`, `revenue_amount` and `total_revenue` with `revenue`). Each model output with that name is a definition, described by its meaning from the [table profile](#table-profiles-what-each-table-is) (`col:`, `agg:`, `expr:`, `window:`), the table's row filters and its grain. With `--malloy DIR` each Malloy `dimension:` and `measure:` of that name is one too: the field becomes a small SQL query over the table its source reads (with the source's `where:` and the measure's own `{ where: ... }`), and those queries are profiled together against the project, so a Malloy measure and a model column compare in the same terms.
+
+These count as **one** definition, so they are never reported:
+
+- the same meaning, wherever it is carried (a column passed downstream, the same source column in two staging views);
+- for a pass-through or a row-level expression, the same meaning over different rows (a staging view that keeps only paid orders still holds the same `amount`);
+- a `SUM` of a column over the same rows as the column itself (a roll-up to a coarser grain);
+- one filter written two ways: `WHERE c` in one model and `SUM(CASE WHEN c THEN x END)` or `COUNTIF(c)` in the other (for `SUM`, `AVG`, `MIN`, `MAX`, `COUNT` and `APPROX_COUNT_DISTINCT`, which skip NULLs; any other aggregate is reported);
+- a cast that keeps the value (`CAST(amount AS NUMERIC)`, `CAST(amount AS STRING)`). A cast that can change it (`CAST(amount AS INT64)` rounds, `CAST(ts AS DATE)` drops the time) is a difference of its own (`cast`).
+
+For an aggregate (or a window), the row filters are part of the meaning: `SUM(amount)` over paid orders is not `SUM(amount)` over all orders.
+
+**What it reports.** Every term with two or more definitions, ranked. `computed` conflicts (at least one aggregate, expression, window or constant) come before `passthrough` conflicts (pass-throughs of different source columns). Within a tier, a term comes later when it looks like a generic name (four or more definitions, and about as many definitions as tables, like a `counter` column that every detection query computes its own way: `generic_name` in the JSON) or when saved `differs` records already explain every definition (`acknowledged`); otherwise the name more tables share comes first. Each definition lists its tables with their grain, `carried` when a model only passes it on, and `as ...` when the table holds a form of it that counts as the same (the row-level column a `SUM` rolls up).
+
+Each definition after the first is compared with the closest earlier one by a structural diff of the two canonical expressions, never a proof. The difference is named when it is one of these:
+
+| `kind` | Example text |
+| --- | --- |
+| `filter` | `differ only in WHERE raw.orders.status = 'paid' (in 1 only)`; `differ only in a filter: 2 keeps only raw.orders.status = 'paid' inside the aggregate` |
+| `constant` | `differ only in a constant: 1.1 vs 1.2` |
+| `nulls` | `differ only in NULL handling: 2 replaces NULL with 'unknown'` |
+| `cast` | `differ only in a cast to INT64, which can change the values` |
+| `aggregate` | `AVG in 2 vs SUM in 1 of raw.orders.amount` |
+| `column` | `different source columns: raw.orders.net_amount vs raw.orders.amount` |
+| `expression` | `differ in raw.orders.amount * 1.1 vs raw.orders.amount`: the smallest pair of sub-expressions that differ |
+
+**Saved equivalences.** When a saved entry (the data folder's `equivalences.json`, and the `differs` and `missing` records where the store keeps them, or `--equivalences FILE`) pairs two tables of different definitions on the term's column, the conflict shows it. An `equal` declaration on two definitions that differ says so: it is an assumption about the data, not a proof.
+
+**Skipped by default.** Key-like and housekeeping names: `id`, `*_id`, `*_key`, `*_uuid`, `created_at`, `updated_at`, `loaded_at`, names that start with `_`, `dbt_` or `etl_`, and a few more (`is_key_like` in [`kumosql.definition_conflicts`](../src/kumosql/definition_conflicts.py)). `--include-keys` compares them too. `--term NAME` prints every definition of one name, keys included, even when they agree.
+
+**JSON.** `--json` prints `format`, `counts` (`definitions`, `terms_in_several_tables`, `conflicts`, `computed`, `passthrough`, `consistent`, `unchecked`, `key_like_skipped`), every conflict (`term`, `names`, `tier`, `tables`, `generic_name`, `definitions` with `expression`, `meaning`, `kind`, `filters` and `tables`, `differences` with `between` and `kind`, `declared`, `acknowledged`, `unknown_definitions`) and `unknown` (Malloy files or sources that could not be read). In Python: `check_project(pipeline, malloy=[...])` returns the report; `find_conflicts(definitions)` groups definitions you collected yourself.
+
+In the agent server, `project_checks` lists the conflicts as the `definition_conflicts` check, `describe_table` names the columns of a table that other tables define differently, and `find_existing term=revenue` lists one term's definitions ([agent server](mcp-server.md)).
+
+**Limits.**
+
+- A definition whose meaning is unknown (incomplete lineage, an unexpanded `*`, a nested field it cannot read) is counted and never compared: `unchecked` counts the names in several tables that could not be compared for that reason.
+- A Dataform `${...}` expression appears as its text. When the same placeholder number stands for different expressions in a model and in the models it reads, the definition is left unknown rather than compared on a guess.
+- The Malloy reader translates `x.sum()` and the other aggregate methods, `sum(x)`, `count()`, `count(x)` (distinct), `pick ... when ... else`, arithmetic and comparisons, and inlines the source's other fields. Joined paths (`customers.name`), `?` and `~` matching, `@` time literals, `::` casts, `ungrouped` and `all` leave the field unknown, with the reason.
+- "Differ only in" is a structural statement about two expressions, not a proof that the numbers differ on your data: two filters can be different text and still keep the same rows.
+- On the 107-model public fixture (`tests/fixtures/bq_corpora/security-analytics`) the check adds under a second on top of the table profiles. That project's top findings are `day` (`EXTRACT(DATE FROM timestamp)` in 22 tables, `TIMESTAMP_TRUNC(timestamp, DAY)` in one) and `caller_ip` (`COALESCE(caller_ip, 'unknown')` in one family of models); its `counter` columns are marked generic.
+
 ## Showing "already done elsewhere" in change reports and on the graph
 
 `OverlapChecker(pipeline, scope=None, name_of=None).section(model, changed=None)` combines `find_overlaps` and `find_rollups` into one JSON section, shared by the change report, the CI comment and the graph page:
