@@ -9,6 +9,9 @@ Checks that need only the loaded project (no BigQuery, no schema snapshot, no da
 * ``declared_in_several_datasets``: one table name declared in two or more datasets. A one-argument ``ref("name")`` to it is
   ambiguous; Dataform needs the dataset too.
 * ``defined_twice``: two files that publish the same table (the loader kept the later one).
+* ``ratio_reaggregated``: a model that averages or sums a ratio computed upstream (in another model, a CTE or a subquery),
+  where the grain changes. A caution, not an error: the right roll-up is ``SUM(numerator) / SUM(denominator)``, and the
+  example line names it when lineage finds both parts (:mod:`kumosql.ratio_check`).
 
 Identical declarations repeated are one table (the loader folds them), so they are not a finding. The same findings are one
 line in ``describe_table`` for the table concerned and a note in ``check_query`` when the draft reads such a table.
@@ -43,6 +46,10 @@ CHECKS = {
     "defined_twice": (
         "two files publish the same table",
         "Give one of the files another name or schema; only one definition is kept.",
+    ),
+    "ratio_reaggregated": (
+        "model averages or sums a ratio computed upstream (a caution)",
+        "Sum the numerator and the denominator at the new grain, then divide: SUM(numerator) / SUM(denominator), not an AVG or SUM of the ratio.",
     ),
 }
 
@@ -178,13 +185,15 @@ def draft_notes(session: Session, keys: set[str]) -> list[tuple[str, str]]:
     "Check the project for repository problems",
     "What is wrong with the repository itself, before any warehouse is asked? Static checks on the loaded project: a name both "
     "declared as a source and built as a model, a disabled model that enabled models read, a table name declared in several "
-    "datasets, two files that publish one table. Counts per check with three examples and the fix. It never reads the warehouse, "
+    "datasets, two files that publish one table, a model that averages or sums an upstream ratio (a caution). Counts per check with three examples and the fix. It never reads the warehouse, "
     "so whether tables exist or are stale there is not checked.",
     {"check": {"type": "string", "enum": list(CHECKS), "description": "Only this check's findings (the examples then list as many as fit)."}},
 )
 def project_checks(session: Session, args: dict) -> Answer:
     wanted = args.get("check")
-    items = findings(session)
+    from . import ratio_check  # imported here so the tool list keeps the order of TOOL_MODULES
+
+    items = findings(session) + ratio_check.project_findings(session)
     counts = {code: sum(1 for i in items if i.check == code) for code in CHECKS}
     shown = [code for code in CHECKS if counts[code] and (not wanted or code == wanted)]
     offset = offset_wanted(args)

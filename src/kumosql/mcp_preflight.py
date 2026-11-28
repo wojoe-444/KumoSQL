@@ -398,7 +398,7 @@ def bigquery_dry_run(sql: str, project: str):
     "check_query",
     "Check a draft query",
     "Is this draft sound before I run it? One call: the output column types and any certain errors, places where ties make the "
-    "result change from run to run, joins that can multiply rows (judged from the grain of the joined tables), BigQuery-specific static mistakes (a reserved word as an alias, NOT IN with NULL, an unreachable CASE branch, ...), and, only when "
+    "result change from run to run, joins that can multiply rows (judged from the grain of the joined tables), BigQuery-specific static mistakes (a reserved word as an alias, NOT IN with NULL, an unreachable CASE branch, ...), an AVG or SUM of a ratio (with the ratio of sums to use), and, only when "
     "dry_run=true and a project is given, BigQuery's free dry run (estimated bytes against the byte cap). Every finding names its "
     "fix; what could not be checked is listed with the reason. Without dry_run it never touches the network.",
     {
@@ -473,6 +473,12 @@ def check_query(session: Session, args: dict) -> Answer:
     findings += zone_findings
     gaps += zone_gaps
     checked.append("column_meaning")
+    from . import ratio_check  # AVG or SUM of a ratio: a caution naming SUM(numerator) / SUM(denominator); same grain is a note
+
+    ratio_findings, ratio_gaps = ratio_check.check_draft(session, draft.tree, answer)
+    findings += ratio_findings
+    gaps += ratio_gaps
+    checked.append("ratio")
 
     from . import mcp_cost_access  # byte estimate and readable/denied per source; the dry run itself lives there
 
@@ -512,7 +518,7 @@ def check_query(session: Session, args: dict) -> Answer:
     answer.counts = {"findings": len(findings), **counts, "output_columns": len(columns), "not_checked": len(gaps)}
     if dry and dry.get("ok"):
         answer.fields["dry_run"] = {"estimated_bytes": dry["estimated_bytes"], "byte_cap": dry["byte_cap"], **({"cached": dry["cached"]} if dry.get("cached") else {})}
-    answer.add_list("findings", findings[offset:][:PAGE], total=len(findings), offset=offset, primary=True)
+    answer.add_list("findings", findings[offset:][:PAGE], total=len(findings), offset=offset, primary=True, keep=1)  # never cut to none
     answer.add_list("columns", columns, total=len(columns))
     answer.add_list("sources", access.sources, total=len(access.sources))
     for what, reason in gaps:

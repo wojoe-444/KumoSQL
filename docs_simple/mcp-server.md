@@ -85,6 +85,16 @@ Then `check_query` can warn about three things: comparing a column in one zone w
 
 Limits: a declared fact is only as good as the person who wrote it, and nothing checks it against data. When a column has no declared zone or scale, the answer says the check was not done instead of staying quiet. Details are in the [full reference](../docs/mcp-server.md#column-meaning-that-carries-through-lineage).
 
+## Averages of ratios
+
+A ratio, such as "share of trips on time" or "budget used", is right for the rows it was worked out on. To get it for a bigger group (a month instead of a day, a region instead of a route), add up the top and the bottom first and divide once: `SUM(on_time_trips) / SUM(completed_trips)`. Taking the average of the daily ratios gives a different number, and nothing warns you: the query runs and the result looks fine.
+
+`check_query` now spots this. If a draft takes `AVG` or `SUM` of a column that is a division somewhere in the project (in another model, in a `WITH` part of the draft, or right there in the `AVG`), it says where the division is done and what to write instead. For example, averaging `budget_utilization_ratio` by month gives: "`finance_reporting.budget_variance` computes it as `SAFE_DIVIDE(total_actual_cost_usd, budget_usd)`; use `SAFE_DIVIDE(SUM(total_actual_cost_usd), SUM(budget_usd))`." It finds the top and bottom columns by following where each column comes from, even when a view renames them. When it cannot find them, it says "unknown" and shows the division as it is written.
+
+It stays quiet for `MIN` and `MAX` of a ratio, for a weighted average done right (`SUM(ratio * trips) / SUM(trips)`), and for dividing by a fixed number (bytes to terabytes). If your grouping keeps one row per group, the average is the ratio itself, so you only get a short note. `project_checks` lists the models in the project that make this mistake.
+
+It is a caution, not an error: dividing by an exchange rate and adding up the results is right, and an average of averages is sometimes what you want. It does not read column names, so a ratio stored ready-made in a raw table is not spotted. Details are in the [full reference](../docs/mcp-server.md#re-aggregated-ratios).
+
 ## Things outside the repository
 
 Your repository does not know everything. A scheduled query may build one of your source tables, and a dashboard or a semantic model may read one of your outputs. Without help, "where does this come from" stops at the source and "what breaks" stops at the last model. Add `--boundary file.yaml` and list them:
