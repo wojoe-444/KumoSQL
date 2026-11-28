@@ -365,6 +365,17 @@ def test_hints_propose_equal_only_at_the_same_grain_and_row_filters(tmp_path):
     assert suggested(result, "proj.old.o1", "proj.mart.n1")["already_declared"] is False
 
 
+def test_a_declared_source_key_gives_two_passthrough_tables_a_grain_and_an_equal_hint(tmp_path):
+    two_versions(tmp_path)
+    write(tmp_path, "definitions/src.sqlx",
+          'config { type: "declaration", schema: "raw", name: "orders", assertions: { uniqueKey: ["id"] } }\n')
+    pipeline = load_sqlx_project(tmp_path)
+    rows = suggested(suggest_equivalences(pipeline, ["proj.old.o1"], ["proj.mart.n1"]), "proj.old.o1", "proj.mart.n1")
+    assert rows["checks"] == {"grain": "matched", "row_scope": "matched"}
+    assert "--status" not in rows["command_hint"] and "order_key=id" in rows["command_hint"]
+    assert rows["differs_hint"].endswith("ts=d --status differs")  # DATE(ts) is still not ts
+
+
 def test_a_declaration_between_sources_carries_into_the_suggestions(tmp_path):
     write(tmp_path, "workflow_settings.yaml", "defaultProject: proj\ndefaultDataset: an\n")
     write(tmp_path, "definitions/src.sqlx", 'config { type: "declaration", schema: "raw", name: "orders" }\n')

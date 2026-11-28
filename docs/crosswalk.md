@@ -104,7 +104,7 @@ A table pair's `score` (0 to 1) is how much of both tables the matched pairs cov
  "review": ["columns matched on less than the same meaning are proposed as differs: check how their values differ"]}
 ```
 
-The second suggestion pairs `proj.old.o1` with `proj.mart.n1`. Its source has no declared key, so the grain is unknown, and its `command_hint` ends in `--status differs`.
+The second suggestion pairs `proj.old.o1` with `proj.mart.n1`. Its source declares no key, so the grain is unknown, and its `command_hint` ends in `--status differs`. With `assertions: { uniqueKey: ["id"] }` on the source's declaration, both grains are known and match, and the hint proposes `equal`.
 
 Two columns with the same meaning row by row can still hold different rows, so the hints are conservative:
 
@@ -120,7 +120,7 @@ Pairs that share no meaning, source column or expression shape are counted under
 
 - Suggestions come from lineage, not data. Use them to decide what to check, not as evidence. The score is a ranking heuristic, not a probability.
 - A meaning names the source columns a model reads, so declarations act on source tables. One between two models changes no meaning.
-- A table whose grain is unknown never gets an `equal` hint. This is the common case for a table that only passes source rows on, since a source's grain is known only when someone states it. The command profiles the project with no stated grains. The [agent server](mcp-server.md) takes them from `--assume-grain` and from a declared source's `uniqueKey`, and `suggest_equivalences(..., profiles=...)` accepts profiles built that way.
+- A table whose grain is unknown never gets an `equal` hint. This is the common case for a table that only passes source rows on, since a source's grain is known only when someone states it. The project can state it with `assertions: { uniqueKey: [...] }` on the source's declaration, which the profiles use. A grain given only to the [agent server](mcp-server.md) with `--assume-grain` is not used by this command, but `suggest_equivalences(..., profiles=...)` accepts profiles built with it.
 - A column whose meaning is unknown (see the [agent server's limits](mcp-server.md#limits) for how often lineage stops) cannot be matched, so a pair of tables built on such columns may be missed.
 - An `explanation` is a name, saved without checking that a rule of that name exists: rules live in the files given to `reconcile --rules`, and given those, `reconcile` notes an explanation that names none of them.
 - `reconcile --map saved` still reads the `equal` declarations only. Use the listed file (above) to bring `differs` and `missing` entries into a reconciliation.
