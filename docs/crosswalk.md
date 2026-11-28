@@ -20,7 +20,7 @@ python -m kumosql equivalence add old.weekly_report - --status missing
 
 The other fields are optional on every status:
 
-- `--explanation RULE`: the name of the known-difference rule behind a `differs` or `missing` entry, one line, up to 200 characters. An `equal` entry refuses one.
+- `--explanation RULE`: the name of the [known-difference rule](reconcile.md#known-difference-rules) behind a `differs` or `missing` entry, one line, up to 120 characters (the longest name a rule may have). An `equal` entry refuses one.
 - `--evidence TEXT`: a query or a link that shows the entry holds, up to 4,000 characters.
 - `--verified-at YYYY-MM-DD`: when someone checked it. The date must exist on the calendar.
 
@@ -50,6 +50,15 @@ A declaration enters a proof by rewriting each read of the right-hand table into
 - `column_matches`: one `{left_column, right_column, implied}` per pair. A `null` column has no counterpart. `implied` marks a column that a `--whole` declaration gives the same name on both sides without listing it; that only applies when a table is given.
 
 `load_all()` returns every entry.
+
+The listed JSON is a crosswalk file for [reconcile](reconcile.md):
+
+```
+python -m kumosql equivalence list --table mart.orders > orders-map.json
+python -m kumosql reconcile --left my-proj.old.orders --right my-proj.mart.orders --key order_id --map orders-map.json --rules rules.yml
+```
+
+`reconcile` compares the `equal` and `differs` pairs under their mapped names, reports each `differs` pair's `explanation` under `column_explanations`, and skips `missing` columns instead of reporting them as on one side only. `tests/test_crosswalk.py` reads such a file with `reconcile.load_crosswalk`.
 
 ## Suggest pairs
 
@@ -113,5 +122,6 @@ Pairs that share no meaning, source column or expression shape are counted under
 - A meaning names the source columns a model reads, so declarations act on source tables. One between two models changes no meaning.
 - A table whose grain is unknown never gets an `equal` hint. This is the common case for a table that only passes source rows on, since a source's grain is known only when someone states it. The command profiles the project with no stated grains. The [agent server](mcp-server.md) takes them from `--assume-grain` and from a declared source's `uniqueKey`, and `suggest_equivalences(..., profiles=...)` accepts profiles built that way.
 - A column whose meaning is unknown (see the [agent server's limits](mcp-server.md#limits) for how often lineage stops) cannot be matched, so a pair of tables built on such columns may be missed.
-- An `explanation` is a name. Nothing checks yet that a rule of that name exists.
+- An `explanation` is a name, saved without checking that a rule of that name exists: rules live in the files given to `reconcile --rules`, and given those, `reconcile` notes an explanation that names none of them.
+- `reconcile --map saved` still reads the `equal` declarations only. Use the listed file (above) to bring `differs` and `missing` entries into a reconciliation.
 - Every table of one set is compared with every table of the other. On large sets, narrow them with datasets or folders.

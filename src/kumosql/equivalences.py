@@ -51,7 +51,7 @@ from kumo_sql_prover.ast_utils import UnmodeledConstruct, faithful_sql, table_pa
 
 MAX_DECLARATIONS = 2000
 STATUSES = ("equal", "differs", "missing")
-MAX_EXPLANATION = 200
+MAX_EXPLANATION = 120  # the longest name a known-difference rule may have (reconcile_rules.MAX_NAME_CHARS)
 MAX_EVIDENCE = 4000
 EQUAL_FILE = "equivalences.json"  # what a proof may assume: equal declarations only
 CROSSWALK_FILE = "crosswalk.json"  # differs and missing records, never read by a proof

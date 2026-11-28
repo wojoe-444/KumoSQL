@@ -102,7 +102,7 @@ def test_a_difference_written_into_the_proof_file_by_hand_is_not_assumed():
     {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "verified_at": 20260101},
     {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "explanation": "an equal pair has no known difference"},
     {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "status": "differs", "explanation": "two\nlines"},
-    {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "status": "differs", "explanation": "r" * 201},
+    {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "status": "differs", "explanation": "r" * 121},
     {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "evidence": "e" * 4001},
     {"left": "p.d.a", "right": "p.d.b", "columns": [["x", "y"]], "evidence": 5},
     {"left": "p.d.a", "right": "p.d.b", "status": "differs", "whole": True},
@@ -249,6 +249,28 @@ def test_lookup_by_table_column_and_status():
     [legacy] = equivalences.lookup("legacy")
     assert (legacy["label"], legacy["matched_on"], legacy["counterpart"]) == ("proj.raw.legacy has no counterpart", "left", None)
     assert len(equivalences.lookup()) == 3 and len(equivalences.lookup(status="missing")) == 1
+
+
+def test_listed_entries_are_a_crosswalk_file_for_reconcile(tmp_path, capsys):
+    from kumosql.reconcile import load_crosswalk
+
+    equivalences.add({"left": "proj.old.orders", "right": "proj.mart.orders", "columns": [["amt", "amount"]]})
+    equivalences.add({"left": "proj.old.orders", "right": "proj.mart.orders", "columns": [["ts", "ts_est"]],
+                      "status": "differs", "explanation": "timezone_utc_vs_est"})
+    equivalences.add({"left": "proj.old.orders", "right": "proj.mart.orders", "columns": [["legacy", None]], "status": "missing"})
+    equivalences.add({"left": "proj.old.weekly", "right": None, "status": "missing"})
+    assert equivalence_main(["list", "--table", "mart.orders"]) == 0
+    path = tmp_path / "map.json"
+    path.write_text(capsys.readouterr().out, encoding="utf-8")
+    walk = load_crosswalk(str(path), left_table="proj.old.orders", right_table="proj.mart.orders")
+    assert [(link.left, link.right, link.status, link.explanation, link.missing) for link in walk.links] == [
+        ("amt", "amount", "equal", "", False),
+        ("ts", "ts_est", "differs", "timezone_utc_vs_est", False),
+        ("legacy", None, "missing", "", True),
+    ]
+    assert walk.notes == ()  # the table with no counterpart is not listed for this pair, so nothing is left unchecked
+    reversed_walk = load_crosswalk(str(path), left_table="mart.orders", right_table="old.orders")
+    assert [(link.left, link.right) for link in reversed_walk.links] == [("amount", "amt"), ("ts_est", "ts"), (None, "legacy")]
 
 
 # -------------------------------------------------------------------- suggest
