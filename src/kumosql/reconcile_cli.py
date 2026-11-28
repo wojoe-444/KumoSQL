@@ -45,7 +45,7 @@ def _common(parser: argparse.ArgumentParser) -> None:
 
 def _engine(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--project", help="BigQuery billing project (default: the one chosen in Settings)")
-    parser.add_argument("--max-bytes", type=int, help="BigQuery byte cap for the query (default: Settings → Scopes)")
+    parser.add_argument("--max-bytes", type=int, help="BigQuery byte cap for the query (default: Settings > Scopes)")
     parser.add_argument("--duckdb", help="run on this DuckDB database file (opened read-only) instead of BigQuery, or "
                                          ":memory: to compare queries over files (read_csv_auto, read_parquet)")
     parser.add_argument("--dry-run", action="store_true",

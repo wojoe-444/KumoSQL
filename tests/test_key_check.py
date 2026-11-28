@@ -263,6 +263,14 @@ def test_the_command_prints_the_query_without_running_it(database, db, monkeypat
     assert fake.sent == []
 
 
+def test_help_is_plain_ascii_so_a_redirected_windows_console_can_print_it():
+    parsers = [reconcile_cli._key_check_parser(), reconcile_cli._reconcile_parser(), reconcile_cli._rules_parser()]
+    for parser in parsers:
+        assert parser.format_help().isascii(), parser.prog
+    check_parser = reconcile_cli._rules_parser()._subparsers._group_actions[0].choices["check"]
+    assert check_parser.format_help().isascii()
+
+
 def test_python_dash_m_runs_key_check(database, capsys):
     from kumosql.__main__ import main
 
