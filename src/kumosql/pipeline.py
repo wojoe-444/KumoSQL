@@ -39,6 +39,7 @@ from sqlglot.schema import MappingSchema
 
 from . import lineage_limits
 from .lineage_filters import model_filters
+from .lineage_logic import model_logic
 from .lineage_soundness import (
     UNTRACED,
     condition_columns,
@@ -76,9 +77,11 @@ from .pipeline_types import (  # noqa: F401
     ColumnTrace,
     DuplicateGroup,
     DuplicateOccurrence,
+    LogicStep,
     Model,
     PipelineDiagnostic,
     Target,
+    TraceHop,
 )
 
 if TYPE_CHECKING:
@@ -339,6 +342,7 @@ class Pipeline:
         unknown: dict[ColumnRef, str] = {}
         filters: dict[tuple[str, ColumnFilter], None] = {}
         filters_unknown: set[str] = set()
+        hops: list[TraceHop] = []
         pending = deque([column])
         while pending:
             item = pending.popleft()
@@ -350,6 +354,7 @@ class Pipeline:
                 reason = analysis.untraced_reason(item, self.models)
                 if reason:
                     unknown[item] = reason
+                    hops.append(TraceHop(item, item.table, "unknown", "unknown", filters_unknown=True, reason=reason))
                 else:
                     sources.add(item)
                 continue
@@ -359,6 +364,7 @@ class Pipeline:
                 filters_unknown.add(item.table)
             else:
                 filters.update(dict.fromkeys((item.table, found) for found in record.filters))
+            hops.append(_trace_hop(item, record, hop))
             pending.extend(sorted(hop))
         seen.discard(column)
         return ColumnTrace(
@@ -368,6 +374,7 @@ class Pipeline:
             unknown=tuple(sorted(unknown.items())),
             filters=tuple(filters),
             filters_unknown=tuple(sorted(filters_unknown)),
+            hops=tuple(hops),
         )
 
     def lineage_report(self) -> list[dict]:
@@ -389,6 +396,14 @@ class Pipeline:
                 row["filters_unknown"] = True
             else:
                 row["filters"] = [item.to_json() for item in record.filters]
+            if record.expression is not None:
+                row["expression"] = record.expression
+            if record.aggregation_keys is not None:
+                row["aggregation_keys"] = list(record.aggregation_keys)
+            if record.partition_keys is not None:
+                row["partition_keys"] = list(record.partition_keys)
+            if record.steps:
+                row["steps"] = [step.to_json() for step in record.steps]
             rows.append(row)
         return rows
 
@@ -1827,13 +1842,27 @@ class _Analysis:
                     )
                 except Exception:
                     found_filters = None
+                logic = {}
+                if not by_name_problems:
+                    # How each column is computed and at what grain (kumosql.lineage_logic); a failure leaves it unknown.
+                    try:
+                        logic = model_logic(
+                            qualified,
+                            names,
+                            lambda table: pipeline.resolve(table) or _table_name_for_schema(table),
+                            pipeline.models[writer].masked_expressions,
+                        )
+                    except Exception:
+                        logic = {}
                 for name in names:
                     ref = ColumnRef(key, name)
                     record = records.get(ref)
                     if record is None or name == "*":
                         continue
                     records[ref] = replace(
-                        record, filters=_column_filters(found_filters, name, None if not unit else writer)
+                        record,
+                        filters=_column_filters(found_filters, name, None if not unit else writer),
+                        **_logic_fields(logic.get(name)),
                     )
                 for ref, before in prior.items():
                     records[ref] = _merge_records(before, records[ref])
@@ -1849,7 +1878,7 @@ class _Analysis:
                         if record is None or not any(_last_part(src.table) in hidden for src in record.sources):
                             continue
                         kept = frozenset(src for src in record.sources if _last_part(src.table) not in hidden)
-                        records[ref] = ColumnLineage(ref, kept, "unknown", "unknown", "temporary_table", record.filters)
+                        records[ref] = replace(record, sources=kept, status="unknown", transform="unknown", reason="temporary_table")
                         direct[ref] = kept
                     opaque_readers_of.update(upstream.get(key, ()))
                 if skipped_columns:
@@ -2034,11 +2063,28 @@ def _merge_records(before: ColumnLineage, after: ColumnLineage) -> ColumnLineage
     filters = None
     if before.filters is not None and after.filters is not None:
         filters = before.filters + tuple(item for item in after.filters if item not in before.filters)
+    # The logic stands when both writers compute the column the same way; otherwise neither expression is the column's.
+    logic = _logic_fields(None)
+    if all(getattr(before, name) == getattr(after, name) for name in logic):
+        logic = {name: getattr(after, name) for name in logic}
     if "unknown" in (before.status, after.status):
-        return ColumnLineage(after.column, sources, "unknown", "unknown", after.reason or before.reason, filters)
+        return ColumnLineage(after.column, sources, "unknown", "unknown", after.reason or before.reason, filters, **logic)
     status = "traced" if "traced" in (before.status, after.status) else "constant"
     transform = before.transform if before.transform == after.transform else "union"
-    return ColumnLineage(after.column, sources, status, transform, None, filters)
+    return ColumnLineage(after.column, sources, status, transform, None, filters, **logic)
+
+
+def _logic_fields(logic) -> dict:
+    """The ``ColumnLineage`` fields of a column's logic (``kumosql.lineage_logic.ColumnLogic``, or ``None``: unknown)."""
+
+    if logic is None:
+        return {"expression": None, "aggregation_keys": None, "partition_keys": None, "steps": ()}
+    return {
+        "expression": logic.expression,
+        "aggregation_keys": logic.aggregation_keys,
+        "partition_keys": logic.partition_keys,
+        "steps": logic.steps,
+    }
 
 
 _TRANSFORM_RANK = {"passthrough": 0, "renamed": 1, "expression": 2, "aggregate": 3, "window": 4}
@@ -2232,6 +2278,25 @@ def _narrows(record: ColumnLineage | None) -> bool:
         and record.transform in ("passthrough", "renamed")
         and len(record.sources) == 1
         and not next(iter(record.sources)).path
+    )
+
+
+def _trace_hop(column: ColumnRef, record: ColumnLineage, sources: frozenset[ColumnRef]) -> TraceHop:
+    """One step of a trace: how ``column`` is computed in its model (``record``), from ``sources`` one hop back."""
+
+    return TraceHop(
+        column=column,
+        model=column.table,
+        transform=record.transform,
+        status=record.status,
+        sources=tuple(sorted(sources)),
+        expression=record.expression,
+        filters=record.filters or (),
+        filters_unknown=record.filters is None,
+        aggregation_keys=record.aggregation_keys,
+        partition_keys=record.partition_keys,
+        steps=record.steps,
+        reason=record.reason,
     )
 
 

@@ -210,23 +210,37 @@ class _Walker:
         )
 
     def text(self, condition: exp.Expression) -> str:
-        condition = condition.copy()
-        for negated in list(condition.find_all(exp.Not)):
-            test = negated.this
-            if isinstance(test, exp.Is) and isinstance(test.expression, exp.Null):
-                # sqlglot prints ``x IS NOT NULL`` as ``NOT x IS NULL``; say it the way it was written.
-                replacement = exp.Is(this=test.this.copy(), expression=exp.Not(this=exp.Null()))
-                if negated is condition:
-                    condition = replacement
-                else:
-                    negated.replace(replacement)
-        for alias in list(condition.find_all(exp.Alias)):
-            if isinstance(alias.parent, exp.Select) and _qualify_alias(alias):
-                alias.replace(alias.this.copy())  # an alias the qualifier added (``b.id AS id``, ``1 AS `1```)
-        sql = condition.sql(dialect="bigquery")
-        if not self.masked:
-            return sql
-        return _TOKEN.sub(lambda m: _restore(m, self.masked), sql)
+        return sql_text(condition, self.masked)
+
+
+def sql_text(node: exp.Expression, masked: tuple[str, ...] = (), *, copy: bool = True, unnamed: bool = False) -> str:
+    """``node`` as BigQuery SQL the way it was written: ``x IS NOT NULL``, no aliases the qualifier added, ``${...}`` restored.
+
+    ``copy=False`` tidies ``node`` in place (for a tree the caller has already copied). ``unnamed`` also drops the
+    ``_col_0`` names the qualifier gives the unnamed projection of a scalar subquery, which no query refers to.
+    """
+
+    if copy:
+        node = node.copy()
+    for negated in list(node.find_all(exp.Not)):
+        test = negated.this
+        if isinstance(test, exp.Is) and isinstance(test.expression, exp.Null):
+            # sqlglot prints ``x IS NOT NULL`` as ``NOT x IS NULL``; say it the way it was written.
+            replacement = exp.Is(this=test.this.copy(), expression=exp.Not(this=exp.Null()))
+            if negated is node:
+                node = replacement
+            else:
+                negated.replace(replacement)
+    for alias in list(node.find_all(exp.Alias)):
+        if isinstance(alias.parent, exp.Select) and (_qualify_alias(alias) or (unnamed and _scalar_unnamed(alias))):
+            alias.replace(alias.this.copy())  # an alias the qualifier added (``b.id AS id``, ``1 AS `1```)
+    sql = node.sql(dialect="bigquery")
+    if not masked:
+        return sql
+    return _TOKEN.sub(lambda m: _restore(m, masked), sql)
+
+
+_GENERATED_ALIAS = re.compile(r"_col_\d+")
 
 
 def _qualify_alias(alias: exp.Alias) -> bool:
@@ -234,6 +248,19 @@ def _qualify_alias(alias: exp.Alias) -> bool:
     if isinstance(inner, exp.Column):
         return inner.name == alias.alias
     return inner.sql(dialect="bigquery").strip("`") == alias.alias
+
+
+def _scalar_unnamed(alias: exp.Alias) -> bool:
+    """``MAX(x) AS _col_0`` in the one-column select of a scalar subquery: a name nothing reads."""
+
+    select = alias.parent
+    return (
+        bool(_GENERATED_ALIAS.fullmatch(alias.alias))
+        and isinstance(select, exp.Select)
+        and len(select.expressions) == 1
+        and isinstance(select.parent, exp.Subquery)
+        and not isinstance(select.parent.parent, (exp.From, exp.Join))
+    )
 
 
 def _restore(match: re.Match, masked: tuple[str, ...]) -> str:

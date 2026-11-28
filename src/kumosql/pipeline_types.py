@@ -82,6 +82,15 @@ class ColumnLineage:
     holds only what was resolved before the trace gave up). ``transform`` is
     ``passthrough``, ``renamed``, ``expression``, ``aggregate``, ``window``,
     ``union``, ``constant`` or ``unknown``.
+
+    The logic of the column (``kumosql.lineage_logic``): ``expression`` is the SQL that computes it, with the CTEs and
+    derived tables of the model inlined where that keeps the meaning (``None``: not worked out, or a set operation
+    whose branches differ, see ``steps``). ``aggregation_keys`` is the grain the value is computed at: ``None`` when no
+    GROUP BY or aggregate computes it, ``()`` for one aggregate over all rows, otherwise the grouping keys, named by
+    the output column that carries each one when there is one. ``partition_keys`` is the ``PARTITION BY`` of the window
+    functions in the expression when they share one (``()``: ``OVER ()`` with no partition). ``steps`` are the values
+    inside the model the expression names but does not inline (an aggregate a second aggregate reads, a set
+    operation's branches), each with its own expression and keys.
     """
 
     column: "ColumnRef"
@@ -91,6 +100,30 @@ class ColumnLineage:
     reason: str | None = None
     # The conditions that limit which rows reach this column (``None``: could not be worked out).
     filters: tuple["ColumnFilter", ...] | None = None
+    expression: str | None = None
+    aggregation_keys: tuple[str, ...] | None = None
+    partition_keys: tuple[str, ...] | None = None
+    steps: tuple["LogicStep", ...] = ()
+
+
+@dataclass(frozen=True)
+class LogicStep:
+    """A value inside one model that a column's expression names instead of inlining (see ``ColumnLineage.steps``).
+
+    ``reference`` is how the expression names it (``d.daily_max``), or the column name for a branch of the model's own
+    set operation; ``scope`` is where it is computed, labelled as filters label theirs (a CTE name, ``subquery d``,
+    ``main branch 2``).
+    """
+
+    reference: str
+    scope: str
+    expression: str | None
+    aggregation_keys: tuple[str, ...] | None = None
+
+    def to_json(self) -> dict:
+        row: dict = {"reference": self.reference, "scope": self.scope, "expression": self.expression}
+        row["aggregation_keys"] = None if self.aggregation_keys is None else list(self.aggregation_keys)
+        return row
 
 
 @dataclass(frozen=True)
@@ -146,10 +179,83 @@ class ColumnTrace:
     # each with the model it was written in. ``filters_unknown`` lists models whose conditions could not be worked out.
     filters: tuple[tuple[str, "ColumnFilter"], ...] = ()
     filters_unknown: tuple[str, ...] = ()
+    # One entry per model column on the way, the asked column first, then upstream in the order the trace reached them.
+    hops: tuple["TraceHop", ...] = ()
 
     @property
     def complete(self) -> bool:
         return not self.unknown
+
+    def to_json(self) -> dict:
+        return {
+            "column": str(self.column),
+            "complete": self.complete,
+            "sources": [_column_row(ref) for ref in sorted(self.sources)],
+            "unknown": [{**_column_row(ref), "reason": reason} for ref, reason in self.unknown],
+            "hops": [hop.to_json() for hop in self.hops],
+        }
+
+
+#: ``TraceHop.to_json`` keys for each filter kind
+FILTER_KEYS = {"where": "where", "join": "join_on", "having": "having", "qualify": "qualify"}
+
+
+@dataclass(frozen=True)
+class TraceHop:
+    """One model column on a ``trace_column`` path: how it is computed, at what grain, and which rows reach it.
+
+    ``column`` is the column this hop computes (``model`` is its table). ``sources`` are the columns it is built from
+    one hop back. ``expression``, ``aggregation_keys``, ``partition_keys`` and ``steps`` are as on ``ColumnLineage``;
+    ``filters`` are the ``WHERE``, ``JOIN ... ON`` / ``USING``, ``HAVING`` and ``QUALIFY`` conditions of this model that
+    limit its rows (``filters_unknown``: they could not be worked out). ``reason`` says why a hop is ``unknown``.
+    ``job_id`` and ``step`` name the scheduled job and its statement when the hop was read from one.
+    """
+
+    column: "ColumnRef"
+    model: str
+    transform: str
+    status: str
+    sources: tuple["ColumnRef", ...] = ()
+    expression: str | None = None
+    filters: tuple["ColumnFilter", ...] = ()
+    filters_unknown: bool = False
+    aggregation_keys: tuple[str, ...] | None = None
+    partition_keys: tuple[str, ...] | None = None
+    steps: tuple[LogicStep, ...] = ()
+    reason: str | None = None
+    job_id: str | None = None
+    step: int | None = None
+
+    @property
+    def aggregated(self) -> bool:
+        return self.aggregation_keys is not None
+
+    def to_json(self) -> dict:
+        row: dict = {
+            "column": str(self.column),
+            "model": self.model,
+            "transform": self.transform,
+            "status": self.status,
+            "expression": self.expression,
+            "aggregation_keys": None if self.aggregation_keys is None else list(self.aggregation_keys),
+            "sources": [_column_row(ref) for ref in self.sources],
+        }
+        if self.partition_keys is not None:
+            row["partition_keys"] = list(self.partition_keys)
+        if self.steps:
+            row["steps"] = [step.to_json() for step in self.steps]
+        if self.filters_unknown:
+            row["filters_unknown"] = True
+        for item in self.filters:
+            found = item.to_json()
+            row.setdefault(FILTER_KEYS.get(found.pop("kind"), item.kind), []).append(found)
+        if self.reason:
+            row["reason"] = self.reason
+        if self.job_id is not None:
+            row["job_id"] = self.job_id
+        if self.step is not None:
+            row["step"] = self.step
+        return row
 
 
 @dataclass

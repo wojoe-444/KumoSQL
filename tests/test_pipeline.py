@@ -475,6 +475,7 @@ def test_lineage_report_rows_and_pipeline_report_section():
         "status": "traced",
         "complete": True,
         "filters": [],
+        "expression": "id",
     }
     assert rows[("p.m.s", "*")]["status"] == "unknown" and rows[("p.m.s", "*")]["reason"] == "unexpanded_star"
     assert pipeline.report()["column_lineage"] == pipeline.lineage_report()
