@@ -27,6 +27,9 @@ Optional hooks on the session (none is required; a missing one is a named gap, n
 
 * ``session.column_is_nullable(table_key, column) -> bool | None``: from a schema snapshot; ``None`` or no hook means the
   nullability is unknown, and ``not_in_null`` then reports that it could not decide.
+* ``session.query_never_null(sql, tables) -> tuple[bool, ...] | None``: whether each output column of a ``NOT IN`` subquery
+  is proven never NULL from its structure (``COALESCE`` with a constant, a ``WHERE`` comparison, an inner-join key, ...;
+  :mod:`kumosql.inferred_facts`). A proof clears the subquery; anything else falls back to the rules above.
 """
 
 from __future__ import annotations
@@ -433,6 +436,8 @@ def _not_in(ctx: Context) -> None:
 def _subquery_column_nullable(ctx: Context, query: exp.Select, column: exp.Expression, hook) -> bool | None:
     """Whether the subquery's output column can be NULL: ``True``/``False``, or ``None`` when it is not known."""
 
+    if _proven_never_null(ctx, query):
+        return False
     if not isinstance(column, exp.Column) or isinstance(column.this, exp.Star):
         return None
     if (_folded(column.table), _folded(column.name)) in _where_not_null_columns(query) or (("", _folded(column.name)) in _where_not_null_columns(query)):
@@ -454,6 +459,19 @@ def _subquery_column_nullable(ctx: Context, query: exp.Select, column: exp.Expre
     except Exception:  # noqa: BLE001 - a broken hook is "unknown", never a finding
         return None
     return answer if isinstance(answer, bool) else None
+
+
+def _proven_never_null(ctx: Context, query: exp.Select) -> bool:
+    """Whether the prover shows the subquery's one output column is never NULL (``session.query_never_null``)."""
+
+    prove: Callable[[str, dict], tuple[bool, ...] | None] | None = getattr(ctx.session, "query_never_null", None)
+    if prove is None:
+        return False
+    try:
+        found = prove(query.sql(dialect="bigquery"), ctx.tables)
+    except Exception:  # noqa: BLE001 - a broken hook is "unknown", never a pass
+        return False
+    return bool(found) and len(found) == 1 and found[0] is True
 
 
 # --------------------------------------------------------------------- 4. LIMIT

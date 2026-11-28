@@ -12,6 +12,10 @@ One call instead of four commands, on a draft ``SELECT`` written against the pro
 * **fan-out**: joins that can multiply rows, judged from the grain of the joined tables (the project's table profiles);
 * **static**: BigQuery-specific text checks (a reserved word as an alias, ``NOT IN`` with NULL, a CASE branch no row reaches, ...),
   in :mod:`kumosql.bq_static_checks`;
+* **parse**: whether sqlglot reads the draft as BigQuery does (:mod:`kumosql.parse_warning`); every other check reads
+  sqlglot's version, so a misread is a finding;
+* **facts**: what the prover shows about the draft's output (never-NULL columns, unique column sets, row count), each with
+  its source (:mod:`kumosql.inferred_facts`);
 * **deployed tables**: a table the draft reads that is missing from the schema snapshot, and a column it uses that the
   repository has but the snapshot's table lacks (:mod:`kumosql.mcp_deployed`; ``deployed_status`` compares one table);
 * **BigQuery dry run**: only when ``dry_run=true`` *and* a ``project`` is given. It plans the query without running it
@@ -358,6 +362,11 @@ def _target_grain(session: Session, draft: Draft, target: exp.Expression, ctes: 
                 return None, explain("source_without_grain")
             grain = _grain(session, key)
             if grain is None or not grain.known:
+                from . import inferred_facts
+
+                proven = inferred_facts.unique_key(session, key)  # a set of columns the model's query proves unique
+                if proven is not None:
+                    return list(proven), ""
                 return None, explain(grain.reason if grain is not None else "grain_unknown")
             return list(grain.keys), ""
     elif isinstance(target, exp.Subquery) and isinstance(target.this, exp.Query):
@@ -467,6 +476,13 @@ def check_query(session: Session, args: dict) -> Answer:
     gaps += fan_gaps
     checked.append("fan_out")
     checked.append("static")
+    from . import parse_warning  # sqlglot's reading of the draft against an independent reading of the text
+
+    parse_found, parse_gaps, parse_ran = parse_warning.check_draft(draft.sql)
+    findings = parse_found + findings  # first: a misread puts every other finding in doubt
+    gaps += parse_gaps
+    if parse_ran:
+        checked.append("parse")
     from . import column_lint  # imported here so the tool list keeps the order of TOOL_MODULES
 
     zone_findings, zone_gaps = column_lint.lint(session, draft.tree)  # time zones, default-zone functions, 0-100 scales
@@ -503,6 +519,9 @@ def check_query(session: Session, args: dict) -> Answer:
         answer.fields["ties_judged_assuming"] = "; ".join(facts)
     if draft.assumptions:
         answer.fields["fan_out_judged_assuming"] = list(dict.fromkeys(draft.assumptions))[:3]
+    from . import inferred_facts  # never NULL, unique, row count of the output, each with its source
+
+    output_facts = inferred_facts.draft(session, draft.sql, draft.tree, draft.tables)
 
     counts: dict[str, int] = {}
     for item in findings:
@@ -515,6 +534,7 @@ def check_query(session: Session, args: dict) -> Answer:
     answer.add_list("findings", findings[offset:][:PAGE], total=len(findings), offset=offset, primary=True)
     answer.add_list("columns", columns, total=len(columns))
     answer.add_list("sources", access.sources, total=len(access.sources))
+    answer.add_list("facts", output_facts, total=len(output_facts), optional=True)  # cut first; never pushes out a finding
     for what, reason in gaps:
         answer.unknown(what, reason)
     for step in deployed.next:
