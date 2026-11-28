@@ -186,6 +186,20 @@ def saved_tables() -> list[tuple[str, str, str, dict]]:
     return found
 
 
+def saved_listings() -> list[tuple[str, str, list[dict]]]:
+    """``(project, dataset, items)`` for every saved dataset listing (each item has ``id`` and ``type``); calls nothing."""
+
+    with _lock:
+        _load_disk()
+        entries = list(_memory.items())
+    found = []
+    for key, entry in entries:
+        parts = key.split("\x1f") if isinstance(key, str) else []
+        if len(parts) == 3 and parts[0] == "tables" and isinstance(entry.get("data"), list):
+            found.append((parts[1], parts[2], [item for item in entry["data"] if isinstance(item, dict)]))
+    return found
+
+
 def cached(key: str, fetch, refresh: bool = False) -> dict:
     """Return ``{"data", "fetchedAt", "cached", "stale", "refreshing"}`` for ``key``.
 
@@ -541,17 +555,26 @@ def list_tables(project: str, dataset: str) -> list[dict[str, str]]:
 
 
 def get_table(project: str, dataset: str, table: str) -> dict:
-    """Return table metadata with its BigQuery schema."""
+    """Return table metadata with its BigQuery schema; a view or materialized view also has its ``view_query``.
+
+    ``view_query`` is the definition's SQL (``None`` when BigQuery gave none) and ``view_legacy_sql`` whether it is
+    legacy SQL; both are present for every view, so an entry saved before they were asked for can be told apart.
+    """
     # tables.get reads metadata only, never rows, so a table that requires a partition filter is no problem.
     payload = _get(
         f"projects/{quote(project, safe='')}/datasets/{quote(dataset, safe='')}/tables/{quote(table, safe='')}",
-        {"fields": "tableReference,type,numRows,schema,tableConstraints"},
+        {"fields": "tableReference,type,numRows,schema,tableConstraints,view,materializedView"},
     )
     reference = payload.get("tableReference", {})
-    return {
+    found = {
         "id": reference.get("tableId", table),
         "type": payload.get("type", "TABLE"),
         "numRows": payload.get("numRows"),
         "schema": payload.get("schema", {}).get("fields", []),
         "constraints": payload.get("tableConstraints"),
     }
+    if found["type"] in ("VIEW", "MATERIALIZED_VIEW"):
+        definition = payload.get("view") or payload.get("materializedView") or {}
+        found["view_query"] = definition.get("query") if isinstance(definition, dict) else None
+        found["view_legacy_sql"] = bool(isinstance(definition, dict) and definition.get("useLegacySql"))
+    return found

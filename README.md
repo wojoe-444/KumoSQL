@@ -619,7 +619,7 @@ Every command prints `--help`.
 | `python -m kumosql notebook timeline FILE` | A Jupyter notebook's cells, outputs and errors as a compact timeline under a hard cap (`--max-chars`, `--cells`, `--errors-only`, `--json`) |
 | `python -m kumosql prove-tables LEFT RIGHT --project DIR` | Prove two models of a Dataform project equivalent, layer by layer, using saved equivalences |
 | `python -m kumosql equivalence list\|add\|remove` | Saved "column X of table A is column Y of table B" declarations |
-| `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate; `--job-sql PATH` loads old scheduled-job SQL (a job folder or job history) beside the project so lineage runs through it ([details](docs/pipeline-analysis.md#scheduled-jobs-loaded-beside-the-project)) |
+| `python -m kumosql pipeline-report` | Whole-pipeline lineage, impact, duplicates, coverage and release gate; `--job-sql PATH` loads old scheduled-job SQL (a job folder or job history) beside the project so lineage runs through it ([details](docs/pipeline-analysis.md#scheduled-jobs-loaded-beside-the-project)); `--fetch-schema` also reads the definitions of views the project reads, and `--fetch-views-billed` asks `INFORMATION_SCHEMA.VIEWS` too ([details](docs/pipeline-analysis.md#views-the-project-reads-but-does-not-define)) |
 | `python -m kumosql scopes` | Manage saved scopes (`list`, `add`, `remove`, `fields`, `refresh`) |
 | `python -m kumosql compare-outputs` | Generate SQL that compares pipeline outputs before and after a refactor |
 | `python -m kumosql dry-run` | BigQuery planning and schema check, no query execution |

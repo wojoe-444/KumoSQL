@@ -155,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
         "(JSON, JSON lines or CSV): its statements are loaded as models beside the project, so lineage continues from a "
         "declaration into the job step that writes its table. Repeatable. Nothing is contacted.",
     )
+    parser.add_argument(
+        "--fetch-views-billed",
+        action="store_true",
+        help="When the BigQuery schema lookup is on (KUMOSQL_SCHEMA_FETCH=1 or Settings), also ask INFORMATION_SCHEMA.VIEWS (a billed "
+        "query, at least 10 MB per dataset, under the byte cap in Settings) for the views the free tables.get call could not define",
+    )
     parser.add_argument("--docs", type=Path, action="append", metavar="DIR", help="Folder of Markdown docs (read-only, repeatable). Its 'Primary key: a, b' lines or primary-key columns state a table's grain (answers show such a grain as declared, with the file it came from), and its tables of columns (Column | Description) give column descriptions, shown with the file they came from; a time zone a description mentions is only a hint.")
     parser.add_argument("--malloy", type=Path, action="append", metavar="DIR", help="Folder of Malloy files whose source primary_key states the grain of the table it reads (read-only, repeatable)")
     parser.add_argument("--profiles", type=Path, help="folder of saved data profiles (default: data-profiles in the KumoSQL data folder)")
@@ -203,7 +209,10 @@ def main(argv: list[str] | None = None) -> int:
                 load_job_sql(path)  # fail at start, not as a gap in every answer
             except JobSqlError as exc:
                 parser.error(f"--job-sql: {exc}")
-    loader = (lambda: load_project(root, args.source_schema, args.column_attributes, args.docs or (), job_sql)) if root else None
+    loader = (
+        (lambda: load_project(root, args.source_schema, args.column_attributes, args.docs or (), job_sql, args.fetch_views_billed))
+        if root else None
+    )
     session = Session(
         loader=loader,
         profiles=args.profiles,

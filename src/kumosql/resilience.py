@@ -48,6 +48,8 @@ ASSET_FAILURE_CODES = frozenset(
         "job_writer_ambiguous",
         "job_writer_missing",
         "job_destination_ambiguous",
+        # A view the project reads whose definition BigQuery would not give (kumosql.view_definitions).
+        "view_definition_unreadable",
     }
 )
 
@@ -68,6 +70,7 @@ _EFFECTS = {
     "job_writer_ambiguous": ("lineage", "impact"),
     "job_writer_missing": ("lineage", "impact"),
     "job_destination_ambiguous": ("lineage", "impact"),
+    "view_definition_unreadable": ("lineage", "impact"),
 }
 
 # Kinds shared with the graph page's gaps table; other codes keep their own name.

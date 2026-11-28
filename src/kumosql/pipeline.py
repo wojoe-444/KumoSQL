@@ -108,6 +108,9 @@ class Pipeline:
     column_doc_unread: dict[str, list[tuple[str, str, str, str]]] = field(default_factory=dict)
     #: unique keys a declaration states for a source (``assertions: {uniqueKey}`` or ``uniqueKey`` in ``declare({...})``), by source key
     source_unique_keys: dict[str, tuple[tuple[str, ...], ...]] = field(default_factory=dict)
+    #: BigQuery table types known for tables the project reads (``VIEW``, ``MATERIALIZED_VIEW``, ``TABLE``, ...), by table
+    #: key; a view with no model is where a trace stops as ``opaque_view`` (see kumosql.view_definitions)
+    table_types: dict[str, str] = field(default_factory=dict)
 
     # ------------------------------------------------------------------ graph
 
@@ -150,6 +153,7 @@ class Pipeline:
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
+        self.__dict__.setdefault("table_types", {})  # saved before table types were kept
         analysis = self.__dict__.get("_analysis")
         if analysis is not None and not all(hasattr(analysis, key) for key in ("statement_reads", "statement_writes")):
             self._analysis = None  # older saved projects need the statement tables recomputed
@@ -333,7 +337,8 @@ class Pipeline:
 
         ``unknown`` lists every column on the path whose inputs could not be
         determined (a failed or unparsed model, an unexpanded ``SELECT *``,
-        an ambiguous reference), so a result with unknowns is a lower bound.
+        an ambiguous reference, a view whose definition is not loaded:
+        ``opaque_view``), so a result with unknowns is a lower bound.
         """
 
         analysis = self._analyse()
@@ -353,6 +358,11 @@ class Pipeline:
             model = self.models.get(item.table)
             if record is None:
                 reason = analysis.untraced_reason(item, self.models)
+                if not reason and item.table not in self.models:
+                    from .view_definitions import is_opaque_view
+
+                    if is_opaque_view(self, item.table):
+                        reason = "opaque_view"  # a view whose definition is not loaded: its columns come from tables not seen
                 if reason:
                     unknown[item] = reason
                     hops.append(
@@ -911,6 +921,8 @@ class Pipeline:
                     "asset": model.asset_identity.to_json() if model.asset_identity else None,
                     # a statement of a scheduled job loaded beside the project (kumosql.job_sql)
                     **({"job_id": model.job_id, "step": model.job_step} if model.job_id is not None else {}),
+                    # a view definition read from BigQuery (kumosql.view_definitions)
+                    **({"fetched_from": model.fetched_from, "fetched_at": model.fetched_at} if model.fetched_from else {}),
                 }
                 for key, model in sorted(self.models.items())
             },

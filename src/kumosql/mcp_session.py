@@ -31,10 +31,13 @@ def load_project(
     column_attributes: Path | None = None,
     docs: Sequence[Path] = (),
     job_sql: Sequence[Path] = (),
+    views_billed: bool = False,
 ) -> Pipeline:
     """The project the CLI's ``pipeline-report`` would load: a Dataform folder, a folder of ``.sql`` files or a compiled graph.
 
-    ``job_sql`` are job folders or job-history exports whose statements join the project (``kumosql.job_sql``).
+    ``job_sql`` are job folders or job-history exports whose statements join the project (``kumosql.job_sql``). The
+    definitions of the views it reads become models when the BigQuery schema lookup is on (``kumosql.view_definitions``;
+    ``views_billed`` also asks ``INFORMATION_SCHEMA.VIEWS``).
     """
 
     schema = parse_json_or_raise(source_schema, "source schema file") if source_schema else None
@@ -48,6 +51,9 @@ def load_project(
             pipeline = load_into(pipeline, job_sql)
         except JobSqlError as exc:
             raise PipelineLoadError(str(exc)) from None
+    from .view_definitions import attach
+
+    pipeline = attach(pipeline, billed=views_billed)
     return with_column_meaning(pipeline, column_attributes, docs)
 
 

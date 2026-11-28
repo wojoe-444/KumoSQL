@@ -18,7 +18,7 @@ from pathlib import Path
 from . import state
 
 SECTION = "storage"
-SNAPSHOT_VERSION = 4  # 4: models carry job_id and job_step (kumosql.job_sql); 3: models carry logical, disabled, has_output, incremental_sql and the pipeline a default_location; 2: models carry config_reads and config_reads_unread
+SNAPSHOT_VERSION = 5  # 5: models carry fetched_from and fetched_at (kumosql.view_definitions); 4: models carry job_id and job_step (kumosql.job_sql); 3: models carry logical, disabled, has_output, incremental_sql and the pipeline a default_location; 2: models carry config_reads and config_reads_unread
 
 
 def atomic_json(path: Path, value: object) -> None:
@@ -101,6 +101,8 @@ def pipeline_from_snapshot(value: object, key: str):
             raise ValueError("invalid snapshot model flags")
         if not (obj["job_id"] is None or isinstance(obj["job_id"], str)) or not (obj["job_step"] is None or type(obj["job_step"]) is int):
             raise ValueError("invalid snapshot model job")
+        if not all(isinstance(obj[k], str) for k in ("fetched_from", "fetched_at")):
+            raise ValueError("invalid snapshot model origin")
         if not isinstance(obj["unique_keys"], list):
             raise ValueError("invalid snapshot unique keys")
         obj["unique_keys"] = tuple(tuple(_strings(v)) for v in obj["unique_keys"])

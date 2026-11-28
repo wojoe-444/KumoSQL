@@ -302,6 +302,10 @@ class Model:
     # this table. ``None`` for the project's own actions.
     job_id: str | None = None
     job_step: int | None = None
+    # A definition read from BigQuery rather than the project (``kumosql.view_definitions``): where it came from
+    # (``tables.get`` or ``INFORMATION_SCHEMA.VIEWS``) and when, as an ISO 8601 time. Empty for the project's own actions.
+    fetched_from: str = ""
+    fetched_at: str = ""
 
     def __post_init__(self) -> None:
         if self.path:

@@ -359,8 +359,11 @@ def pipeline_main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--fetch-schema",
         action="store_true",
-        help="Look up columns of tables the project does not define in BigQuery (off by default: nothing reaches the network otherwise)",
+        help="Look up columns of tables the project does not define in BigQuery, and read the definitions of the views it reads "
+        "so lineage continues through them (off by default: nothing reaches the network otherwise)",
     )
+    parser.add_argument("--fetch-views-billed", action="store_true", help="With --fetch-schema: also ask INFORMATION_SCHEMA.VIEWS (a billed query, at least 10 MB per dataset, dry-run first "
+        "and under the byte cap in Settings) for the views the free tables.get call could not define")
     parser.add_argument(
         "--job-sql",
         type=Path,
@@ -437,6 +440,11 @@ def pipeline_main(argv: list[str] | None = None) -> int:
         from . import schema_fetch
 
         os.environ[schema_fetch.ENV] = "1"
+    if args.fetch_views_billed:
+        from . import schema_fetch
+
+        if not schema_fetch.enabled():
+            parser.error("--fetch-views-billed needs --fetch-schema (or KUMOSQL_SCHEMA_FETCH=1)")
     if args.assess and not args.target:
         parser.error("--assess needs --target")
     if bool(args.root) == bool(args.git):
@@ -477,6 +485,10 @@ def pipeline_main(argv: list[str] | None = None) -> int:
             pipeline = load_into(pipeline, args.job_sql)
         except JobSqlError as exc:
             parser.error(f"--job-sql: {exc}")
+    from . import view_definitions
+
+    # Views the project reads: their definitions become models when the schema lookup is on (nothing is asked otherwise).
+    pipeline = view_definitions.attach(pipeline, billed=args.fetch_views_billed)
     boundary = boundary_session = None
     if boundary_spec is not None:
         from . import boundary_report

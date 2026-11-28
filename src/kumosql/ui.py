@@ -900,6 +900,9 @@ def main(argv: list[str] | None = None) -> int:
                 from .job_sql import load_into
 
                 pipeline = load_into(pipeline, args.job_sql)
+            from .view_definitions import attach
+
+            pipeline = attach(pipeline)  # view definitions, when the schema lookup is on in Settings
             pipeline.source_files = read_project_files(args.project)
             live_graph.set_project(pipeline, args.project)
         except Exception as exc:
