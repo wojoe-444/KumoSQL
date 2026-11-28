@@ -215,7 +215,8 @@ def test_a_key_narrower_than_a_declared_unique_key_is_contradicted(session):
 def test_a_key_with_no_evidence_is_unconfirmed_and_names_the_command_that_would_measure_it(session):
     [found] = only(run("source: customers is bigquery.table('wh.customers') extend { primary_key: id }\n", session), "primary_key")
     assert found.status == mc.UNCONFIRMED and found.why.startswith("unconfirmed: no grain evidence for wh.customers")
-    assert found.next.startswith("python -m kumosql profile-table p.wh.customers --columns id --dry-run")
+    assert found.next.startswith("python -m kumosql key-check p.wh.customers --key id --dry-run")
+    assert "python -m kumosql profile-table p.wh.customers --columns id saves a measurement" in found.next
     # without any project the same key is unconfirmed too: a key is never called wrong without evidence
     [alone] = only(run("source: customers is bigquery.table('wh.customers') extend { primary_key: id }\n"), "primary_key")
     assert alone.status == mc.UNCONFIRMED
@@ -289,10 +290,11 @@ def test_a_join_one_whose_key_repeats_in_the_saved_measurement_fans_out(session)
 def test_a_join_one_with_no_measurement_is_unconfirmed_and_offers_the_join_profile(session):
     model = "source: sales is bigquery.table('ds.daily') extend { join_one: c is bigquery.table('wh.customers') on customer_id = c.id and c.region = 'eu' }\n"
     [found] = only(run(model, session), "join_fan_out")
-    assert found.status == mc.UNCONFIRMED and found.next.startswith("python -m kumosql profile-table p.wh.customers --columns id")
+    assert found.status == mc.UNCONFIRMED and found.next.startswith("python -m kumosql key-check p.wh.customers --key id")
     model = "source: sales is bigquery.table('ds.daily') extend { join_one: c is bigquery.table('wh.orders') on customer_id = c.customer_id and order_day = c.created_at }\n"
     [pair] = only(run(model, session), "join_fan_out")
-    assert pair.status == mc.UNCONFIRMED and pair.next.startswith("join_profile left=ds.daily right=wh.orders keys=customer_id,order_day=created_at")
+    assert pair.status == mc.UNCONFIRMED and pair.next.startswith("python -m kumosql key-check p.wh.orders --key customer_id,created_at")
+    assert "join_profile left=ds.daily right=wh.orders keys=customer_id,order_day=created_at" in pair.next
 
 
 def test_a_join_condition_that_is_not_column_equalities_is_never_decided(session):

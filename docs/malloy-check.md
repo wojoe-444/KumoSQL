@@ -47,7 +47,7 @@ Every finding has a `status`, and its `why` starts with the same words:
 | Status | Meaning | Exit code |
 | --- | --- | --- |
 | `contradicted by <evidence>` | The evidence shows the model is wrong here. A structural problem is contradicted by the model text itself. | 1 |
-| `unconfirmed: ...` | Nothing KumoSQL holds decides it. `next` names the opt-in command that would measure it (`profile-table`, or `join_profile` on the agent server). Unconfirmed is not a pass. | 0 |
+| `unconfirmed: ...` | Nothing KumoSQL holds decides it. `next` names the opt-in command that would measure it: [`key-check`](reconcile.md#checking-a-key-key-check) answers at once, and `profile-table` (or `join_profile` on the agent server, for a key of several columns) saves a measurement the next run reads. Unconfirmed is not a pass. | 0 |
 | `confirmed by <evidence>` | The evidence agrees. | 0 |
 
 A key is never called wrong without evidence. Exit code 2 means the input could not be read (no such path, not a `.malloy` file, a project that does not load).
@@ -97,5 +97,5 @@ On the agent server, `check_malloy` checks the `--malloy` folders it was started
 - Column checks see top-level columns only. A nested field (`items.sku` on a record column) is checked as the column `items`.
 - A source with a `where:` keeps only some rows, so whole-table repeats do not contradict its key; it stays unconfirmed.
 - The agent server's schema snapshot holds only the tables of the project, so a warehouse table the project does not declare has no column list there; the CLI reads the whole snapshot.
-- A declared grain is a claim somebody wrote, and a measurement is a count on one day; neither is a constraint the warehouse enforces. KumoSQL has no saved key-check result beyond these measurements.
+- A declared grain is a claim somebody wrote, and a measurement is a count on one day; neither is a constraint the warehouse enforces. `key-check` prints its answer and saves none, so the check cannot read it; only saved data profiles and saved join profiles count as measurements.
 - Malloy notebooks (`.malloynb`), parameters of sources and query results are not read.

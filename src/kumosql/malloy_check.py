@@ -24,8 +24,8 @@ A key is never called wrong without evidence. Grain evidence is, in order: the t
 build (:mod:`kumosql.source_grain`: a declaration's ``assertions.uniqueKey``, a duplicate-key assertion, docs,
 ``--assume-grain``; never a Malloy ``primary_key``, which is the claim being checked), and the key measurements of saved
 data profiles and saved ``join_profile`` runs (:mod:`kumosql.join_profile_store`). A measurement is a count on one day and
-is reported with its date. KumoSQL has no separate saved key-check result; the saved measurements are the only measured
-evidence. A source with a ``where:`` filter keeps a subset of its table, so whole-table evidence of repeats does not
+is reported with its date. ``key-check`` prints its result and saves none, so the saved measurements are the only measured
+evidence; an unconfirmed key's ``next`` names ``key-check`` to answer it at once and the command whose saved result counts. A source with a ``where:`` filter keeps a subset of its table, so whole-table evidence of repeats does not
 contradict its key (it stays unconfirmed).
 
 Ratio columns: the ratio re-aggregation detector (``kumosql.ratio_check``) is being built separately. :func:`ratio_verdict`
@@ -590,13 +590,17 @@ class Evidence:
 
         key = self.key(table)
         full = key or (table if table.count(".") >= 2 else f"PROJECT.{table}")
-        if len(columns) == 1 or not pairs:
-            if self.surface == "mcp":
-                return f"profile_table table={self.label(table)} columns={','.join(columns)} project=BILLING_PROJECT (a dry run; add run=true to measure, then check_malloy again)"
-            return f"python -m kumosql profile-table {full} --columns {','.join(columns)} --dry-run (then without --dry-run; the saved profile is read by the next check-malloy)"
+        names = ",".join(columns)
         keys = ",".join(a if a == b else f"{a}={b}" for a, b in pairs)
-        call = f"join_profile left={left or 'BASE_TABLE'} right={self.label(table)} keys={keys} project=BILLING_PROJECT run=true"
-        return call if self.surface == "mcp" else f"{call} (a tool of python -m kumosql mcp; --profiles shares its saved result)"
+        join_call = f"join_profile left={left or 'BASE_TABLE'} right={self.label(table)} keys={keys} project=BILLING_PROJECT run=true"
+        if self.surface == "mcp":
+            if len(columns) == 1 or not pairs:
+                return f"profile_table table={self.label(table)} columns={names} project=BILLING_PROJECT (a dry run; add run=true to measure, then check_malloy again)"
+            return join_call
+        # key-check answers at once but saves nothing; profile-table and join_profile save what the next check-malloy reads
+        saved = (f"python -m kumosql profile-table {full} --columns {names}" if len(columns) == 1 or not pairs
+                 else f"{join_call} on python -m kumosql mcp")
+        return f"python -m kumosql key-check {full} --key {names} --dry-run, then without --dry-run (it saves nothing; {saved} saves a measurement the next check-malloy reads)"
 
 
 def _without_malloy_claims(session):
