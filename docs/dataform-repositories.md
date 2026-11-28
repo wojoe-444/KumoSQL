@@ -2,7 +2,7 @@
 
 [Plain-language version](../docs_simple/dataform-repositories.md)
 
-Connecting private Dataform repositories, the local data folder, logging and diagnostics, and production schedules.
+Connecting private Dataform repositories, the local data folder, logging and diagnostics, and production schedules. To change the `config {}` blocks of many files at once, see [editing config blocks in bulk](sqlx-config-edits.md).
 
 ## Connecting a private Dataform repository
 
@@ -86,3 +86,9 @@ A computed `schema` or `database` that is an expression of an `includes/` module
 - **`vars` and `includes` in SQL stay masked on purpose.** A project variable such as `${dataform.projectConfig.vars.start_date}` could be read from the settings, but compilation can override it (`--vars`, a workflow configuration), so the settings value is a default and not what ran. Substituting it would let the prover treat a masked value as a known constant, which the [proof safeguards](https://github.com/wojoe-444/Kumo_SQL_Prover/blob/main/docs/proof-safeguards.md#dataform-expressions) rule out. Values in `includes` are JavaScript. Both stay `__sqlx_token_N__` placeholders: lineage keeps the reads, and any pair holding one is `unproven`. Table identities are different: a `schema` or `database` taken from `dataform.projectConfig.vars.NAME` uses the settings value (as the settings' `defaultDatabase` does), because nothing else can name the table; an override would move the table, and that is the one place the static reader trusts a default. Use `load_compiled_graph` on the compiled output when the exact SQL matters.
 
 Not covered yet, and still listed on the issue: a pre or post operation that inserts into a table it also `ref`s is reported as a dependency cycle, though Dataform's scheduling graph has none. The models on the cycle are treated as unanalysed, which is safe but overstates impact; scheduling by declared dependencies alone would make the written table look like a terminal output nothing reads, so this stays conservative. An optional offline compiler adapter (exact interpretation, with the static reader as the conservative fallback) is also not built.
+
+## Editing config blocks in bulk
+
+`python -m kumosql sqlx-config edit PROJECT 'labels.team = "finance"'` previews one change to the `config {}` block of every `.sqlx` file it selects, and `--apply` (or `--plan FILE`, then `--apply --plan FILE`) writes it. Each block is read as the JavaScript object it is and edited in place, so line endings, a byte-order mark, indentation, quotes, comments and trailing commas stay as they were. Assertion files are left alone unless the where clause names them, and an edit that touches a computed value is refused. `labels.` is an alias for `bigquery.labels.`, where Dataform's documentation puts table labels. The language, the plan file and the checks after writing are on [editing config blocks in bulk](sqlx-config-edits.md).
+
+The loader reads config blocks and `includes/` modules through the same JavaScript tokenizer (`kumosql.js_tokens`), which reads a template literal's `${...}` as code. On the repository's fixtures it gives the same text as the two readers it replaced, and every fixture project loads the same either way.

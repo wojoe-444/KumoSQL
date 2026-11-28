@@ -12,6 +12,7 @@ Start with [Getting started](getting-started.md): install, a first verified rewr
 | --- | --- |
 | [Local browser UI](ui.md) | Starting the UI, its pages, saved state, scopes, data sources and tags |
 | [Connecting Dataform repositories](dataform-repositories.md) | Private repositories through local `git`, the data folder, logging and diagnostics, production schedules |
+| [Editing Dataform config blocks in bulk](sqlx-config-edits.md) | `python -m kumosql sqlx-config edit\|show`: one previewed command changes the `config {}` blocks of many `.sqlx` files (`labels.team = "finance" where type in (table, view)`, `tags += "x"`, `delete PATH`), keeping line endings, BOM, indentation, quotes and trailing commas; assertions are left alone unless named, computed values are refused, and `--plan`/`--apply` write atomically, refusing files whose sha256 changed |
 | [Rewrite rules](rewrite-rules.md) | The rule registry and the subquery lifter |
 | [GoogleSQL reference evaluator](gsql-eval.md) | A pure-Python GoogleSQL interpreter that returns BigQuery's rows or declines: values, coverage, errors and guards |
 | [Whole-pipeline analysis](pipeline-analysis.md) | Loading a project, lineage and impact, table profiles, work already done elsewhere, comparing outputs |

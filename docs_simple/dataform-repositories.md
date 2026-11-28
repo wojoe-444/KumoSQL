@@ -73,6 +73,24 @@ More of the same, from the later rounds of the audit:
 
 Limits: these checks come from small synthetic projects compared with Dataform's compiler, not from a benchmark. A hook that writes into a table it also references is still reported as a cycle, which is cautious rather than exact. Queries built by JavaScript code, and exact SQL from variables, need the compiled output. The [full guide](../docs/dataform-repositories.md#what-the-static-reader-does-not-guess) lists them.
 
+## Changing many config blocks at once
+
+Say every table needs the BigQuery label `team: finance`. One command shows what would change, and nothing is written yet:
+
+```sh
+python -m kumosql sqlx-config edit . 'labels.team = "finance"' --plan label-plan.json
+```
+
+It prints the lines it would add to each file, then a count: files changed, files already labelled, assertion files left alone, and files it refused. When the preview looks right, write exactly that plan:
+
+```sh
+python -m kumosql sqlx-config edit . --apply --plan label-plan.json
+```
+
+Each file keeps its own layout: its line endings, its indentation, its quote style and its commas. A file that already has the label is not touched at all. Assertion files are skipped unless you ask for them by name (`where type in (assertion)`). A file whose labels come from JavaScript, such as `labels: constants.LABELS`, is refused with the reason, because KumoSQL cannot know what is there. A file that changed after the plan was made is refused too. `labels.` means `bigquery.labels.`, where Dataform keeps table labels. `tags += "x"`, `tags -= "x"`, `description = "..."` and `delete bigquery.labels.tmp` work the same way, and `where name ~ "^stg_"` or `where tags has "pii"` chooses files.
+
+Limits: only `.sqlx` files that already have a config block are edited, not JavaScript files. BigQuery's rules for label names are not checked. The [full guide](../docs/sqlx-config-edits.md) has the whole command language.
+
 ## If loading fails
 
 Run:

@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 import sys
@@ -73,14 +74,18 @@ def test_top_level_usage_says_which_commands_can_write():
 
     text = usage()
     assert "--help only prints text" in text
-    assert "reduce-project" in text and "--write is the only option that edits a project folder" in text
+    assert "reduce-project" in text and "--write and sqlx-config edit --apply are the only options that edit a project folder" in text
 
 
 def test_commands_that_can_edit_or_write_files_say_so_in_their_help():
     """The wording the permission checks and people read: preview by default, and the one option that writes."""
 
+    # This checkout's code, not whichever kumosql is installed (an editable install of another checkout, say).
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(ROOT / "src"), os.environ.get("PYTHONPATH")]))}
+
     def help_of(*args):
-        done = subprocess.run([sys.executable, "-m", "kumosql", *args, "--help"], capture_output=True, text=True, timeout=120)
+        done = subprocess.run([sys.executable, "-m", "kumosql", *args, "--help"], capture_output=True, text=True,
+                              timeout=120, env=env)
         assert done.returncode == 0, args
         return " ".join(done.stdout.split())
 
@@ -88,3 +93,5 @@ def test_commands_that_can_edit_or_write_files_say_so_in_their_help():
     assert "READ-ONLY" in help_of("refactor") and "never edits the project folder" in help_of("refactor")
     assert "READ-ONLY" in help_of("minimize-tables")
     assert "never edits the project folder" in help_of("shared-model")
+    assert "PREVIEW BY DEFAULT" in help_of("sqlx-config", "edit") and "only --apply writes files" in help_of("sqlx-config", "edit")
+    assert "show only prints" in help_of("sqlx-config")

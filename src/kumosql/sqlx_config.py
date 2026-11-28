@@ -1520,7 +1520,7 @@ def edit_file(data: bytes, path: str, command: Command, *, context: int = 3) -> 
             return result
         if kind not in LABEL_TYPES:
             result.status, result.category = "skipped", "labels-type"
-            result.reason = f"labels apply to {', '.join(LABEL_TYPES)} actions, not {kind} (write bigquery.labels to set them anyway)"
+            result.reason = f"Dataform has table labels only for {', '.join(LABEL_TYPES)} actions, not {kind}"
             return result
         if facts.top_level_labels():
             result.reason, result.category = ("the block has a top-level labels member, so labels. is ambiguous here "
@@ -1967,8 +1967,11 @@ def _edit_main(args) -> int:
                 print(result.diff)
         print("\n".join(_summary_lines(plan, written)))
         if written is None:
-            saved = f" The plan is saved in {args.plan}; --apply --plan {args.plan} writes it." if args.plan else ""
-            print(f"PREVIEW: nothing was written.{saved} Run again with --apply to write.")
+            if args.plan:
+                print(f"PREVIEW: nothing was written. The plan is saved; to write exactly it: "
+                      f"python -m kumosql sqlx-config edit {args.project} --apply --plan {args.plan}")
+            else:
+                print("PREVIEW: nothing was written. Add --apply to write, or --plan FILE to save this plan first.")
     failed = written is not None and not all(w.ok for w in written)
     return EXIT_REFUSED if plan.refused or failed else EXIT_OK
 
