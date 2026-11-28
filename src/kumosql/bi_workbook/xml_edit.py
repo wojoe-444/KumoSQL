@@ -186,18 +186,27 @@ class Document:
         return edits
 
     def set_value(self, element: ET.Element, key: str, value: str) -> list[Edit]:
-        """Edits that make the decoded value ``value``, touching only the characters that differ (common ends kept)."""
+        """Edits that make the decoded value ``value``, touching only the characters that differ.
+
+        The characters both values share keep their raw form (an entity, a CRLF line end), so a value changed in two
+        places is two edits, not one that rewrites everything between them."""
+
+        import difflib
 
         old = (element.text or "") if key == "#text" else self.decoded_attr(element, key)
+        if old == value:
+            return []
         prefix = 0
         while prefix < min(len(old), len(value)) and old[prefix] == value[prefix]:
             prefix += 1
         suffix = 0
         while suffix < min(len(old), len(value)) - prefix and old[len(old) - 1 - suffix] == value[len(value) - 1 - suffix]:
             suffix += 1
-        if old == value:
-            return []
-        return self.replace_in_value(element, key, [(prefix, len(old) - suffix, value[prefix:len(value) - suffix])])
+        old_mid, new_mid = old[prefix:len(old) - suffix], value[prefix:len(value) - suffix]
+        matcher = difflib.SequenceMatcher(None, old_mid, new_mid, autojunk=False)
+        replacements = [(prefix + i1, prefix + i2, new_mid[j1:j2])
+                        for tag, i1, i2, j1, j2 in matcher.get_opcodes() if tag != "equal"]
+        return self.replace_in_value(element, key, replacements)
 
     def decoded_attr(self, element: ET.Element, key: str) -> str:
         return self.node(element).attrs[key].value

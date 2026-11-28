@@ -433,6 +433,15 @@ def test_line_endings_and_untouched_bytes_survive_a_patch(tmp_path):
     result = P.run(book, P.swap_datasource("Returns", dataset="sales_v2"))
     assert result.patched.count(b"\r\n") == crlf.count(b"\r\n")
     assert len(_changed_lines(crlf, result.patched)) == 2
+    # two table names on different lines of one custom SQL query: the line between them keeps its CRLF
+    result = P.run(book, P.swap_datasource("Orders (sales)", project="acme-staging"))
+    assert result.patched.count(b"\r\n") == crlf.count(b"\r\n")
+    for old, new in _changed_lines(crlf, result.patched):
+        assert old.replace(b"acme-analytics", b"acme-staging") == new
+    # the same holds when the file is LF only
+    lf = crlf.replace(b"\r\n", b"\n")
+    _, book = _book(tmp_path, "lf.twb", lf)
+    assert b"\r" not in P.run(book, P.swap_datasource("Orders (sales)", project="acme-staging")).patched
     bom = b"\xef\xbb\xbf" + FIXTURE.read_bytes()
     _, book = _book(tmp_path, "bom.twb", bom)
     assert P.run(book, P.set_color("#000000", sheet="Margin Trend")).patched.startswith(b"\xef\xbb\xbf<?xml")

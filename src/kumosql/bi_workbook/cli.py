@@ -182,7 +182,7 @@ def _patch(args, book) -> int:
         if len(text_diff) > limit:
             lines.append(f"  ... {len(text_diff) - limit} more lines")
     shown = result.xml_diff[:limit]
-    lines += ["", f"XML diff ({result.edits} edits, {len(result.xml_diff)} diff lines):"] + shown
+    lines += ["", f"XML diff ({result.values_changed} values changed, {len(result.xml_diff)} diff lines):"] + shown
     if len(result.xml_diff) > len(shown):
         lines.append(f"... {len(result.xml_diff) - len(shown)} more diff lines (raise --max-diff-lines, or use --json)")
     lines.append("")

@@ -70,14 +70,15 @@ class PatchResult:
     changes: list[str]  # every difference between the structured views, as path: old -> new
     view_diff: list[str]
     xml_diff: list[str]
-    edits: int
+    values_changed: int  # attribute values and texts that differ in the XML
     checks: list[str]
     warnings: list[str]
 
     def as_dict(self, max_diff_lines: int | None = None) -> dict:
         diff = self.xml_diff if max_diff_lines is None else self.xml_diff[:max_diff_lines]
-        return {"patch": self.kind, "description": self.description, "file": self.workbook.label, "edits": self.edits,
-                "changes": self.changes, "view_diff": self.view_diff, "xml_diff": diff, "xml_diff_lines": len(self.xml_diff),
+        return {"patch": self.kind, "description": self.description, "file": self.workbook.label,
+                "values_changed": self.values_changed, "changes": self.changes, "view_diff": self.view_diff,
+                "xml_diff": diff, "xml_diff_lines": len(self.xml_diff),
                 "checks": self.checks, "warnings": self.warnings,
                 "sha256_before": hashlib.sha256(self.original).hexdigest(),
                 "sha256_after": hashlib.sha256(self.patched).hexdigest()}
@@ -468,12 +469,13 @@ def swap_datasource(datasource: str, project: str | None = None, dataset: str | 
                 if f"{full} -> {target}" not in moved_tables:
                     moved_tables.append(f"{full} -> {target}")
             elif project or dataset or billing_project or table_map:  # a column remap alone leaves custom SQL alone
-                new_sql, moved, kept = _swap_sql(relation.text or "", conn_info, new_info, lambda t: move(t, conn_name))
+                new_sql, moved, kept, spans = _swap_sql(relation.text or "", conn_info, new_info, lambda t: move(t, conn_name))
                 for written, full in kept:
                     out.warnings.append(f"custom SQL {relation.get('name')!r} wrote {written}, which would now resolve elsewhere; "
                                         f"it is written out as {full} so it still reads the same table")
                 if new_sql != (relation.text or ""):
-                    _set_text(doc, out, relation, new_sql)
+                    out.edits += doc.replace_in_value(relation, "#text", spans)  # the table names only
+                    out.touched.add((doc.index(relation), "#text"))
                     out.overrides.sql[(ds["name"], relation.get("name", ""))] = new_sql
                     moved_tables.extend(f"{a} -> {b} (custom SQL {relation.get('name')!r})" for a, b in moved)
                     out.checks.append(f"custom SQL {relation.get('name')!r} re-parsed with sqlglot: the same tree with "
@@ -510,9 +512,13 @@ def _write_relation_table(written: str, target: str, connection: dict) -> str:
     return R.bracket(table)
 
 
-def _swap_sql(sql: str, old_conn: dict, new_conn: dict, move) -> tuple[str, list[tuple[str, str]], list[tuple[str, str]]]:
+def _swap_sql(sql: str, old_conn: dict, new_conn: dict, move) -> tuple[str, list, list, list]:
     """Custom SQL with each table that moves rewritten at its span; refused if the result does not re-parse to the same
-    tree with the table names mapped."""
+    tree with the table names mapped.
+
+    Returns the new SQL, the ``(old, new)`` tables moved, the ``(written, full)`` tables written out in full so they keep
+    reading the same table, and the replacements as ``(start, end, text)`` spans of ``sql``, so the caller edits the
+    table names and nothing between them."""
 
     from sqlglot import exp
     from sqlglot.errors import SqlglotError
@@ -558,7 +564,7 @@ def _swap_sql(sql: str, old_conn: dict, new_conn: dict, move) -> tuple[str, list
             if target != full:
                 moved.append((full, target))
     if not replacements:
-        return sql, moved, kept
+        return sql, moved, kept, []
     replacements.sort()
     for (_, end, _), (start, _, _) in zip(replacements, replacements[1:]):
         if start < end:
@@ -601,7 +607,7 @@ def _swap_sql(sql: str, old_conn: dict, new_conn: dict, move) -> tuple[str, list
     actual = [plain(t) for t in new_trees]
     if expected != actual:
         raise PatchRefused("the edited custom SQL is not the old query with the table names mapped; not edited")
-    return new_sql, moved, kept
+    return new_sql, moved, kept, replacements
 
 
 def _swap_columns(doc: Document, out: _Plan, element: ET.Element, ds: dict, column_map: dict[str, str]) -> None:
@@ -847,7 +853,8 @@ def run(book: Workbook, patch) -> PatchResult:
     if touched_unchanged:
         checks.append(f"{len(touched_unchanged)} planned values already had the new value")
     return PatchResult(kind=kind, description=plan.description, workbook=book, original=original, patched=patched,
-                       changes=view_changes(before, actual), view_diff=view_diff, xml_diff=xml_diff, edits=len(plan.edits), checks=checks, warnings=plan.warnings)
+                       changes=view_changes(before, actual), view_diff=view_diff, xml_diff=xml_diff,
+                       values_changed=len(changed), checks=checks, warnings=plan.warnings)
 
 
 def write_result(result: PatchResult, target: Path) -> None:
