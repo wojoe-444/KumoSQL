@@ -7,14 +7,15 @@ from sqlglot import exp
 from kumo_sql_prover.ast_utils import parse_statements
 
 
-def validate_readonly_query(sql: str) -> None:
+def validate_readonly_query(sql: str, *, max_chars: int = 20_000) -> None:
     """Require one SELECT, optionally with CTEs, subqueries or set operations.
 
     Check the whole tree: a query-shaped root can still contain a writable CTE
     or SELECT INTO. Parser failures deliberately omit SQL and parser excerpts.
+    ``max_chars`` bounds the text; features that store queries keep the 20,000 default.
     """
     message = "the query must be exactly one read-only SELECT statement"
-    if not isinstance(sql, str) or not sql.strip() or len(sql) > 20_000:
+    if not isinstance(sql, str) or not sql.strip() or len(sql) > max_chars:
         raise ValueError(message)
     try:
         # sqlglot represents a comment after a trailing semicolon as an empty

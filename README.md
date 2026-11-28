@@ -615,6 +615,7 @@ Every command prints `--help`.
 | `python -m kumosql scopes` | Manage saved scopes (`list`, `add`, `remove`, `fields`, `refresh`) |
 | `python -m kumosql compare-outputs` | Generate SQL that compares pipeline outputs before and after a refactor |
 | `python -m kumosql dry-run` | BigQuery planning and schema check, no query execution |
+| `python -m kumosql q run FILE\|-` | Run one read-only query the same way in PowerShell, cmd and bash: SQL from a file or stdin (BOM removed), results to a JSON or CSV file, one JSON summary line on stdout, an exit code per failure kind; `--dry-run` (bytes, and whether exact or an upper bound), `--summarize`, `--duckdb` ([details](docs/query-runner.md)) |
 | `python -m kumosql change-report` | Report changes between two project snapshots; `--explain-differences` adds "except when P" to unproven rewrites |
 | `python -m kumosql ci-check` | Turn a change report into a check conclusion and comment |
 | `python -m kumosql evidence-summary` | Anonymized share of changed outputs that have useful evidence |
