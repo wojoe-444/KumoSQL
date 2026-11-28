@@ -114,7 +114,7 @@ The tolerance never applies to the key: a floating-point key joins only exactly 
 
 ### STRUCT and array columns
 
-A STRUCT or an array is compared as one whole value, exactly. Field by field, a NULL field agrees with a NULL field. A NULL STRUCT differs from a STRUCT whose fields are all NULL, and an empty array differs from a NULL one. Arrays are compared element by element in order, so `[1, 2]` and `[2, 1]` differ. Both engines give the same answer:
+A STRUCT or an array is compared as one whole value, exactly. Field by field, a NULL field agrees with a NULL field. A NULL STRUCT differs from a STRUCT whose fields are all NULL, and an empty array differs from a NULL one (a BigQuery table stores a NULL array as an empty one, so this matters only for `--left`/`--right` queries). Arrays are compared element by element in order, so `[1, 2]` and `[2, 1]` differ. Both engines give the same answer:
 
 - **DuckDB** compares nested values itself (`IS DISTINCT FROM`). STRUCT fields are matched by name, so the same fields declared in another order agree.
 - **BigQuery** cannot compare arrays, or STRUCTs that hold them, at all, so it compares each side's `TO_JSON_STRING` text. That text keeps the declared field order. When the right side declares the same fields in another order (or another letter case), the right side is rebuilt in the left side's order first, at every level and inside arrays (`STRUCT(r.s.x AS x, r.s.y AS y)`, `ARRAY(SELECT AS STRUCT ... ORDER BY offset)`), so the two texts line up. `"fields": "reordered"` in `comparisons` says this happened. A NULL stays NULL through the rebuild.
